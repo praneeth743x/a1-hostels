@@ -1,0 +1,89 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --primary-indigo: #3F51B5;
+  --primary-indigo-light: #5C6BC0;
+  --primary-indigo-dark: #303F9F;
+  --secondary-cyan: #00D1FF;
+  --secondary-cyan-dark: #00B8D4;
+  --bg-white: #FFFFFF;
+  --bg-offwhite: #F8F9FA;
+  --text-main: #1A1A1A;
+  --text-muted: #757575;
+  --danger-red: #F44336;
+  --success-green: #4CAF50;
+  --border-light: #E0E0E0;
+  --font-family: 'Inter', sans-serif;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(63, 81, 181, 0.08);
+  --shadow-lg: 0 12px 24px rgba(63, 81, 181, 0.12);
+  --radius-md: 12px;
+  --radius-lg: 20px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-offwhite);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Base Form Elements */
+input, button, textarea {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+/* Animations */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.85; }
+}
+
+.animate-breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(63, 81, 181, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(63, 81, 181, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(63, 81, 181, 0); }
+}
+
+.pulse-ring {
+  animation: pulse-ring 2s infinite;
+}
+
+/* Glassmorphism utilities */
+.glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.glass-card {
+  background: var(--bg-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-light);
+}
+
+/* Utility Classes */
+.text-indigo { color: var(--primary-indigo); }
+.text-cyan { color: var(--secondary-cyan); }
+.bg-indigo { background-color: var(--primary-indigo); }
+.bg-cyan { background-color: var(--secondary-cyan); }
+.text-muted { color: var(--text-muted); }

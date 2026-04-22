@@ -1,0 +1,123 @@
+.superadmin-layout {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--bg-offwhite);
+}
+
+.sidebar {
+  width: 280px;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-light);
+  background-color: var(--bg-white);
+  z-index: 50;
+}
+
+.sidebar-header {
+  padding: 2rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.logo-small {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--primary-indigo), var(--secondary-cyan));
+  border-radius: 8px;
+}
+
+.brand-text {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--primary-indigo);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.role-badge {
+  font-size: 0.65rem;
+  background-color: rgba(0, 209, 255, 0.15);
+  color: var(--secondary-cyan-dark);
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.nav-link:hover {
+  background-color: rgba(63, 81, 181, 0.04);
+  color: var(--primary-indigo);
+}
+
+.nav-link.active {
+  background-color: rgba(63, 81, 181, 0.08);
+  color: var(--primary-indigo);
+  font-weight: 600;
+}
+
+.nav-icon {
+  opacity: 0.8;
+}
+
+.nav-link.active .nav-icon {
+  opacity: 1;
+}
+
+.sidebar-footer {
+  padding: 1.5rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-md);
+  color: var(--danger-red);
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.logout-btn:hover {
+  background-color: rgba(244, 67, 54, 0.08);
+}
+
+.main-content {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+  background: radial-gradient(circle at top right, rgba(0, 209, 255, 0.03), transparent 400px);
+}
+
+.content-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+}

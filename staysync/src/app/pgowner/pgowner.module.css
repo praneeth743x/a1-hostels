@@ -1,0 +1,411 @@
+.pgownerLayout {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--bg-offwhite);
+}
+
+.sidebar {
+  width: 280px;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-light);
+  background-color: var(--bg-white);
+  z-index: 50;
+}
+
+.sidebarHeader {
+  padding: 2rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.logoSmall {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--primary-indigo), var(--secondary-cyan));
+  border-radius: 8px;
+}
+
+.brandText {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--primary-indigo);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.roleBadge {
+  font-size: 0.65rem;
+  background-color: rgba(63, 81, 181, 0.15);
+  color: var(--primary-indigo);
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sidebarNav {
+  flex: 1;
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.navLink:hover {
+  background-color: rgba(63, 81, 181, 0.04);
+  color: var(--primary-indigo);
+}
+
+.navLink.active {
+  background-color: rgba(63, 81, 181, 0.08);
+  color: var(--primary-indigo);
+  font-weight: 600;
+}
+
+.navIcon {
+  opacity: 0.8;
+}
+
+.navLink.active .navIcon {
+  opacity: 1;
+}
+
+.sidebarFooter {
+  padding: 1.5rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.logoutBtn {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.logoutBtn:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.mainContent {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+.contentWrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Page Common Styles */
+.dashboardPage {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.pageTitle {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.03em;
+  margin-bottom: 0.25rem;
+}
+
+.pageSubtitle {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+/* KPI Cards */
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+.kpiCard {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.kpiLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.kpiValue {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.kpiTrend {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.kpiIcon {
+  position: absolute;
+  right: 1.5rem;
+  top: 1.5rem;
+  opacity: 0.1;
+  transform: scale(2.5);
+  transform-origin: top right;
+}
+
+/* Room Map */
+.roomMapSection {
+  padding: 1.5rem;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.sectionTitle {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.roomLegend {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.legendDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.dotAvailable { background-color: var(--success-green); }
+.dotOccupied { background-color: var(--danger-red); }
+.dotPartial { background-color: #F57C00; }
+
+.floorPlan {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.floorRow {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.floorLabel {
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 0.5rem;
+}
+
+.roomGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 1rem;
+}
+
+.roomCard {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.roomCard:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.roomNumber {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.roomStatus {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.roomAvailable .roomStatus { color: var(--success-green); background-color: rgba(76, 175, 80, 0.1); }
+.roomOccupied .roomStatus { color: var(--danger-red); background-color: rgba(244, 67, 54, 0.1); }
+.roomPartial .roomStatus { color: #F57C00; background-color: rgba(255, 152, 0, 0.1); }
+
+.roomAvailable { border-color: rgba(76, 175, 80, 0.3); }
+.roomOccupied { border-color: rgba(244, 67, 54, 0.3); }
+.roomPartial { border-color: rgba(255, 152, 0, 0.3); }
+
+@media (max-width: 1024px) {
+  .kpiGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Tenant Directory Specific */
+.headerActions {
+  display: flex;
+  gap: 1rem;
+}
+
+.addTenantBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  background-color: var(--primary-indigo);
+  color: white;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.addTenantBtn:hover {
+  background-color: var(--primary-indigo-light);
+}
+
+/* Add Tenant Modal Styles */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1rem;
+}
+
+.modalContent {
+  width: 100%;
+  max-width: 500px;
+  background-color: var(--bg-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modalHeader {
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modalHeader h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.closeBtn {
+  color: var(--text-muted);
+  transition: color 0.2s;
+}
+
+.closeBtn:hover {
+  color: var(--danger-red);
+}
+
+.modalBody {
+  padding: 1.5rem;
+  overflow-y: auto;
+  max-height: 70vh;
+}
+
+.cameraCaptureArea {
+  width: 100%;
+  height: 200px;
+  background-color: var(--bg-offwhite);
+  border: 2px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-bottom: 1.5rem;
+  transition: border-color 0.2s;
+}
+
+.cameraCaptureArea:hover {
+  border-color: var(--primary-indigo);
+  color: var(--primary-indigo);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.modalFooter {
+  padding: 1.5rem;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  justify-content: flex-end;
+}
