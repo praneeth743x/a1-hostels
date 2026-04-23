@@ -1,30 +1,95 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   BarChart, Bar
 } from 'recharts';
+import { supabase } from '@/lib/supabase';
 import styles from './superadmin.module.css';
 
-const monthlyData = [
-  { name: 'Jan', rent: 450000 },
-  { name: 'Feb', rent: 520000 },
-  { name: 'Mar', rent: 480000 },
-  { name: 'Apr', rent: 610000 },
-  { name: 'May', rent: 750000 },
-  { name: 'Jun', rent: 890000 },
-];
-
-const hostelData = [
-  { name: 'Hostel A', tenants: 120 },
-  { name: 'Hostel B', tenants: 95 },
-  { name: 'Hostel C', tenants: 150 },
-  { name: 'Hostel D', tenants: 80 },
-];
-
 export default function SuperAdminOverview() {
+  const [stats, setStats] = useState({
+    revenue: 0,
+    activeOwners: 0,
+    totalTenants: 0,
+    pendingPayouts: 0,
+  });
+  const [monthlyData, setMonthlyData] = useState<{name: string, rent: number}[]>([]);
+  const [hostelData, setHostelData] = useState<{name: string, tenants: number}[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchDashboardData() {
+      try {
+        // Fetch total tenants
+        const { count: tenantCount } = await supabase
+          .from('tenants')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_active', true);
+
+        // Fetch total active owners
+        const { count: ownerCount } = await supabase
+          .from('user_profiles')
+          .select('*', { count: 'exact', head: true })
+          .eq('role', 'pg_owner');
+
+        // Fetch payments for revenue (In production, sum via RPC. Doing client sum for now)
+        const { data: payments } = await supabase
+          .from('payments')
+          .select('amount, status');
+
+        let totalRev = 0;
+        let pending = 0;
+        if (payments) {
+          payments.forEach(p => {
+            if (p.status === 'paid') totalRev += Number(p.amount);
+            if (p.status === 'pending') pending += Number(p.amount);
+          });
+        }
+
+        // Fetch properties for chart
+        const { data: properties } = await supabase
+          .from('properties')
+          .select('pg_id, name');
+
+        const hData = [];
+        if (properties) {
+          for (const prop of properties) {
+            const { count: ptCount } = await supabase
+              .from('tenants')
+              .select('*', { count: 'exact', head: true })
+              .eq('pg_id', prop.pg_id);
+            hData.push({ name: prop.name || 'Unnamed', tenants: ptCount || 0 });
+          }
+        }
+
+        setStats({
+          revenue: totalRev,
+          activeOwners: ownerCount || 0,
+          totalTenants: tenantCount || 0,
+          pendingPayouts: pending,
+        });
+
+        // Set mock monthly data until we have real historical data
+        setMonthlyData([
+          { name: 'Jan', rent: totalRev * 0.4 },
+          { name: 'Feb', rent: totalRev * 0.5 },
+          { name: 'Mar', rent: totalRev * 0.7 },
+          { name: 'Apr', rent: totalRev },
+        ]);
+
+        setHostelData(hData.length > 0 ? hData : [{ name: 'No Hostels', tenants: 0 }]);
+      } catch (err) {
+        console.error("Error fetching dashboard data:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchDashboardData();
+  }, []);
   return (
     <div className={styles.dashboardPage}>
       <header className={styles.pageHeader}>
@@ -36,10 +101,10 @@ export default function SuperAdminOverview() {
 
       <div className={styles.statsGrid}>
         {[
-          { label: 'Total Revenue (Platform)', value: '₹37,00,000', trend: '+14%' },
-          { label: 'Active PG Owners', value: '54', trend: '+3 this month' },
-          { label: 'Total Tenants', value: '2,845', trend: '+124 this month' },
-          { label: 'Pending Payouts', value: '₹1,24,000', trend: '-2%' },
+          { label: 'Total Revenue (Platform)', value: `₹${stats.revenue.toLocaleString()}`, trend: '+0%' },
+          { label: 'Active PG Owners', value: stats.activeOwners.toString(), trend: 'Current' },
+          { label: 'Total Tenants', value: stats.totalTenants.toString(), trend: 'Current' },
+          { label: 'Pending Payouts', value: `₹${stats.pendingPayouts.toLocaleString()}`, trend: 'Awaiting' },
         ].map((stat, i) => (
           <motion.div 
             key={stat.label}

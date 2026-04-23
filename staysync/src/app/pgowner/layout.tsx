@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { LayoutDashboard, Users, ClipboardList, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, ClipboardList, LogOut, User, Building } from 'lucide-react';
 import styles from './pgowner.module.css';
 
 export default function PGOwnerLayout({
@@ -21,8 +21,10 @@ export default function PGOwnerLayout({
 
   const navItems = [
     { path: '/pgowner', label: 'Command Center', icon: LayoutDashboard },
+    { path: '/pgowner/properties', label: 'My Hostels', icon: Building },
     { path: '/pgowner/tenants', label: 'Tenant Directory', icon: Users },
     { path: '/pgowner/notices', label: 'Notice Board', icon: ClipboardList },
+    { path: '/profile', label: 'My Profile', icon: User },
   ];
 
   return (

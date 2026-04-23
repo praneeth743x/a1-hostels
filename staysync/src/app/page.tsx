@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { FloatingInput } from '@/components/FloatingInput';
 import { AnimatedButton } from '@/components/AnimatedButton';
+import { supabase } from '@/lib/supabase';
+import { getUserRole } from '@/app/actions/superadmin';
 import styles from './page.module.css';
 
 export default function LoginGateway() {
@@ -12,29 +14,71 @@ export default function LoginGateway() {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!phone || phone.length < 10) return;
     setLoading(true);
-    // Mock Supabase Auth Delay
-    setTimeout(() => {
-      setLoading(false);
+    setError(null);
+    
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: `+91${phone}`,
+      });
+      
+      if (error) throw error;
       setOtpSent(true);
-    }, 1200);
+    } catch (err: any) {
+      setError(err.message || 'Failed to send OTP');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleVerifyOtp = (e: React.FormEvent) => {
+  const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!otp || otp.length < 4) return;
     setLoading(true);
-    // Mock Verification Delay
-    setTimeout(() => {
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: `+91${phone}`,
+        token: otp,
+        type: 'sms'
+      });
+      
+      if (error) throw error;
+      
+      if (data.user) {
+        let role = 'tenant';
+
+        // Automatically provision the specific Super Admin number
+        if (phone === '9398699430') {
+          role = 'super_admin';
+          // Ensure the profile exists with the correct role
+          await supabase.from('user_profiles').upsert({
+            id: data.user.id,
+            full_name: 'System Administrator',
+            role: 'super_admin'
+          });
+        } else {
+          // Fetch user profile securely via Server Action bypassing RLS issues
+          role = await getUserRole(data.user.id);
+        }
+        
+        // Route based on role
+        if (role === 'super_admin') router.push('/superadmin');
+        else if (role === 'pg_owner') router.push('/pgowner');
+        else router.push('/tenant');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Invalid OTP');
+    } finally {
       setLoading(false);
-      // Mock routing logic based on user role
-      router.push('/pgowner');
-    }, 1500);
+    }
   };
 
   return (
@@ -54,6 +98,17 @@ export default function LoginGateway() {
         </div>
 
         <AnimatePresence mode="wait">
+          {error && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0 }}
+              className="text-danger-red text-sm font-medium mb-4 text-center w-full bg-red-50 p-2 rounded-md border border-red-100"
+              style={{ color: 'var(--danger-red)', backgroundColor: 'rgba(244, 67, 54, 0.1)', padding: '8px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.875rem' }}
+            >
+              {error}
+            </motion.div>
+          )}
           {!otpSent ? (
             <motion.form
               key="phone-form"

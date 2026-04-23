@@ -1,0 +1,266 @@
+.tenantLayout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--bg-offwhite);
+  padding-bottom: 80px; /* Space for bottom nav */
+}
+
+.mainContent {
+  flex: 1;
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+.contentWrapper {
+  max-width: 600px; /* Constrain for mobile-first feel */
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Mobile Bottom Navigation */
+.bottomNav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid var(--border-light);
+  background-color: rgba(255, 255, 255, 0.9);
+  z-index: 100;
+}
+
+.navLink {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  flex: 1;
+  padding: 0.5rem 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.navIconWrapper {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 40px;
+  height: 40px;
+}
+
+.navIcon {
+  position: relative;
+  z-index: 2;
+  transition: color 0.2s;
+}
+
+.navLabel {
+  font-size: 0.75rem;
+  transition: color 0.2s;
+}
+
+.navIndicator {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(63, 81, 181, 0.1);
+  border-radius: 50%;
+  z-index: 1;
+}
+
+.navLink.active {
+  color: var(--primary-indigo);
+}
+
+.logoutBtn {
+  color: var(--text-muted);
+}
+
+/* Tenant Page Common */
+.pageHeader {
+  margin-bottom: 1rem;
+}
+
+.pageTitle {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+}
+
+/* Payment Hub */
+.activeBillCard {
+  background: linear-gradient(135deg, var(--primary-indigo-dark), var(--primary-indigo));
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  color: white;
+  box-shadow: 0 12px 24px rgba(63, 81, 181, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Shine effect */
+.activeBillCard::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent);
+  transform: skewX(-20deg);
+  animation: shine 4s infinite;
+}
+
+@keyframes shine {
+  0% { left: -100%; }
+  20% { left: 200%; }
+  100% { left: 200%; }
+}
+
+.billHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.billTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.billStatus {
+  background-color: rgba(255, 255, 255, 0.2);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.billAmount {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.currency {
+  font-size: 1.5rem;
+  margin-top: 0.25rem;
+}
+
+.payNowWrapper {
+  margin-top: 0.5rem;
+}
+
+/* Roommate View */
+.sectionTitle {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  margin-top: 1rem;
+}
+
+.roommateList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.roommateCard {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-white);
+  border: 1px solid var(--border-light);
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: var(--bg-offwhite);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: var(--primary-indigo);
+  font-weight: 600;
+  font-size: 1.25rem;
+}
+
+.roommateInfo {
+  flex: 1;
+}
+
+.roommateName {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.roommateDetail {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Help Desk */
+.supportForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  background-color: var(--bg-white);
+  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light);
+}
+
+.ticketTypeSelect {
+  width: 100%;
+  padding: 14px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  font-family: var(--font-family);
+  font-size: 1rem;
+  background-color: var(--bg-offwhite);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.ticketTypeSelect:focus {
+  border-color: var(--primary-indigo);
+}
+
+.textareaField {
+  width: 100%;
+  padding: 14px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  font-family: var(--font-family);
+  font-size: 1rem;
+  background-color: var(--bg-offwhite);
+  outline: none;
+  resize: vertical;
+  min-height: 120px;
+}
+
+.textareaField:focus {
+  border-color: var(--primary-indigo);
+}

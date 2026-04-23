@@ -409,3 +409,237 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* Properties Specific */
+.propertiesGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+  .propertiesGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.propertyCard {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-white);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.propertyCard:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+.propertyImageArea {
+  height: 160px;
+  background-color: var(--bg-offwhite);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.noImagePlaceholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+}
+
+.uploadPhotoBtn {
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  background-color: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(4px);
+  color: var(--text-main);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.2s;
+  cursor: pointer;
+  border: none;
+}
+
+.uploadPhotoBtn:hover {
+  background-color: #fff;
+}
+
+.propertyDetails {
+  padding: 1.5rem;
+  flex: 1;
+}
+
+.propertyHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.propertyName {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.propertyAddress {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.addressText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+}
+
+.activeStatus {
+  background-color: rgba(76, 175, 80, 0.1);
+  color: var(--success-green);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.inactiveStatus {
+  background-color: rgba(244, 67, 54, 0.1);
+  color: var(--danger-red);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.emptyStateCard {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 3rem;
+  background-color: var(--bg-white);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  border: 1px dashed var(--border-light);
+}
+
+/* Table styles */
+.tableContainer {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tableHeaderActions {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.searchBar {
+  position: relative;
+  width: 300px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.searchInput {
+  width: 100%;
+  padding: 10px 12px 10px 40px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  background-color: var(--bg-offwhite);
+  transition: all 0.2s;
+  outline: none;
+}
+
+.searchInput:focus {
+  border-color: var(--primary-indigo);
+  background-color: var(--bg-white);
+  box-shadow: 0 0 0 3px rgba(63, 81, 181, 0.1);
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.adminTable {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.adminTable th {
+  padding: 1rem 1.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border-light);
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.adminTable td {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+}
+
+.adminTable tbody tr:hover {
+  background-color: rgba(63, 81, 181, 0.02);
+}
+
+.statusBadge {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.paymentPaid {
+  background-color: rgba(76, 175, 80, 0.1);
+  color: var(--success-green);
+}
+
+.paymentPending {
+  background-color: rgba(255, 152, 0, 0.1);
+  color: #F57C00;
+}
+
+.paymentOverdue {
+  background-color: rgba(244, 67, 54, 0.1);
+  color: var(--danger-red);
+}

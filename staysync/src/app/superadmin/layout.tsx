@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { LayoutDashboard, Users, Radio, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Radio, LogOut, User } from 'lucide-react';
 import styles from './superadmin.module.css';
 
 export default function SuperAdminLayout({
@@ -23,6 +23,7 @@ export default function SuperAdminLayout({
     { path: '/superadmin', label: 'Overview', icon: LayoutDashboard },
     { path: '/superadmin/owners', label: 'PG Owners', icon: Users },
     { path: '/superadmin/broadcast', label: 'Global Broadcast', icon: Radio },
+    { path: '/profile', label: 'My Profile', icon: User },
   ];
 
   return (

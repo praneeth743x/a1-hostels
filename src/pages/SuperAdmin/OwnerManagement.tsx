@@ -1,18 +1,28 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Power, PowerOff, Search } from 'lucide-react';
+import { Power, PowerOff, Search, Plus, X } from 'lucide-react';
 import './SuperAdmin.css';
 
 const MOCK_OWNERS = [
-  { id: '1', name: 'Ramesh Reddy', hostels: 3, tenants: 145, status: 'active', payment: 'Paid' },
-  { id: '2', name: 'Suresh Kumar', hostels: 1, tenants: 45, status: 'active', payment: 'Pending' },
-  { id: '3', name: 'Priya Sharma', hostels: 2, tenants: 90, status: 'disabled', payment: 'Overdue' },
-  { id: '4', name: 'Venkatesh Rao', hostels: 5, tenants: 310, status: 'active', payment: 'Paid' },
+  { id: '1', name: 'Ramesh Reddy', phone: '+91 98765 43210', pgName: 'Reddy Premium Hostels', hostels: 3, tenants: 145, status: 'active', payment: 'Paid' },
+  { id: '2', name: 'Suresh Kumar', phone: '+91 87654 32109', pgName: 'Suresh Co-living Space', hostels: 1, tenants: 45, status: 'active', payment: 'Pending' },
+  { id: '3', name: 'Priya Sharma', phone: '+91 76543 21098', pgName: 'Priya Girls PG', hostels: 2, tenants: 90, status: 'disabled', payment: 'Overdue' },
+  { id: '4', name: 'Venkatesh Rao', phone: '+91 65432 10987', pgName: 'Venkatesh Executive Stays', hostels: 5, tenants: 310, status: 'active', payment: 'Paid' },
 ];
 
 export const OwnerManagement: React.FC = () => {
   const [owners, setOwners] = useState(MOCK_OWNERS);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newOwner, setNewOwner] = useState({
+    name: '',
+    pgName: '',
+    phone: '',
+    hostels: 0,
+    tenants: 0,
+    status: 'active',
+    payment: 'Pending'
+  });
 
   const toggleStatus = (id: string) => {
     setOwners(owners.map(owner => {
@@ -23,7 +33,27 @@ export const OwnerManagement: React.FC = () => {
     }));
   };
 
-  const filteredOwners = owners.filter(o => o.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredOwners = owners.filter(o => 
+    o.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    o.pgName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    o.phone.replace(/\s+/g, '').includes(searchTerm.replace(/\s+/g, ''))
+  );
+
+  const handleAddOwner = (e: React.FormEvent) => {
+    e.preventDefault();
+    const id = (owners.length + 1).toString();
+    setOwners([...owners, { id, ...newOwner }]);
+    setIsModalOpen(false);
+    setNewOwner({
+      name: '',
+      pgName: '',
+      phone: '',
+      hostels: 0,
+      tenants: 0,
+      status: 'active',
+      payment: 'Pending'
+    });
+  };
 
   return (
     <div className="dashboard-page">
@@ -35,7 +65,7 @@ export const OwnerManagement: React.FC = () => {
       </header>
 
       <div className="table-container glass-card">
-        <div className="table-header-actions">
+        <div className="table-header-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div className="search-bar">
             <Search size={18} className="search-icon text-muted" />
             <input 
@@ -46,13 +76,36 @@ export const OwnerManagement: React.FC = () => {
               className="search-input"
             />
           </div>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            backgroundColor: 'var(--primary-indigo)',
+            color: 'white',
+            padding: '10px 16px',
+            borderRadius: 'var(--radius-md)',
+            fontWeight: '600',
+            fontSize: '0.95rem',
+            border: 'none',
+            cursor: 'pointer',
+            transition: 'opacity 0.2s',
+            boxShadow: 'var(--shadow-sm)'
+          }}
+          onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
+          onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
+          >
+            <Plus size={18} />
+            Add Owner
+          </button>
         </div>
 
         <div className="table-wrapper">
           <table className="admin-table">
             <thead>
               <tr>
-                <th>Owner Name</th>
+                <th>PG & Owner Name</th>
                 <th>Properties</th>
                 <th>Total Tenants</th>
                 <th>SaaS Payment</th>
@@ -67,7 +120,14 @@ export const OwnerManagement: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
                 >
-                  <td className="font-semibold">{owner.name}</td>
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span className="font-semibold">{owner.pgName}</span>
+                      <span className="text-muted" style={{ fontSize: '0.85rem' }}>
+                        {owner.name} • {owner.phone}
+                      </span>
+                    </div>
+                  </td>
                   <td>{owner.hostels}</td>
                   <td>{owner.tenants}</td>
                   <td>
@@ -94,6 +154,71 @@ export const OwnerManagement: React.FC = () => {
           )}
         </div>
       </div>
+
+      {isModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Add New PG Owner</h2>
+              <button className="close-btn" onClick={() => setIsModalOpen(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            
+            <form className="modal-form" onSubmit={handleAddOwner}>
+              <div className="form-group">
+                <label>Owner Name</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="e.g. Ramesh Reddy"
+                  value={newOwner.name}
+                  onChange={e => setNewOwner({...newOwner, name: e.target.value})}
+                />
+              </div>
+              
+              <div className="form-group">
+                <label>PG/Business Name</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="e.g. Reddy Premium Hostels"
+                  value={newOwner.pgName}
+                  onChange={e => setNewOwner({...newOwner, pgName: e.target.value})}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Phone Number</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="e.g. +91 98765 43210"
+                  value={newOwner.phone}
+                  onChange={e => setNewOwner({...newOwner, phone: e.target.value})}
+                />
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="btn-cancel" onClick={() => setIsModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" style={{
+                  backgroundColor: 'var(--primary-indigo)',
+                  color: 'white',
+                  padding: '10px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  fontWeight: '600',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}>
+                  Save Owner
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

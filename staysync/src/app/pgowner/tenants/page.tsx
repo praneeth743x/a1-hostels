@@ -1,21 +1,105 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Plus, Camera, X } from 'lucide-react';
 import { FloatingInput } from '@/components/FloatingInput';
 import { AnimatedButton } from '@/components/AnimatedButton';
+import { getTenants, addTenant, getPropertiesWithRooms } from '@/app/actions/pgowner';
+import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 import styles from '../pgowner.module.css';
-
-const MOCK_TENANTS = [
-  { id: 'T1', name: 'Rahul Sharma', room: '101', phone: '+91 9876543210', status: 'Active' },
-  { id: 'T2', name: 'Vikram Singh', room: '102', phone: '+91 8765432109', status: 'Active' },
-  { id: 'T3', name: 'Arun Kumar', room: 'G2', phone: '+91 7654321098', status: 'Notice Period' },
-];
 
 export default function TenantDirectory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [tenants, setTenants] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [properties, setProperties] = useState<any[]>([]);
+  const router = useRouter();
+  
+  // Form state
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [parentPhone, setParentPhone] = useState('');
+  const [workStatus, setWorkStatus] = useState('student');
+  const [selectedPg, setSelectedPg] = useState('');
+  const [selectedRoom, setSelectedRoom] = useState('');
+  const [moveInDate, setMoveInDate] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    async function init() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setOwnerId(user.id);
+        const propsRes = await getPropertiesWithRooms(user.id);
+        if (propsRes.success && propsRes.data) {
+          setProperties(propsRes.data);
+          if (propsRes.data.length > 0) setSelectedPg(propsRes.data[0].pg_id);
+        }
+
+        const res = await getTenants(user.id);
+        if (res.success && res.data) {
+          setTenants(res.data.map((t: any) => ({
+            id: t.tenant_id,
+            name: t.full_name,
+            hostel: t.pg_name,
+            room: t.rooms?.room_number || 'N/A',
+            phone: t.mobile,
+            status: t.is_active ? 'Active' : 'Inactive'
+          })));
+        }
+      }
+      setIsLoading(false);
+    }
+    init();
+  }, []);
+
+  const handleAddTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ownerId || !selectedPg || !selectedRoom) {
+      alert("Please select a Hostel and Room.");
+      return;
+    }
+    setIsSaving(true);
+    const res = await addTenant({ 
+      ownerId, 
+      pgId: selectedPg, 
+      roomId: selectedRoom, 
+      fullName, 
+      phone, 
+      parentPhone, 
+      workStatus, 
+      moveInDate 
+    });
+    
+    if (res.success && res.data) {
+      const selectedHostelName = properties.find(p => p.pg_id === selectedPg)?.name || '';
+      const selectedRoomName = properties.find(p => p.pg_id === selectedPg)?.rooms.find((r:any) => r.room_id === selectedRoom)?.room_number || '';
+      
+      setTenants([{
+        id: res.data[0].tenant_id,
+        name: fullName,
+        hostel: selectedHostelName,
+        room: selectedRoomName,
+        phone: phone,
+        status: 'Active'
+      }, ...tenants]);
+      
+      setShowModal(false);
+      setFullName(''); setPhone(''); setParentPhone(''); setMoveInDate('');
+      router.refresh();
+    } else {
+      alert("Failed to add tenant: " + res.error);
+    }
+    setIsSaving(false);
+  };
+
+  const currentRooms = properties.find(p => p.pg_id === selectedPg)?.rooms || [];
+
+  const filteredTenants = tenants.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <div className={styles.dashboardPage}>
@@ -53,13 +137,17 @@ export default function TenantDirectory() {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Hostel</th>
                 <th>Room No</th>
                 <th>Phone</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
-              {MOCK_TENANTS.map((t, index) => (
+              {filteredTenants.length === 0 && !isLoading && (
+                <tr><td colSpan={4} className="text-center py-4 text-muted">No tenants found</td></tr>
+              )}
+              {filteredTenants.map((t, index) => (
                 <motion.tr 
                   key={t.id}
                   initial={{ opacity: 0, y: 10 }}
@@ -67,6 +155,7 @@ export default function TenantDirectory() {
                   transition={{ delay: index * 0.05 }}
                 >
                   <td className="font-semibold">{t.name}</td>
+                  <td>{t.hostel}</td>
                   <td>{t.room}</td>
                   <td>{t.phone}</td>
                   <td>
@@ -96,24 +185,79 @@ export default function TenantDirectory() {
                   <X size={24} />
                 </button>
               </div>
-              <div className={styles.modalBody}>
-                <div className={styles.cameraCaptureArea}>
-                  <Camera size={48} />
-                  <span>Click to scan Aadhar Card</span>
+              <div className={styles.modalBody} style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <div className={styles.cameraCaptureArea} style={{ padding: '20px' }}>
+                    <Camera size={32} />
+                    <span style={{ fontSize: '0.875rem' }}>Face Picture</span>
+                  </div>
+                  <div className={styles.cameraCaptureArea} style={{ padding: '20px' }}>
+                    <Camera size={32} />
+                    <span style={{ fontSize: '0.875rem' }}>Aadhar Card</span>
+                  </div>
                 </div>
                 
-                <form className={styles.formSection}>
-                  <FloatingInput label="Full Name" />
-                  <FloatingInput label="Phone Number" />
+                <form id="add-tenant-form" onSubmit={handleAddTenant} className={styles.formSection} style={{ gap: '1rem' }}>
                   
-                  <div className={styles.formGrid}>
-                    <FloatingInput label="Room Allocation" />
-                    <FloatingInput label="Move-in Date" type="date" />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Select Hostel</label>
+                      <select 
+                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)' }}
+                        value={selectedPg}
+                        onChange={(e) => { setSelectedPg(e.target.value); setSelectedRoom(''); }}
+                        required
+                      >
+                        <option value="">Choose Hostel...</option>
+                        {properties.map(p => (
+                          <option key={p.pg_id} value={p.pg_id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Allocate Room</label>
+                      <select 
+                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)' }}
+                        value={selectedRoom}
+                        onChange={(e) => setSelectedRoom(e.target.value)}
+                        required
+                        disabled={!selectedPg}
+                      >
+                        <option value="">Choose Room...</option>
+                        {currentRooms.map((r: any) => (
+                          <option key={r.room_id} value={r.room_id}>{r.room_number} ({r.floor})</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <FloatingInput label="Full Name" value={fullName} onChange={e=>setFullName(e.target.value)} required />
+                    <FloatingInput label="Move-in Date" type="date" value={moveInDate} onChange={e=>setMoveInDate(e.target.value)} required />
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <FloatingInput label="Phone Number" type="tel" value={phone} onChange={e=>setPhone(e.target.value)} required />
+                    <FloatingInput label="Parent Mobile" type="tel" value={parentPhone} onChange={e=>setParentPhone(e.target.value)} required />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Work/Study Status</label>
+                    <select 
+                      style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)' }}
+                      value={workStatus}
+                      onChange={(e) => setWorkStatus(e.target.value)}
+                      required
+                    >
+                      <option value="student">Student</option>
+                      <option value="employed">Employed</option>
+                      <option value="other">Other</option>
+                    </select>
                   </div>
                 </form>
               </div>
               <div className={styles.modalFooter}>
-                <AnimatedButton onClick={() => setShowModal(false)}>
+                <AnimatedButton type="submit" form="add-tenant-form" isLoading={isSaving}>
                   Save Tenant Profile
                 </AnimatedButton>
               </div>

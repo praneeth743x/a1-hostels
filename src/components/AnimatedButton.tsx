@@ -1,4 +1,4 @@
-import React, { ComponentProps } from 'react';
+import React, { type ComponentProps } from 'react';
 import { motion } from 'framer-motion';
 import './AnimatedButton.css';
 
@@ -7,12 +7,12 @@ interface AnimatedButtonProps extends ComponentProps<typeof motion.button> {
   isLoading?: boolean;
 }
 
-export const AnimatedButton: React.FC<AnimatedButtonProps> = ({ 
-  children, 
-  variant = 'primary', 
-  isLoading, 
-  className = '', 
-  ...props 
+export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
+  children,
+  variant = 'primary',
+  isLoading,
+  className = '',
+  ...props
 }) => {
   return (
     <motion.button

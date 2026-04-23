@@ -1,14 +1,54 @@
 "use client";
 
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Send } from 'lucide-react';
 import { AnimatedButton } from '@/components/AnimatedButton';
+import { getNotices, addNotice } from '@/app/actions/pgowner';
+import { supabase } from '@/lib/supabase';
 import styles from '../pgowner.module.css';
 
 export default function NoticeBoard() {
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [notices, setNotices] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function init() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setOwnerId(user.id);
+        const res = await getNotices(user.id);
+        if (res.success && res.data) {
+          setNotices(res.data);
+        }
+      }
+      setIsLoading(false);
+    }
+    init();
+  }, []);
+
+  const handleSendNotice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!message.trim() || !ownerId) return;
+    setIsSending(true);
+    
+    try {
+      const res = await addNotice(ownerId, message.trim());
+      if (res.success && res.data) {
+        setNotices([{ ...res.data[0], isOptimistic: true }, ...notices]);
+        setMessage('');
+      } else {
+        alert("Failed to send notice: " + res.error);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   return (
     <div className={styles.dashboardPage}>
@@ -30,7 +70,7 @@ export default function NoticeBoard() {
             <h3>Post New Notice</h3>
           </div>
           
-          <form className={styles.broadcastForm}>
+          <form className={styles.broadcastForm} onSubmit={handleSendNotice}>
             <div className={styles.textareaWrapper}>
               <textarea 
                 className={styles.broadcastTextarea}
@@ -43,16 +83,12 @@ export default function NoticeBoard() {
             </div>
 
             <AnimatedButton 
-              type="button" 
+              type="submit" 
               isLoading={isSending} 
               className={styles.sendBlastBtn}
-              onClick={() => {
-                setIsSending(true);
-                setTimeout(() => { setIsSending(false); setMessage(''); }, 1500);
-              }}
             >
               <Send size={18} />
-              <span>Broadcast to 45 Tenants</span>
+              <span>Broadcast to all Tenants</span>
             </AnimatedButton>
           </form>
         </motion.div>
@@ -65,16 +101,27 @@ export default function NoticeBoard() {
         >
           <h3 className={styles.infoTitle}>Recent Notices</h3>
           <ul className={`${styles.infoList} text-muted`}>
-            <li>
-              <strong>WIFI Maintenance</strong>
-              <p className="text-sm mt-1">Wifi will be down for 30 mins tonight.</p>
-              <span className="text-xs">Yesterday, 4:00 PM</span>
-            </li>
-            <li className="mt-4">
-              <strong>Rent Reminder</strong>
-              <p className="text-sm mt-1">Please pay rent by the 5th.</p>
-              <span className="text-xs">Oct 28, 9:00 AM</span>
-            </li>
+            <AnimatePresence>
+              {notices.length === 0 && !isLoading && (
+                <li className="text-sm">No recent notices found.</li>
+              )}
+              {notices.map((notice, i) => (
+                <motion.li 
+                  key={notice.notice_id || `opt-${i}`}
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className={i > 0 ? "mt-4" : ""}
+                >
+                  <strong>{notice.message.split('.')[0] || 'Notice'}</strong>
+                  <p className="text-sm mt-1">{notice.message}</p>
+                  <span className="text-xs">
+                    {new Date(notice.created_at).toLocaleString('en-IN', {
+                      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+                    })}
+                  </span>
+                </motion.li>
+              ))}
+            </AnimatePresence>
           </ul>
         </motion.div>
       </div>

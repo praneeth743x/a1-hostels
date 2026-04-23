@@ -1,6 +1,6 @@
 "use client";
 
-import React, { ComponentProps } from 'react';
+import React, { type ComponentProps } from 'react';
 import { motion } from 'framer-motion';
 import './AnimatedButton.css';
 import { clsx } from 'clsx';

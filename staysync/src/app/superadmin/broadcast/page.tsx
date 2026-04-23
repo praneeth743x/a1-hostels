@@ -4,27 +4,58 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { MessageSquare, Send } from 'lucide-react';
 import { AnimatedButton } from '@/components/AnimatedButton';
+import { supabase } from '@/lib/supabase';
 import styles from '../superadmin.module.css';
 
 export default function GlobalBroadcast() {
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const handleBroadcast = (e: React.FormEvent) => {
+  const handleBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim()) return;
 
     setIsSending(true);
-    // Mock API call for WhatsApp Blast
-    setTimeout(() => {
-      setIsSending(false);
+    setErrorMsg('');
+
+    try {
+      // Get all property IDs
+      const { data: properties, error: propErr } = await supabase
+        .from('properties')
+        .select('pg_id');
+        
+      if (propErr) throw propErr;
+      
+      if (properties && properties.length > 0) {
+        // Create an array of notices to insert
+        const noticesToInsert = properties.map(p => ({
+          pg_id: p.pg_id,
+          message: message.trim(),
+        }));
+        
+        const { error: insertErr } = await supabase
+          .from('notices')
+          .insert(noticesToInsert);
+          
+        if (insertErr) throw insertErr;
+      }
+      
+      // Mock API call for WhatsApp Blast to all tenants
+      // sendWhatsAppReceipt(...)
+
       setSent(true);
       setTimeout(() => {
         setSent(false);
         setMessage('');
       }, 3000);
-    }, 2000);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || 'Failed to broadcast');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
@@ -49,6 +80,7 @@ export default function GlobalBroadcast() {
           </div>
           
           <form onSubmit={handleBroadcast} className={styles.broadcastForm}>
+            {errorMsg && <div className="text-danger-red text-sm mb-2">{errorMsg}</div>}
             <div className={styles.textareaWrapper}>
               <textarea 
                 className={styles.broadcastTextarea}
