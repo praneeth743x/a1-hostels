@@ -1,248 +1,248 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { IndianRupee, AlertCircle, BedDouble } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { useSearchParams } from 'next/navigation';
-import styles from './pgowner.module.css';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
+import { 
+  Wallet, 
+  AlertCircle, 
+  BedDouble, 
+  Users, 
+  Calendar,
+  UserPlus, 
+  CreditCard, 
+  Receipt, 
+  BarChart2, 
+  BellRing 
+} from 'lucide-react';
+import styles from './dashboard.module.css';
 
 export default function PGOwnerDashboard() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [kpi, setKpi] = useState({ collected: 0, overdue: 0, overdueCount: 0, bedsAvailable: 0, totalBeds: 0, availableRooms: 0 });
-  const [roomData, setRoomData] = useState<any[]>([]);
-  const [dashboardTitle, setDashboardTitle] = useState('Overview of all your managed hostels');
-  const searchParams = useSearchParams();
-  const selectedPgId = searchParams.get('pg_id');
+  const [timeFilter, setTimeFilter] = useState<'Day' | 'Month' | 'Year'>('Month');
+  const [selectedDate, setSelectedDate] = useState<string>('July, 2026');
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+  // Dynamic values depending on filter selection
+  const getPeriodTitle = () => {
+    if (timeFilter === 'Day') return 'Daily View';
+    if (timeFilter === 'Year') return 'Yearly View';
+    return 'Monthly View';
+  };
 
-        // Fetch properties for this owner
-        let query = supabase.from('properties').select('pg_id, name').eq('owner_id', user.id);
-        if (selectedPgId) {
-          query = query.eq('pg_id', selectedPgId);
-        }
-        
-        const { data: properties } = await query;
-        
-        if (!properties || properties.length === 0) {
-          setKpi({ collected: 0, overdue: 0, overdueCount: 0, bedsAvailable: 0, totalBeds: 0, availableRooms: 0 });
-          setRoomData([]);
-          return;
-        }
+  const getDateDisplayText = () => {
+    if (timeFilter === 'Day') return '22 July, 2026';
+    if (timeFilter === 'Year') return 'Year 2026';
+    return selectedDate;
+  };
 
-        if (selectedPgId && properties.length > 0) {
-          setDashboardTitle(`${properties[0].name} (Hostel ID: ${selectedPgId.split('-')[0]})`);
-        } else {
-          setDashboardTitle('Overview of all your managed hostels');
-        }
-
-        const pgIds = properties.map(p => p.pg_id);
-
-        // Fetch Rooms
-        const { data: rooms } = await supabase.from('rooms').select('*').in('pg_id', pgIds);
-        
-        // Fetch Tenants
-        const { data: tenants } = await supabase.from('tenants').select('tenant_id, room_id').in('pg_id', pgIds).eq('is_active', true);
-        
-        // Fetch Payments
-        const { data: payments } = await supabase.from('payments').select('amount, status').in('pg_id', pgIds);
-
-        // Calculate KPIs
-        let totalBeds = 0;
-        let occupiedBeds = tenants?.length || 0;
-        let availableRoomsCount = 0;
-
-        // Aggregate Room Map Data
-        const floorMap: Record<string, any[]> = {};
-
-        if (rooms) {
-          rooms.forEach(room => {
-            totalBeds += room.total_beds;
-            const tenantsInRoom = tenants?.filter(t => t.room_id === room.room_id).length || 0;
-            
-            let status = 'available';
-            if (tenantsInRoom >= room.total_beds) status = 'occupied';
-            else if (tenantsInRoom > 0) status = 'partial';
-            
-            if (status === 'available') availableRoomsCount++;
-
-            if (!floorMap[room.floor]) floorMap[room.floor] = [];
-            floorMap[room.floor].push({
-              num: room.room_number,
-              status,
-              beds: room.total_beds,
-              occ: tenantsInRoom
-            });
-          });
-        }
-
-        const formattedRoomData = Object.keys(floorMap).map(floor => ({
-          floor,
-          rooms: floorMap[floor].sort((a, b) => a.num.localeCompare(b.num))
-        }));
-
-        let collected = 0;
-        let overdue = 0;
-        let overdueCount = 0;
-
-        if (payments) {
-          payments.forEach(p => {
-            if (p.status === 'paid') collected += p.amount;
-            else if (p.status === 'pending' || p.status === 'overdue') {
-              overdue += p.amount;
-              overdueCount++;
-            }
-          });
-        }
-
-        setKpi({
-          collected,
-          overdue,
-          overdueCount,
-          bedsAvailable: totalBeds - occupiedBeds,
-          totalBeds,
-          availableRooms: availableRoomsCount
-        });
-
-        setRoomData(formattedRoomData);
-        
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchData();
-  }, []);
   return (
-    <div className={styles.dashboardPage}>
-      <header className={styles.pageHeader}>
-        <div>
-          <h1 className={styles.pageTitle}>Command Center</h1>
-          <p className={styles.pageSubtitle}>{dashboardTitle}</p>
-        </div>
-      </header>
-
-      {/* KPI Cards */}
-      <div className={styles.kpiGrid}>
-        <AnimatePresence mode="wait">
-          {isLoading ? (
-            // SKELETON SCREENS
-            <>
-              {[1, 2, 3].map((item) => (
-                <motion.div 
-                  key={`skeleton-${item}`}
-                  className={`${styles.kpiCard} glass-card`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  style={{ background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }}
-                >
-                  <div style={{ width: 64, height: 64, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.5)', marginBottom: 16 }}></div>
-                  <div style={{ width: '60%', height: 24, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.5)', marginBottom: 8 }}></div>
-                  <div style={{ width: '80%', height: 32, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.6)', marginBottom: 8 }}></div>
-                  <div style={{ width: '40%', height: 16, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.4)' }}></div>
-                </motion.div>
-              ))}
-            </>
-          ) : (
-            // ACTUAL DATA CARDS
-            <>
-              <motion.div 
-                className={`${styles.kpiCard} glass-card`}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <IndianRupee className={`${styles.kpiIcon} text-indigo`} size={64} />
-                <h3 className={styles.kpiLabel}>Rent Collected</h3>
-                <div className={`${styles.kpiValue} text-indigo`}>₹{kpi.collected.toLocaleString()}</div>
-                <div className={`${styles.kpiTrend} text-success-green`}>All time total</div>
-              </motion.div>
-
-              <motion.div 
-                className={`${styles.kpiCard} glass-card`}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-              >
-                <AlertCircle className={`${styles.kpiIcon} text-danger-red`} size={64} />
-                <h3 className={styles.kpiLabel}>Overdue Payments</h3>
-                <div className={`${styles.kpiValue} text-danger-red`}>₹{kpi.overdue.toLocaleString()}</div>
-                <div className={styles.kpiTrend}>From {kpi.overdueCount} tenants</div>
-              </motion.div>
-
-              <motion.div 
-                className={`${styles.kpiCard} glass-card`}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-              >
-                <BedDouble className={`${styles.kpiIcon} text-cyan`} size={64} />
-                <h3 className={styles.kpiLabel}>Bed Availability</h3>
-                <div className={`${styles.kpiValue} text-cyan`}>{kpi.bedsAvailable} / {kpi.totalBeds}</div>
-                <div className={styles.kpiTrend}>Beds empty across {kpi.availableRooms} rooms</div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
+    <div className={styles.dashboardContainer}>
+      <div className={styles.desktopPageHeader}>
+        <h1 className={styles.desktopPageTitle}>Command Center</h1>
+        <p className={styles.desktopPageSubtitle}>Overview of all your managed hostels</p>
       </div>
 
-      {/* Room Map */}
-      <motion.div 
-        className={`${styles.roomMapSection} glass-card`}
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.3 }}
-      >
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Visual Room Map</h2>
-          <div className={styles.roomLegend}>
-            <div className={styles.legendItem}>
-              <div className={`${styles.legendDot} ${styles.dotAvailable}`}></div> Available
-            </div>
-            <div className={styles.legendItem}>
-              <div className={`${styles.legendDot} ${styles.dotPartial}`}></div> Partially Filled
-            </div>
-            <div className={styles.legendItem}>
-              <div className={`${styles.legendDot} ${styles.dotOccupied}`}></div> Full
-            </div>
-          </div>
-        </div>
-
-        <div className={styles.floorPlan}>
-          {!isLoading && roomData.map((floorData, i) => (
-            <div key={i} className={styles.floorRow}>
-              <h3 className={styles.floorLabel}>{floorData.floor}</h3>
-              <div className={styles.roomGrid}>
-                {floorData.rooms.map((room: any, j: number) => {
-                  let statusClass = styles.roomAvailable;
-                  if (room.status === 'occupied') statusClass = styles.roomOccupied;
-                  if (room.status === 'partial') statusClass = styles.roomPartial;
-
-                  return (
-                    <motion.div 
-                      key={room.num}
-                      className={`${styles.roomCard} ${statusClass}`}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.1 + (i * 0.1) + (j * 0.05) }}
-                    >
-                      <span className={styles.roomNumber}>{room.num}</span>
-                      <span className={styles.roomStatus}>{room.status}</span>
-                      <span className="text-muted text-sm">{room.occ}/{room.beds} Beds</span>
-                    </motion.div>
-                  )
-                })}
-              </div>
-            </div>
+      <div className={styles.contentArea}>
+        {/* 1. Day / Month / Year Segmented Control */}
+        <div className={styles.filterSegmentContainer}>
+          {(['Day', 'Month', 'Year'] as const).map((filter) => (
+            <button
+              key={filter}
+              className={`${styles.segmentBtn} ${timeFilter === filter ? styles.segmentBtnActive : ''}`}
+              onClick={() => {
+                setTimeFilter(filter);
+              }}
+            >
+              {filter}
+            </button>
           ))}
         </div>
-      </motion.div>
+
+        {/* 2. Date Picker Selector */}
+        <div className={styles.dateSelectorBox}>
+          <span className={styles.dateSelectorText}>{getDateDisplayText()}</span>
+          <Calendar size={18} className={styles.dateIcon} />
+        </div>
+
+        {/* 3. 2x2 Grid of Dashboard Cards (Matching Screenshot 1) */}
+        <div className={styles.dashboardGrid}>
+          {/* Card 1: Monthly View / Collected Rent */}
+          <motion.div 
+            className={styles.statCard}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.05 }}
+          >
+            <div>
+              <div className={styles.cardHeader}>
+                <div className={`${styles.iconBadge} ${styles.iconBadgeGreen}`}>
+                  <Wallet size={20} />
+                </div>
+                <span className={styles.cardTitle}>{getPeriodTitle()}</span>
+              </div>
+              <div className={styles.mainValueDark}>₹40,099</div>
+              <div className={styles.subLabel}>Collected Rent</div>
+              <div className={styles.progressBarTrack}>
+                <div className={styles.progressBarFillGreen} style={{ width: '53%' }} />
+              </div>
+            </div>
+
+            <div className={styles.cardBottomRow}>
+              <div className={styles.bottomCol}>
+                <span className={styles.bottomLabel}>Expected</span>
+                <span className={styles.bottomValue}>₹75,599</span>
+              </div>
+              <div className={styles.bottomColRight}>
+                <span className={styles.bottomLabel}>Collection Rate</span>
+                <span className={styles.bottomValueGreen}>53%</span>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Card 2: Outstanding / Pending Rent Payments */}
+          <motion.div 
+            className={styles.statCard}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.1 }}
+          >
+            <div>
+              <div className={styles.cardHeader}>
+                <div className={`${styles.iconBadge} ${styles.iconBadgeRed}`}>
+                  <AlertCircle size={20} />
+                </div>
+                <span className={styles.cardTitle}>Outstanding</span>
+              </div>
+              <div className={styles.mainValueRed}>₹35,500</div>
+              <div className={styles.subLabel}>Pending Rent Payments</div>
+            </div>
+
+            <div>
+              <div className={styles.cardDivider} />
+              <div className={styles.cardBottomRow}>
+                <div className={styles.bottomCol}>
+                  <span className={styles.bottomLabel}>Defaulters</span>
+                  <span className={styles.bottomValueRed}>4 Tenants</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Card 3: Capacity / Live Occupancy Rate */}
+          <motion.div 
+            className={styles.statCard}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.15 }}
+          >
+            <div>
+              <div className={styles.cardHeader}>
+                <div className={`${styles.iconBadge} ${styles.iconBadgeBlue}`}>
+                  <BedDouble size={20} />
+                </div>
+                <span className={styles.cardTitle}>Capacity</span>
+              </div>
+              <div className={styles.mainValueDark}>67%</div>
+              <div className={styles.subLabel}>Live Occupancy Rate</div>
+              <div className={styles.progressBarTrack}>
+                <div className={styles.progressBarFillBlue} style={{ width: '67%' }} />
+              </div>
+            </div>
+
+            <div className={styles.bedsGrid}>
+              <div className={styles.bedPill}>
+                <span className={styles.bedPillLabel}>Filled Beds</span>
+                <span className={styles.bedPillValueBlue}>6</span>
+              </div>
+              <div className={styles.bedPill}>
+                <span className={styles.bedPillLabel}>Vacant Beds</span>
+                <span className={styles.bedPillValueDark}>3</span>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Card 4: Tenant Base / Total Tenants */}
+          <motion.div 
+            className={styles.statCard}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.2 }}
+          >
+            <div>
+              <div className={styles.cardHeader}>
+                <div className={`${styles.iconBadge} ${styles.iconBadgePurple}`}>
+                  <Users size={20} />
+                </div>
+                <span className={styles.cardTitle}>Tenant Base</span>
+              </div>
+              <div className={styles.mainValueDark}>8</div>
+              <div className={styles.subLabel}>Total Tenants (All Time)</div>
+            </div>
+
+            <div>
+              <div className={styles.cardDivider} />
+              <div className={styles.cardBottomRow}>
+                <div className={styles.bottomCol}>
+                  <span className={styles.bottomLabel}>Currently Active</span>
+                  <span className={styles.bottomValueGreen}>6</span>
+                </div>
+                <div className={styles.bottomColRight}>
+                  <span className={styles.bottomLabel}>Inactive / Past</span>
+                  <span className={styles.bottomValue}>2</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Quick Actions (Optional Section) */}
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>QUICK ACTIONS</h2>
+        </div>
+
+        <div className={styles.quickActionsGrid}>
+          <div className={styles.actionCard}>
+            <div className={`${styles.actionIconWrapper} ${styles.iconBlue}`}>
+              <UserPlus size={22} />
+            </div>
+            <span className={styles.actionText}>Add Tenant</span>
+          </div>
+
+          <div className={styles.actionCard}>
+            <div className={`${styles.actionIconWrapper} ${styles.iconGreen}`}>
+              <CreditCard size={22} />
+            </div>
+            <span className={styles.actionText}>Add Payment</span>
+          </div>
+
+          <div className={styles.actionCard}>
+            <div className={`${styles.actionIconWrapper} ${styles.iconRed}`}>
+              <Receipt size={22} />
+            </div>
+            <span className={styles.actionText}>Add Expense</span>
+          </div>
+
+          <div className={styles.actionCard}>
+            <div className={`${styles.actionIconWrapper} ${styles.iconPurple}`}>
+              <BarChart2 size={22} />
+            </div>
+            <span className={styles.actionText}>Reports</span>
+          </div>
+
+          <div className={styles.actionCard}>
+            <div className={`${styles.actionIconWrapper} ${styles.iconYellow}`}>
+              <BellRing size={22} />
+            </div>
+            <span className={styles.actionText}>Send Reminders</span>
+          </div>
+
+          <div className={styles.actionCard}>
+            <div className={`${styles.actionIconWrapper} ${styles.iconBlueDark}`}>
+              <BedDouble size={22} />
+            </div>
+            <span className={styles.actionText}>Room Management</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
+

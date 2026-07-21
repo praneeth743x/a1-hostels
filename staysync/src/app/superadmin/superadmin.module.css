@@ -449,3 +449,107 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ========================================= */
+/* MOBILE & TABLET RESPONSIVENESS (< 1024px) */
+/* ========================================= */
+@media (max-width: 1024px) {
+  .superadminLayout {
+    flex-direction: column;
+  }
+  
+  /* Sidebar becomes Bottom Navigation */
+  .sidebar {
+    position: fixed;
+    bottom: 0;
+    top: auto;
+    width: 100%;
+    height: 70px;
+    flex-direction: row;
+    border-right: none;
+    border-top: 1px solid var(--border-light);
+    z-index: 9999;
+    padding: 0;
+  }
+  
+  .sidebarHeader { 
+    display: none; 
+  }
+  
+  .sidebarNav {
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: center;
+    padding: 0.5rem;
+    flex: 1;
+  }
+  
+  .navLink {
+    flex-direction: column;
+    padding: 0.5rem;
+    gap: 0.2rem;
+    font-size: 0.65rem;
+    justify-content: center;
+    border-radius: 8px;
+    flex: 1;
+  }
+  
+  .navLink span {
+    font-size: 0.65rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  
+  .sidebarFooter {
+    display: flex;
+    padding: 0.5rem;
+    border-top: none;
+    border-left: 1px solid var(--border-light);
+    align-items: center;
+  }
+  
+  .logoutBtn {
+    flex-direction: column;
+    padding: 0.5rem;
+    gap: 0.2rem;
+    font-size: 0.65rem;
+    justify-content: center;
+    border-radius: 8px;
+  }
+  
+  .logoutBtn span {
+    font-size: 0.65rem;
+  }
+  
+  @media (max-width: 480px) {
+    .navLink span, .logoutBtn span {
+      display: none;
+    }
+    .sidebar {
+      height: 60px;
+    }
+  }
+  
+  .mainContent {
+    margin-left: 0;
+    padding-bottom: 90px;
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  .metricsGrid {
+    grid-template-columns: 1fr;
+    padding: 0 1rem;
+  }
+
+  /* Make tables horizontally scrollable */
+  .dataCard {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .dataCard table {
+    min-width: 600px; /* Force minimum width to enable scroll */
+  }
+}

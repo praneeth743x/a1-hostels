@@ -43,7 +43,7 @@ export default function SuperAdminOverview() {
         let totalRev = 0;
         let pending = 0;
         if (payments) {
-          payments.forEach(p => {
+          payments.forEach((p: any) => {
             if (p.status === 'paid') totalRev += Number(p.amount);
             if (p.status === 'pending') pending += Number(p.amount);
           });

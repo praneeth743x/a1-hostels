@@ -67,6 +67,8 @@ export default function ProfilePage() {
   };
 
   const handleLogout = async () => {
+    localStorage.clear();
+    sessionStorage.clear();
     await supabase.auth.signOut();
     router.push('/');
   };

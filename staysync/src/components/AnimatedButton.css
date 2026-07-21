@@ -1,55 +1,120 @@
 .animated-button {
   width: 100%;
-  padding: 14px 24px;
-  border-radius: var(--radius-md);
-  font-weight: 600;
-  font-size: 1rem;
+  padding: 12px 24px;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.2px;
   display: flex;
   justify-content: center;
   align-items: center;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  gap: 8px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   outline: none;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+.animated-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 45%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0));
+  pointer-events: none;
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
 }
 
 .animated-button:disabled {
-  opacity: 0.7;
+  opacity: 0.65;
   cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
+/* Primary (Indigo-Purple Royal Gradient) */
 .btn-primary {
-  background-color: var(--primary-indigo);
-  color: var(--bg-white);
-  box-shadow: var(--shadow-md);
+  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--primary-indigo-light);
-  box-shadow: var(--shadow-lg);
+  background: linear-gradient(135deg, #4338CA 0%, #6D28D9 100%);
+  box-shadow: 0 6px 20px rgba(79, 70, 229, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
+/* Success (Lush Emerald Green Gradient) */
+.btn-success {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.btn-success:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Danger (Crimson Rose Gradient) */
+.btn-danger {
+  background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Secondary (Neutral Slate Gradient) */
 .btn-secondary {
-  background-color: var(--secondary-cyan);
-  color: var(--text-main);
-  box-shadow: var(--shadow-md);
+  background: linear-gradient(135deg, #64748B 0%, #475569 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(100, 116, 139, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background-color: var(--secondary-cyan-dark);
+  background: linear-gradient(135deg, #475569 0%, #334155 100%);
+  box-shadow: 0 6px 18px rgba(100, 116, 139, 0.35);
 }
 
+/* Outline (Crisp Glass White) */
 .btn-outline {
-  background-color: transparent;
-  color: var(--primary-indigo);
-  border: 1px solid var(--primary-indigo);
+  background-color: #FFFFFF;
+  color: #334155;
+  border: 1.5px solid #E2E8F0;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
 .btn-outline:hover:not(:disabled) {
-  background-color: rgba(63, 81, 181, 0.05);
+  background-color: #F8FAFC;
+  border-color: #CBD5E1;
+  color: #0F172A;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
-.btn-danger {
-  background-color: var(--danger-red);
-  color: var(--bg-white);
+/* Ghost */
+.btn-ghost {
+  background-color: transparent;
+  color: #475569;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background-color: #F1F5F9;
+  color: #0F172A;
 }
 
 .spinner {
@@ -61,13 +126,15 @@
   animation: spin 0.8s linear infinite;
 }
 
-.btn-outline .spinner {
-  border-top-color: var(--primary-indigo);
-  border-left-color: rgba(63, 81, 181, 0.3);
-  border-right-color: rgba(63, 81, 181, 0.3);
-  border-bottom-color: rgba(63, 81, 181, 0.3);
+.btn-outline .spinner,
+.btn-ghost .spinner {
+  border-top-color: #4F46E5;
+  border-left-color: rgba(79, 70, 229, 0.2);
+  border-right-color: rgba(79, 70, 229, 0.2);
+  border-bottom-color: rgba(79, 70, 229, 0.2);
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+

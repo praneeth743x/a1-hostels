@@ -5,8 +5,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Send } from 'lucide-react';
 import { AnimatedButton } from '@/components/AnimatedButton';
 import { getNotices, addNotice } from '@/app/actions/pgowner';
-import { supabase } from '@/lib/supabase';
-import styles from '../pgowner.module.css';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import styles from '../pages.module.css';
 
 export default function NoticeBoard() {
   const [message, setMessage] = useState('');
@@ -16,18 +17,17 @@ export default function NoticeBoard() {
   const [ownerId, setOwnerId] = useState<string | null>(null);
 
   useEffect(() => {
-    async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        setOwnerId(user.id);
-        const res = await getNotices(user.id);
+        setOwnerId(user.uid);
+        const res = await getNotices(user.uid);
         if (res.success && res.data) {
           setNotices(res.data);
         }
       }
       setIsLoading(false);
-    }
-    init();
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleSendNotice = async (e: React.FormEvent) => {

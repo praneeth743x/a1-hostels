@@ -1,0 +1,430 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Building, Image as ImageIcon, Plus, MapPin, X, Settings, Trash2, ChevronRight, Building2, ChevronLeft, Banknote, Users } from 'lucide-react';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { FloatingInput } from '@/components/FloatingInput';
+import { AnimatedButton } from '@/components/AnimatedButton';
+import { addSubHostel, getPropertiesWithRooms, deleteProperty, updateProperty } from '@/app/actions/pgowner';
+import { useRouter } from 'next/navigation';
+import styles from '../pages.module.css';
+import { CustomSelect } from '@/components/CustomSelect';
+
+export default function PropertiesManager() {
+  const [properties, setProperties] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [step, setStep] = useState(1);
+  const [hostelData, setHostelData] = useState({ name: '', address: '' });
+  const [floorsCount, setFloorsCount] = useState(1);
+  const [roomsPerFloor, setRoomsPerFloor] = useState<Record<number, number>>({ 1: 2 });
+  const [roomShares, setRoomShares] = useState<Record<string, number>>({});
+  const [pricing, setPricing] = useState<Record<number, string>>({ 1: '12000', 2: '8000', 3: '6500', 4: '5000', 5: '4500' });
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Settings State
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [editPropId, setEditPropId] = useState<string | null>(null);
+  const [editData, setEditData] = useState({ name: '', address: '' });
+  
+  const router = useRouter();
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const res = await getPropertiesWithRooms(user.uid);
+        if (res.success && res.data) {
+          setProperties(res.data);
+        }
+        setIsLoading(false);
+      } else {
+        router.push('/');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleAddSubHostel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (step < 3) {
+      setStep(step + 1);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Not logged in");
+
+      const roomsToInsert = [];
+      for (let f = 1; f <= floorsCount; f++) {
+         const rCount = roomsPerFloor[f] || 1;
+         for (let r = 1; r <= rCount; r++) {
+           const roomNum = `${f}0${r}`;
+           roomsToInsert.push({ floor: `Floor ${f}`, roomNum, beds: roomShares[roomNum] || 2 });
+         }
+      }
+
+      if (editPropId) {
+        const res = await updateProperty(editPropId, hostelData.name, hostelData.address, roomsToInsert, pricing);
+        if (!res.success) throw new Error(res.error);
+      } else {
+        const res = await addSubHostel(user.uid, hostelData.name, hostelData.address, roomsToInsert, pricing);
+        if (!res.success) throw new Error(res.error);
+      }
+      
+      // Fetch fresh list from database to ensure absolute sync
+      const freshProps = await getPropertiesWithRooms(user.uid);
+      if (freshProps.success && freshProps.data) {
+        setProperties(freshProps.data);
+      }
+      
+      router.refresh();
+      window.dispatchEvent(new Event('hostelsUpdated'));
+      
+      // Reset Modal
+      setShowAddModal(false);
+      setStep(1);
+      setEditPropId(null);
+      setHostelData({ name: '', address: '' });
+      setFloorsCount(1);
+      setRoomsPerFloor({ 1: 2 });
+      setRoomShares({});
+    } catch (err: any) {
+      alert("Failed to save hostel: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteProperty = async (pgId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you absolutely sure? This will delete the hostel, ALL rooms, and ALL tenants inside it forever!")) return;
+    
+    try {
+      const res = await deleteProperty(pgId);
+      if (!res.success) throw new Error(res.error);
+      
+      setProperties(properties.filter(p => p.pg_id !== pgId));
+      router.refresh();
+      window.dispatchEvent(new Event('hostelsUpdated'));
+    } catch (err: any) {
+      alert("Failed to delete property: " + err.message);
+    }
+  };
+
+  const openSettings = (prop: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditPropId(prop.pg_id);
+    setHostelData({ name: prop.name, address: prop.address });
+    
+    // Try to parse existing pricing
+    try {
+      if (prop.theme_primary_color) {
+        const parsed = JSON.parse(prop.theme_primary_color);
+        if (parsed && typeof parsed === 'object') {
+          setPricing(parsed);
+        }
+      }
+    } catch (e) {}
+
+    if (prop.rooms && Array.isArray(prop.rooms) && prop.rooms.length > 0) {
+      let maxFloor = 1;
+      const rCount: Record<number, number> = {};
+      const shares: Record<string, number> = {};
+      
+      prop.rooms.forEach((r: any) => {
+        const fStr = r.floor.replace('Floor ', '');
+        const fNum = parseInt(fStr) || 1;
+        if (fNum > maxFloor) maxFloor = fNum;
+        
+        rCount[fNum] = (rCount[fNum] || 0) + 1;
+        shares[r.room_number] = r.total_beds || 2;
+      });
+      
+      setFloorsCount(maxFloor);
+      setRoomsPerFloor(rCount);
+      setRoomShares(shares);
+    } else {
+      setFloorsCount(1);
+      setRoomsPerFloor({ 1: 2 });
+      setRoomShares({});
+    }
+
+    setStep(1);
+    setShowAddModal(true);
+  };
+
+  const generateRoomInputs = () => {
+    const inputs = [];
+    for (let f = 1; f <= floorsCount; f++) {
+       const floorRooms = [];
+       const rCount = roomsPerFloor[f] || 1;
+       for (let r = 1; r <= rCount; r++) {
+         const roomNum = `${f}${r.toString().padStart(2, '0')}`;
+         floorRooms.push(
+           <div key={roomNum} style={{ display: 'flex', flexDirection: 'column', padding: '12px', backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+               <span style={{ fontWeight: 700, color: '#334155', fontSize: '1.1rem' }}>{roomNum}</span>
+               <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '12px' }}>Room</span>
+             </div>
+             <div style={{ position: 'relative', width: '100px' }}>
+               <CustomSelect
+                 value={(roomShares[roomNum] || 2).toString()}
+                 onChange={(val) => setRoomShares({...roomShares, [roomNum]: parseInt(val)})}
+                 options={[1, 2, 3, 4, 5, 6].map(num => ({
+                   value: num.toString(),
+                   label: `${num} ${num === 1 ? 'Bed' : 'Beds'}`
+                 }))}
+               />
+             </div>
+           </div>
+         );
+       }
+       inputs.push(
+         <div key={`fg-${f}`} style={{ marginBottom: '1.5rem', backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+           <h4 style={{ margin: '0 0 1rem 0', fontWeight: 700, color: '#0f172a', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+             <div style={{ width: 24, height: 24, borderRadius: '6px', backgroundColor: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Building2 size={14} color="#4f46e5" /></div>
+             Floor {f}
+           </h4>
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '0.75rem' }}>
+             {floorRooms}
+           </div>
+         </div>
+       );
+    }
+    return inputs;
+  };
+
+  const handleMockImageUpload = (pgId: string) => {
+    // In a real app, this would trigger a file picker and upload to Supabase Storage bucket.
+    alert("In production, this will open the camera/gallery and securely upload the image to the Supabase Storage bucket.");
+  };
+
+  return (
+    <div className={styles.dashboardPage} style={{ marginTop: '-16px' }}>
+      <header className={styles.pageHeader}>
+
+        <div className={styles.headerActions}>
+          <button 
+            className={styles.addTenantBtn}
+            onClick={() => {
+              setEditPropId(null);
+              setHostelData({ name: '', address: '' });
+              setStep(1);
+              setShowAddModal(true);
+            }}
+          >
+            <Plus size={18} /> Add Sub Hostel
+          </button>
+        </div>
+      </header>
+
+      <div className={styles.propertiesGrid}>
+        {isLoading ? (
+          <div className="animate-pulse bg-slate-200 h-64 rounded-2xl" style={{ backgroundColor: '#e2e8f0', height: '16rem', borderRadius: '1rem' }}></div>
+        ) : properties.length === 0 ? (
+          <div className={styles.emptyStateCard}>
+            No hostels found. Click "Add Sub Hostel" to create one.
+          </div>
+        ) : (
+          properties.map((prop, i) => (
+            <motion.div 
+              key={prop.pg_id}
+              className={styles.propertyCard}
+              onClick={() => router.push(`/pgowner/properties/${prop.pg_id}`)}
+              style={{ cursor: 'pointer' }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+            >
+              <div className={styles.propertyImageArea}>
+                {/* Mock Image Placeholder */}
+                <div className={styles.noImagePlaceholder}>
+                  {/* Subtle mesh background is defined in CSS */}
+                  <ImageIcon size={40} className={styles.placeholderIcon} />
+                  <span className={styles.placeholderText}>No Images Uploaded</span>
+                </div>
+                
+                <button 
+                  onClick={(e) => { e.stopPropagation(); handleMockImageUpload(prop.pg_id); }}
+                  className={styles.uploadPhotoGlassBtn}
+                >
+                  <Camera size={14} /> <span>Upload Photo</span>
+                </button>
+              </div>
+              
+              <div className={styles.propertyDetails}>
+                <div className={styles.propertyHeader}>
+                  <h3 className={styles.propertyName}>{prop.name}</h3>
+                  <span className={styles.activeStatus}>
+                    <span className={styles.pulseDot}></span> Active
+                  </span>
+                </div>
+                <div className={styles.propertyAddress}>
+                  <MapPin size={14} color="#64748b" />
+                  <span className={styles.addressText}>{prop.address || 'No address provided'}</span>
+                </div>
+              </div>
+
+              <div className={styles.propertyActions}>
+                <button 
+                  className={styles.manageBtn}
+                  onClick={(e) => openSettings(prop, e)}
+                >
+                  <Settings size={16} /> Manage
+                </button>
+                <button 
+                  className={styles.deleteBtn}
+                  onClick={(e) => handleDeleteProperty(prop.pg_id, e)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </motion.div>
+          ))
+        )}
+      </div>
+
+      <AnimatePresence>
+        {showAddModal && (
+          <div className={styles.modalOverlay} style={{ padding: '1rem' }}>
+            <motion.div 
+              className={styles.modalContent}
+              style={{ maxWidth: '700px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+            >
+              <div className={styles.modalHeader} style={{ paddingBottom: '1rem', borderBottom: '1px solid #f1f5f9' }}>
+                <h2>
+                  {step === 1 ? (editPropId ? 'Edit Sub Hostel' : 'Add Sub Hostel') : 
+                   step === 2 ? 'Room Configuration' : 'Pricing Configuration'}
+                </h2>
+                <button className={styles.closeBtn} onClick={() => { setShowAddModal(false); setStep(1); setEditPropId(null); }}>
+                  <X size={24} />
+                </button>
+              </div>
+              <div className={styles.modalBody} style={{ flex: 1, overflowY: 'auto', padding: '1rem', backgroundColor: '#f8fafc' }}>
+                <form id="add-hostel-form" onSubmit={handleAddSubHostel} className={styles.formSection}>
+                  
+                  {step === 1 && (
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+                      <div style={{ backgroundColor: '#fff', padding: '1rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                        <FloatingInput 
+                          label="Hostel Name" 
+                          value={hostelData.name} 
+                          onChange={e => setHostelData({...hostelData, name: e.target.value})} 
+                          required 
+                        />
+                        <div style={{ marginTop: '1rem' }}></div>
+                        <FloatingInput 
+                          label="Address / Location Link" 
+                          value={hostelData.address} 
+                          onChange={e => setHostelData({...hostelData, address: e.target.value})} 
+                          required 
+                        />
+                      </div>
+
+                      <div style={{ marginTop: '1.5rem', backgroundColor: '#fff', padding: '1rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                          <label style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>Total Floors</label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button type="button" onClick={() => {
+                              const val = Math.max(1, floorsCount - 1);
+                              setFloorsCount(val);
+                            }} style={{ width: 36, height: 36, borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '1.2rem', color: '#475569' }}>-</button>
+                            <span style={{ fontWeight: 700, width: '28px', textAlign: 'center', fontSize: '1.1rem', color: '#0f172a' }}>{floorsCount}</span>
+                            <button type="button" onClick={() => {
+                              const val = Math.min(10, floorsCount + 1);
+                              setFloorsCount(val);
+                              const newRoomsPerFloor = {...roomsPerFloor};
+                              if(!newRoomsPerFloor[val]) newRoomsPerFloor[val] = 2;
+                              setRoomsPerFloor(newRoomsPerFloor);
+                            }} style={{ width: 36, height: 36, borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '1.2rem', color: '#475569' }}>+</button>
+                          </div>
+                        </div>
+                        
+                        <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1.5rem', marginTop: '1rem' }}>
+                          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '1rem', color: '#64748b', letterSpacing: '0.5px' }}>ROOMS PER FLOOR</label>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '1rem' }}>
+                            {Array.from({length: floorsCount}).map((_, i) => (
+                              <div key={`rf-${i+1}`} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155' }}>FLOOR {i+1}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <button type="button" onClick={() => setRoomsPerFloor({...roomsPerFloor, [i+1]: Math.max(1, (roomsPerFloor[i+1]||2) - 1)})} style={{ width: 32, height: 32, borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#475569' }}>-</button>
+                                  <span style={{ fontWeight: 700, flex: 1, textAlign: 'center', color: '#0f172a' }}>{roomsPerFloor[i+1] || 2}</span>
+                                  <button type="button" onClick={() => setRoomsPerFloor({...roomsPerFloor, [i+1]: Math.min(50, (roomsPerFloor[i+1]||2) + 1)})} style={{ width: 32, height: 32, borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#475569' }}>+</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {step === 2 && (
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+                      <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>Configure the bed sharing capacity for each generated room.</p>
+                      {generateRoomInputs()}
+                    </motion.div>
+                  )}
+
+                  {step === 3 && (
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem', backgroundColor: '#e0e7ff', padding: '16px', borderRadius: '16px', color: '#4f46e5' }}>
+                        <Banknote size={24} />
+                        <div>
+                          <h4 style={{ margin: 0, fontWeight: 700, fontSize: '1.05rem' }}>Set Monthly Rent</h4>
+                          <p style={{ margin: 0, fontSize: '0.85rem', opacity: 0.8, marginTop: '4px' }}>Define default pricing for each bed share type.</p>
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                        {[1, 2, 3, 4, 5, 6].map(share => (
+                          <div key={`share-${share}`} style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                               <span style={{ fontWeight: 700, color: '#334155', fontSize: '1rem' }}>{share} {share === 1 ? 'Bed' : 'Beds'}</span>
+                               <div style={{ width: 28, height: 28, borderRadius: '8px', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                 <Users size={14} color="#64748b" />
+                               </div>
+                            </div>
+                            <div style={{ position: 'relative' }}>
+                              <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontWeight: 700, fontSize: '1.1rem' }}>₹</span>
+                              <input 
+                                type="number" 
+                                value={pricing[share] || ''} 
+                                onChange={(e) => setPricing({...pricing, [share]: e.target.value})}
+                                placeholder="Amount"
+                                style={{ width: '100%', padding: '12px 12px 12px 32px', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', fontWeight: 700, color: '#0f172a', outline: 'none', fontSize: '1rem', transition: 'all 0.2s' }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                  
+                </form>
+              </div>
+              <div className={styles.modalFooter} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                {step > 1 ? (
+                  <button type="button" onClick={() => setStep(step - 1)} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'transparent', cursor: 'pointer', fontWeight: 600 }}>Back</button>
+                ) : <div></div>}
+                <AnimatedButton type="submit" form="add-hostel-form" isLoading={isSaving}>
+                  {step < 3 ? 'Next Step' : (editPropId ? 'Save Hostel Changes' : 'Create Hostel & Rooms')}
+                </AnimatedButton>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+// Hack to get Camera icon since it wasn't imported from lucide-react initially
+import { Camera } from 'lucide-react';

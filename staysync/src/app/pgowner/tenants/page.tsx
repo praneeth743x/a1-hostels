@@ -1,23 +1,109 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Camera, X } from 'lucide-react';
+import { Search, Plus, Camera, X, Building2, MoreVertical, Filter, Users, ChevronRight, ChevronLeft, Save, CheckCircle2, Menu, Bell, BedDouble, IndianRupee, Home, Calendar, AlertTriangle, AlertCircle } from 'lucide-react';
 import { FloatingInput } from '@/components/FloatingInput';
 import { AnimatedButton } from '@/components/AnimatedButton';
-import { getTenants, addTenant, getPropertiesWithRooms } from '@/app/actions/pgowner';
-import { supabase } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
-import styles from '../pgowner.module.css';
+import { CustomDatePicker } from '@/components/CustomDatePicker';
+import { getTenants, addTenant, getPropertiesWithRooms, getPendingDues, getPaymentHistory } from '@/app/actions/pgowner';
+import { storage, auth } from '@/lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { onAuthStateChanged } from 'firebase/auth';
+import { useRouter, useSearchParams } from 'next/navigation';
+import imageCompression from 'browser-image-compression';
+import styles from './tenantsList.module.css';
+import { CustomSelect } from '@/components/CustomSelect';
+
+const getNextUnpaidMonthAndDate = (t: any, tenantPaidPayments: any[]) => {
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const shortMonthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  let targetDay = 5;
+  if (t.move_in_date) {
+    const checkin = new Date(t.move_in_date);
+    if (!isNaN(checkin.getTime())) targetDay = checkin.getDate();
+  } else if (t.created_at) {
+    const created = new Date(t.created_at);
+    if (!isNaN(created.getTime())) targetDay = created.getDate();
+  }
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  let nextDueDate = new Date(today);
+  if (today.getDate() < targetDay) {
+    nextDueDate.setDate(targetDay);
+  } else {
+    nextDueDate.setMonth(today.getMonth() + 1);
+    nextDueDate.setDate(targetDay);
+  }
+
+  if (tenantPaidPayments && tenantPaidPayments.length > 0) {
+    const paidMonths = tenantPaidPayments.map((p: any) => p.month).filter(Boolean);
+
+    let maxIterations = 24;
+    while (maxIterations > 0) {
+      const currentMonthFull = monthNames[nextDueDate.getMonth()];
+      const currentMonthShort = shortMonthNames[nextDueDate.getMonth()];
+
+      const isAlreadyPaid = paidMonths.some((m: string) => {
+        if (!m) return false;
+        const lowerM = m.toLowerCase();
+        return (
+          lowerM.includes(currentMonthFull.toLowerCase()) || 
+          lowerM.includes(currentMonthShort.toLowerCase())
+        );
+      });
+
+      if (isAlreadyPaid) {
+        nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+        maxIterations--;
+      } else {
+        break;
+      }
+    }
+  }
+
+  nextDueDate.setHours(0,0,0,0);
+  const diffTime = nextDueDate.getTime() - today.getTime();
+  const dueDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  return {
+    dueDays,
+    nextDueDate,
+    monthShort: nextDueDate.toLocaleString('default', { month: 'short' })
+  };
+};
 
 export default function TenantDirectory() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterHostel, setFilterHostel] = useState('all');
+  const [tenantStatusFilter, setTenantStatusFilter] = useState('Active');
   const [showModal, setShowModal] = useState(false);
   const [tenants, setTenants] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [properties, setProperties] = useState<any[]>([]);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlPgId = searchParams.get('pgId');
+      if (urlPgId) {
+        setFilterHostel(urlPgId);
+      }
+      if (searchParams.get('add') === 'true') {
+        setShowModal(true);
+        const roomId = searchParams.get('roomId');
+        if (roomId) setSelectedRoom(roomId);
+        const rUrl = searchParams.get('returnUrl');
+        if (rUrl) setReturnUrl(rUrl);
+      }
+    }
+  }, [searchParams]);
   
   // Form state
   const [fullName, setFullName] = useState('');
@@ -26,36 +112,127 @@ export default function TenantDirectory() {
   const [workStatus, setWorkStatus] = useState('student');
   const [selectedPg, setSelectedPg] = useState('');
   const [selectedRoom, setSelectedRoom] = useState('');
-  const [moveInDate, setMoveInDate] = useState('');
+  const [returnUrl, setReturnUrl] = useState<string | null>(null);
+  const [moveInDate, setMoveInDate] = useState<Date | null>(null);
+  const [rentAmount, setRentAmount] = useState<number | ''>('');
+  const [securityDeposit, setSecurityDeposit] = useState<number | ''>('');
+  const [openingPendingFee, setOpeningPendingFee] = useState<number | ''>('');
+  const [hasOldPendingFee, setHasOldPendingFee] = useState<boolean>(false);
+  const [documents, setDocuments] = useState<any>({
+    facePicture: null,
+    govtFront: null,
+    govtBack: null,
+    collegeFront: null,
+    collegeBack: null,
+  });
+  const [uploadProgress, setUploadProgress] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        setOwnerId(user.id);
-        const propsRes = await getPropertiesWithRooms(user.id);
+        setOwnerId(user.uid);
+        const propsRes = await getPropertiesWithRooms(user.uid);
+        const currentId = localStorage.getItem('activePgId');
         if (propsRes.success && propsRes.data) {
           setProperties(propsRes.data);
-          if (propsRes.data.length > 0) setSelectedPg(propsRes.data[0].pg_id);
+          if (currentId && propsRes.data.some((p: any) => p.pg_id === currentId)) {
+            setSelectedPg(currentId);
+          } else if (propsRes.data.length > 0) {
+            setSelectedPg((propsRes.data[0] as any).pg_id);
+          }
         }
-
-        const res = await getTenants(user.id);
+        const res = await getTenants(user.uid, currentId);
+        const duesRes = await getPendingDues(user.uid, currentId);
+        const historyRes = await getPaymentHistory(user.uid, currentId);
+        
         if (res.success && res.data) {
-          setTenants(res.data.map((t: any) => ({
-            id: t.tenant_id,
-            name: t.full_name,
-            hostel: t.pg_name,
-            room: t.rooms?.room_number || 'N/A',
-            phone: t.mobile,
-            status: t.is_active ? 'Active' : 'Inactive'
-          })));
+          const dues = duesRes.success && duesRes.data ? duesRes.data : [];
+          const paidPayments = historyRes.success && historyRes.data ? historyRes.data : [];
+          
+          setTenants(res.data.map((t: any) => {
+            const tenantDues = dues.filter((d: any) => d.tenant_id === t.tenant_id);
+            tenantDues.sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+            const due = tenantDues.length > 0 ? tenantDues[0] : null;
+            
+            let nextDueDate = new Date();
+            let paymentState = 'empty';
+            let daysDiff = 0;
+            
+            let targetDay = 5;
+            if (t.move_in_date) {
+              const checkin = new Date(t.move_in_date);
+              if (!isNaN(checkin.getTime())) targetDay = checkin.getDate();
+            }
+
+            const today = new Date();
+            today.setHours(0,0,0,0);
+
+            if (due) {
+              const createdAt = new Date(due.created_at || Date.now());
+              nextDueDate = new Date(createdAt);
+              nextDueDate.setDate(targetDay);
+              nextDueDate.setHours(0,0,0,0);
+              
+              const diffTime = today.getTime() - nextDueDate.getTime();
+              daysDiff = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              
+              if (daysDiff > 30) {
+                paymentState = 'critical';
+              } else if (daysDiff > 0) {
+                paymentState = 'overdue';
+              } else if (daysDiff === 0) {
+                paymentState = 'today';
+              } else {
+                paymentState = 'upcoming';
+                daysDiff = Math.abs(daysDiff);
+              }
+            } else {
+              const tenantPaid = paidPayments.filter((p: any) => p.tenant_id === t.tenant_id);
+              const unpaidInfo = getNextUnpaidMonthAndDate(t, tenantPaid);
+              daysDiff = unpaidInfo.dueDays;
+              nextDueDate = unpaidInfo.nextDueDate;
+              paymentState = daysDiff === 0 ? 'today' : 'upcoming';
+            }
+
+            return {
+              id: t.tenant_id,
+              name: t.full_name,
+              hostel: t.pg_name,
+              pg_id: t.pg_id,
+              room: t.rooms?.room_number || 'N/A',
+              phone: t.mobile,
+              status: t.is_active === false ? 'Vacated' : (t.status === 'notice_period' ? 'Notice Period' : 'Active'),
+              paymentState,
+              daysDiff
+            };
+          }));
         }
       }
       setIsLoading(false);
-    }
-    init();
+    });
+    return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (selectedPg && selectedRoom && properties.length > 0) {
+      const p = properties.find((prop: any) => prop.pg_id === selectedPg);
+      if (p) {
+        const r = p.rooms.find((room: any) => room.room_id === selectedRoom);
+        if (r && p.theme_primary_color) {
+          try {
+            const pricing = JSON.parse(p.theme_primary_color);
+            const fee = pricing[r.total_beds];
+            if (fee) {
+              setRentAmount(parseInt(fee));
+            }
+          } catch (e) {
+            console.error("Failed to parse pricing", e);
+          }
+        }
+      }
+    }
+  }, [selectedRoom, selectedPg, properties]);
 
   const handleAddTenant = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +241,50 @@ export default function TenantDirectory() {
       return;
     }
     setIsSaving(true);
+    setUploadProgress('Uploading documents...');
+
+    let documentUrls: any = {};
+    const uploadFile = async (file: File, path: string) => {
+      // Compress image before uploading to save time and bandwidth
+      const options = {
+        maxSizeMB: 0.2, // Max 200KB
+        maxWidthOrHeight: 1024,
+        useWebWorker: true,
+      };
+      
+      let fileToUpload = file;
+      try {
+        setUploadProgress(`Compressing ${file.name}...`);
+        fileToUpload = await imageCompression(file, options);
+      } catch (err) {
+        console.warn('Compression failed, using original file', err);
+      }
+      
+      setUploadProgress('Uploading...');
+      const storageRef = ref(storage, path);
+      // Timeout after 10 seconds to prevent hanging
+      const uploadPromise = uploadBytes(storageRef, fileToUpload);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Upload timeout')), 10000));
+      
+      await Promise.race([uploadPromise, timeoutPromise]);
+      return await getDownloadURL(storageRef);
+    };
+
+    try {
+      if (documents.facePicture) documentUrls.facePicture = await uploadFile(documents.facePicture, `tenants/${ownerId}/${Date.now()}_face.jpg`);
+      if (documents.govtFront) documentUrls.govtFront = await uploadFile(documents.govtFront, `tenants/${ownerId}/${Date.now()}_govF.jpg`);
+      if (documents.govtBack) documentUrls.govtBack = await uploadFile(documents.govtBack, `tenants/${ownerId}/${Date.now()}_govB.jpg`);
+      if (documents.collegeFront) documentUrls.collegeFront = await uploadFile(documents.collegeFront, `tenants/${ownerId}/${Date.now()}_colF.jpg`);
+      if (documents.collegeBack) documentUrls.collegeBack = await uploadFile(documents.collegeBack, `tenants/${ownerId}/${Date.now()}_colB.jpg`);
+      if (documents.empFront) documentUrls.empFront = await uploadFile(documents.empFront, `tenants/${ownerId}/${Date.now()}_empF.jpg`);
+      if (documents.empBack) documentUrls.empBack = await uploadFile(documents.empBack, `tenants/${ownerId}/${Date.now()}_empB.jpg`);
+    } catch (error: any) {
+      console.error("Upload error", error);
+      alert("Failed to upload some documents: " + error.message + ". The tenant will be saved without documents.");
+      // reset progress and let it continue saving
+    }
+    
+    setUploadProgress('Saving tenant...');
     const res = await addTenant({ 
       ownerId, 
       pgId: selectedPg, 
@@ -72,7 +293,12 @@ export default function TenantDirectory() {
       phone, 
       parentPhone, 
       workStatus, 
-      moveInDate 
+      moveInDate: moveInDate ? moveInDate.toISOString() : new Date().toISOString(),
+      rentAmount: rentAmount === '' ? 0 : rentAmount,
+      securityDeposit: securityDeposit === '' ? 0 : securityDeposit,
+      openingPendingFee: hasOldPendingFee && openingPendingFee !== '' ? openingPendingFee : 0,
+      openingBalanceDueDate: hasOldPendingFee && moveInDate ? moveInDate.toISOString() : undefined,
+      documents: documentUrls
     });
     
     if (res.success && res.data) {
@@ -83,13 +309,21 @@ export default function TenantDirectory() {
         id: res.data[0].tenant_id,
         name: fullName,
         hostel: selectedHostelName,
+        pg_id: selectedPg,
         room: selectedRoomName,
         phone: phone,
         status: 'Active'
       }, ...tenants]);
       
-      setShowModal(false);
-      setFullName(''); setPhone(''); setParentPhone(''); setMoveInDate('');
+      if (returnUrl) {
+        router.push(returnUrl);
+      } else {
+        setShowModal(false);
+      }
+      setFullName(''); setPhone(''); setParentPhone(''); setMoveInDate(null);
+      setRentAmount(''); setSecurityDeposit(''); setOpeningPendingFee(''); setHasOldPendingFee(false);
+      setDocuments({ facePicture: null, govtFront: null, govtBack: null, collegeFront: null, collegeBack: null });
+      setUploadProgress('');
       router.refresh();
     } else {
       alert("Failed to add tenant: " + res.error);
@@ -97,172 +331,571 @@ export default function TenantDirectory() {
     setIsSaving(false);
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
+    if (e.target.files && e.target.files[0]) {
+      setDocuments((prev: any) => ({ ...prev, [type]: e.target.files![0] }));
+    }
+  };
+
   const currentRooms = properties.find(p => p.pg_id === selectedPg)?.rooms || [];
 
-  const filteredTenants = tenants.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredTenants = tenants.filter(t => {
+    const matchesSearch = t.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesHostel = filterHostel === 'all' || t.pg_id === filterHostel;
+    const matchesStatus = tenantStatusFilter === 'All' || t.status === tenantStatusFilter;
+    return matchesSearch && matchesHostel && matchesStatus;
+  });
 
   return (
-    <div className={styles.dashboardPage}>
-      <header className={styles.pageHeader}>
-        <div>
-          <h1 className={styles.pageTitle}>Tenant Directory</h1>
-          <p className={styles.pageSubtitle}>Manage your residents</p>
-        </div>
-        <div className={styles.headerActions}>
-          <button 
-            className={styles.addTenantBtn}
-            onClick={() => setShowModal(true)}
+    <div className={styles.mobileDashContainer} style={{ paddingTop: showModal ? '0' : '1rem' }}>
+      <AnimatePresence mode="wait">
+        {!showModal ? (
+          <motion.div 
+            key="list"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
           >
-            <Plus size={18} /> Add Tenant
-          </button>
-        </div>
-      </header>
+            <div className={styles.dashboardContent} style={{ marginTop: '-16px' }}>
+              {/* Floating Cards */}
+              <div className={styles.premiumCardsContainer}>
+                {/* Row 1 */}
+                <motion.div 
+                  className={styles.statsOverviewCard}
+                  initial={{ y: 30, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.15, type: 'spring', stiffness: 300, damping: 20 }}
+                >
+                  <div className={styles.statColumn}>
+                    <div className={styles.statValue} style={{ color: '#2563eb' }}>{tenants.filter(t => t.status === 'Active').length}</div>
+                    <div className={styles.statLabel}>Active<br/>Tenants</div>
+                  </div>
+                  
+                  <div className={styles.statDivider} />
+                  
+                  <div className={styles.statColumn}>
+                    <div className={styles.statValue} style={{ color: '#8b5cf6' }}>{tenants.filter(t => t.status === 'Notice Period').length}</div>
+                    <div className={styles.statLabel}>Notice<br/>Period</div>
+                  </div>
 
-      <div className={`${styles.tableContainer} glass-card`}>
-        <div className={styles.tableHeaderActions}>
-          <div className={styles.searchBar}>
-            <Search size={18} className={`${styles.searchIcon} text-muted`} />
+                  <div className={styles.statDivider} />
+                  
+                  <div className={styles.statColumn}>
+                    <div className={styles.statValue} style={{ color: '#475569' }}>{tenants.filter(t => t.status === 'Vacated').length}</div>
+                    <div className={styles.statLabel}>Vacated<br/>Tenants</div>
+                  </div>
+                </motion.div>
+              </div>
+              
+              {/* Search & Active Filter Row */}
+        <div className={styles.tenantSearchRow} style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <Search size={18} className={styles.tenantSearchIcon} />
             <input 
               type="text" 
-              placeholder="Search tenants..." 
+              placeholder="Search by name, room, or phone..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className={styles.searchInput}
+              className={styles.tenantSearchInput}
+            />
+          </div>
+          <div style={{ width: '48px', flex: 'none' }}>
+            <CustomSelect 
+              value={tenantStatusFilter} 
+              onChange={(val) => setTenantStatusFilter(val)}
+              icon={<Filter size={20} />}
+              iconOnly={true}
+              options={[
+                { value: 'Active', label: 'Active' },
+                { value: 'Notice Period', label: 'Notice Period' },
+                { value: 'Vacated', label: 'Vacated' },
+                { value: 'All', label: 'All Tenants' }
+              ]}
             />
           </div>
         </div>
 
-        <div className={styles.tableWrapper}>
-          <table className={styles.adminTable}>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Hostel</th>
-                <th>Room No</th>
-                <th>Phone</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTenants.length === 0 && !isLoading && (
-                <tr><td colSpan={4} className="text-center py-4 text-muted">No tenants found</td></tr>
-              )}
-              {filteredTenants.map((t, index) => (
-                <motion.tr 
-                  key={t.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                >
-                  <td className="font-semibold">{t.name}</td>
-                  <td>{t.hostel}</td>
-                  <td>{t.room}</td>
-                  <td>{t.phone}</td>
-                  <td>
-                    <span className={`${styles.statusBadge} ${t.status === 'Active' ? styles.paymentPaid : styles.paymentPending}`}>
-                      {t.status}
-                    </span>
-                  </td>
-                </motion.tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Action Buttons Row */}
+        <div className={styles.tenantActionRow}>
+          <button className={`${styles.tenantMainAction} ${styles.blue}`} style={{ width: '100%', maxWidth: '100%' }} onClick={() => setShowModal(true)}>
+            <div style={{backgroundColor: 'white', color: '#0f4a66', borderRadius: '50%', width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+               <Plus size={12} strokeWidth={3} />
+            </div>
+            Add Tenant
+          </button>
         </div>
-      </div>
 
-      <AnimatePresence>
-        {showModal && (
-          <div className={styles.modalOverlay}>
-            <motion.div 
-              className={styles.modalContent}
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            >
-              <div className={styles.modalHeader}>
-                <h2>Add New Tenant</h2>
-                <button className={styles.closeBtn} onClick={() => setShowModal(false)}>
-                  <X size={24} />
-                </button>
-              </div>
-              <div className={styles.modalBody} style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-                  <div className={styles.cameraCaptureArea} style={{ padding: '20px' }}>
-                    <Camera size={32} />
-                    <span style={{ fontSize: '0.875rem' }}>Face Picture</span>
-                  </div>
-                  <div className={styles.cameraCaptureArea} style={{ padding: '20px' }}>
-                    <Camera size={32} />
-                    <span style={{ fontSize: '0.875rem' }}>Aadhar Card</span>
+        {/* List Header */}
+        <div className={styles.tenantListHeader}>
+          <div className={styles.tenantListCount}>{filteredTenants.length} Tenant{filteredTenants.length !== 1 && 's'}</div>
+          <button className={styles.tenantListClear} style={{background: 'none', border: 'none'}} onClick={() => setSearchTerm('')}>Clear filters</button>
+        </div>
+
+        {/* Tenant Cards */}
+        {filteredTenants.length === 0 && !isLoading && (
+          <div className="text-center py-4 text-muted">No tenants found</div>
+        )}
+        <div className={styles.tenantGrid}>
+        {filteredTenants.map((t, index) => (
+          <motion.div 
+            key={t.id}
+            className={styles.mobileTenantCard}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05 }}
+            onClick={() => router.push(`/pgowner/tenants/${t.id}`)}
+            style={{ cursor: 'pointer' }}
+          >
+            <div className={styles.tenantCardTop}>
+              <div className={styles.tenantCardLeft}>
+                <div className={styles.tenantAvatarContainer}>
+                  <div className={styles.tenantAvatarDot}></div>
+                </div>
+                <div>
+                  <h3 className={styles.tenantCardName}>{t.name}</h3>
+                  <div className={styles.tenantCardPhone}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                    {t.phone}
                   </div>
                 </div>
+              </div>
+              <div className={styles.tenantStatusPill}>
+                <div className={styles.tenantStatusDot}></div>
+                Active
+              </div>
+            </div>
+            
+            <div className={styles.tenantCardBottom}>
+              <div className={styles.tenantRoomInfo}>
+                <Building2 size={16} className={styles.tenantRoomIcon} />
+                <div className={styles.tenantRoomText}>
+                  <span className={styles.tenantRoomLabel}>ROOM</span>
+                  <span className={styles.tenantRoomNumber}>{t.room}</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                {t.paymentState === 'upcoming' && (
+                  <div className={`${styles.tenantPill} ${styles.tenantPillUpcoming}`}>
+                    <Calendar size={14} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: '1.2' }}>
+                      <span>Next Due</span>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 500 }}>{t.daysDiff === 1 ? 'Tomorrow' : `in ${t.daysDiff} days`}</span>
+                    </div>
+                  </div>
+                )}
+                {t.paymentState === 'today' && (
+                  <div className={`${styles.tenantPill} ${styles.tenantPillToday}`}>
+                    <AlertTriangle size={14} />
+                    Due Today
+                  </div>
+                )}
+                {t.paymentState === 'overdue' && (
+                  <div className={`${styles.tenantPill} ${styles.tenantPillOverdue}`}>
+                    <AlertCircle size={14} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: '1.2' }}>
+                      <span>Overdue</span>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 500 }}>{t.daysDiff === 30 ? '1 month' : `${t.daysDiff} days`}</span>
+                    </div>
+                  </div>
+                )}
+                {t.paymentState === 'critical' && (
+                  <div className={`${styles.tenantPill} ${styles.tenantPillCritical}`}>
+                    <AlertCircle size={14} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: '1.2' }}>
+                      <span>Critical</span>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 500 }}>
+                        {t.daysDiff >= 60 ? `${Math.floor(t.daysDiff/30)} months overdue` : `${t.daysDiff} days overdue`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {t.paymentState === 'empty' && (
+                  <div className={`${styles.tenantPill} ${styles.tenantPillEmpty}`}>
+                    No Payment Recorded
+                  </div>
+                )}
+              </div>
+              
+              <ChevronRight size={18} className={styles.tenantCardChevron} />
+            </div>
+          </motion.div>
+        ))}
+        </div>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div 
+            key="form"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.2 }}
+            style={{ display: 'flex', flexDirection: 'column' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', backgroundColor: 'transparent', zIndex: 50 }}>
+              <button 
+                onClick={() => {
+                  if (returnUrl) {
+                    router.push(returnUrl);
+                  } else {
+                    setShowModal(false);
+                  }
+                }} 
+                style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '50%', width: '40px', height: '40px', color: '#0f172a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}
+                type="button"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0 16px', color: '#0f172a' }}>Add New Tenant</h2>
+            </div>
+
+            <div className={styles.dashboardContent} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
                 
-                <form id="add-tenant-form" onSubmit={handleAddTenant} className={styles.formSection} style={{ gap: '1rem' }}>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Select Hostel</label>
-                      <select 
-                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)' }}
-                        value={selectedPg}
-                        onChange={(e) => { setSelectedPg(e.target.value); setSelectedRoom(''); }}
-                        required
-                      >
-                        <option value="">Choose Hostel...</option>
-                        {properties.map(p => (
-                          <option key={p.pg_id} value={p.pg_id}>{p.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Allocate Room</label>
-                      <select 
-                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)' }}
-                        value={selectedRoom}
-                        onChange={(e) => setSelectedRoom(e.target.value)}
-                        required
-                        disabled={!selectedPg}
-                      >
-                        <option value="">Choose Room...</option>
-                        {currentRooms.map((r: any) => (
-                          <option key={r.room_id} value={r.room_id}>{r.room_number} ({r.floor})</option>
-                        ))}
-                      </select>
-                    </div>
+
+
+                {/* Tenant Information Section */}
+                <section>
+                  <div style={{ marginBottom: '20px' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px 0' }}>Tenant Information</h3>
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>Enter tenant details accurately</p>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <FloatingInput label="Full Name" value={fullName} onChange={e=>setFullName(e.target.value)} required />
-                    <FloatingInput label="Move-in Date" type="date" value={moveInDate} onChange={e=>setMoveInDate(e.target.value)} required />
+                  <form id="add-tenant-form" onSubmit={handleAddTenant} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+                      <div style={{ zIndex: 49 }}>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Allocate Room</label>
+                        <CustomSelect 
+                          value={selectedRoom}
+                          onChange={setSelectedRoom}
+                          options={currentRooms.map((r: any) => {
+                            const selectedHostelName = properties.find(p => p.pg_id === selectedPg)?.name;
+                            const occupiedCount = tenants.filter(t => t.status === 'Active' && t.room === r.room_number && t.hostel === selectedHostelName).length;
+                            const totalBeds = r.total_beds || 1;
+                            
+                            return { 
+                              value: r.room_id, 
+                              disabled: occupiedCount >= totalBeds,
+                              label: (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingRight: '8px' }}>
+                                  <span style={{ fontWeight: 600 }}>{r.room_number} {occupiedCount >= totalBeds ? '(Full)' : ''}</span>
+                                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                    {Array.from({ length: totalBeds }).map((_, i) => (
+                                      <BedDouble 
+                                        key={i} 
+                                        size={14} 
+                                        color={i < occupiedCount ? "#ef4444" : "#10b981"} 
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              ) 
+                            };
+                          })}
+                          placeholder="Choose Room"
+                          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Monthly Rent (₹)</label>
+                        <div style={{ position: 'relative' }}>
+                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                            <IndianRupee size={16} />
+                          </div>
+                          <input 
+                            type="number"
+                            placeholder="e.g. 8500"
+                            style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                            value={rentAmount}
+                            onChange={e => {
+                              const val = e.target.value;
+                              if (val === '') setRentAmount('');
+                              else setRentAmount(parseInt(val) || 0);
+                            }}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Security Deposit (₹)</label>
+                        <div style={{ position: 'relative' }}>
+                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                            <IndianRupee size={16} />
+                          </div>
+                          <input 
+                            type="number"
+                            placeholder="e.g. 15000"
+                            style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                            value={securityDeposit}
+                            onChange={e => {
+                              const val = e.target.value;
+                              if (val === '') setSecurityDeposit('');
+                              else setSecurityDeposit(parseInt(val) || 0);
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                          <input
+                            type="checkbox"
+                            id="hasOldPendingFee"
+                            checked={hasOldPendingFee}
+                            onChange={(e) => setHasOldPendingFee(e.target.checked)}
+                            style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
+                          />
+                          <label htmlFor="hasOldPendingFee" style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155', cursor: 'pointer' }}>
+                            Tenant has an old pending fee
+                          </label>
+                        </div>
+
+                        {hasOldPendingFee && (
+                          <div style={{ marginTop: '8px' }}>
+                            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Opening Pending Fee (₹)</label>
+                            <div style={{ position: 'relative' }}>
+                              <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                                <IndianRupee size={16} />
+                              </div>
+                              <input 
+                                type="number"
+                                placeholder="e.g. 500"
+                                style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                                value={openingPendingFee}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  if (val === '') setOpeningPendingFee('');
+                                  else setOpeningPendingFee(parseInt(val) || 0);
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Full Name</label>
+                        <div style={{ position: 'relative' }}>
+                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                          </div>
+                          <input 
+                            type="text"
+                            placeholder="Enter full name"
+                            style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                            value={fullName}
+                            onChange={e => setFullName(e.target.value)}
+                            required
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>
+                          {hasOldPendingFee ? 'Opening Pending Date / Check-in Date' : 'Check-in Date'}
+                        </label>
+                        <CustomDatePicker 
+                          selectedDate={moveInDate}
+                          onChange={(date: Date | null) => setMoveInDate(date)}
+                          placeholder="Select check-in date"
+                          required={true}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Phone Number</label>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                        </div>
+                        <input 
+                          type="tel"
+                          placeholder="Enter phone number"
+                          style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                          value={phone}
+                          onChange={e => setPhone(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ zIndex: 48 }}>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Work/Study Status</label>
+                      <CustomSelect 
+                        value={workStatus}
+                        onChange={setWorkStatus}
+                        options={[
+                          { value: 'student', label: 'Student' },
+                          { value: 'employed', label: 'Employed' },
+                          { value: 'other', label: 'Other' }
+                        ]}
+                        icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>}
+                      />
+                    </div>
+
+                    {workStatus === 'student' && (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>College Name & Details</label>
+                        <div style={{ position: 'relative' }}>
+                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                          </div>
+                          <input 
+                            type="text"
+                            placeholder="Enter college name & details"
+                            style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    
+                    {workStatus === 'employed' && (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Workplace Name & Details</label>
+                        <div style={{ position: 'relative' }}>
+                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+                          </div>
+                          <input 
+                            type="text"
+                            placeholder="Enter workplace name & details"
+                            style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '16px', display: 'flex', gap: '12px' }}>
+                      <div style={{ color: '#3b82f6', marginTop: '2px' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                      </div>
+                      <div>
+                        <h4 style={{ margin: '0 0 4px 0', fontSize: '0.85rem', fontWeight: 700, color: '#1e3a8a' }}>Information</h4>
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: '#1e40af', lineHeight: '1.4' }}>Please ensure all details are correct before saving. You can edit them later if needed.</p>
+                      </div>
+                    </div>
+                  </form>
+                </section>
+
+                <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: 0 }} />
+                
+                {/* Document Uploads Section Moved to Bottom */}
+                <section>
+                  <div style={{ marginBottom: '16px' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px 0' }}>Document Uploads</h3>
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>Upload clear images of required documents</p>
                   </div>
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <FloatingInput label="Phone Number" type="tel" value={phone} onChange={e=>setPhone(e.target.value)} required />
-                    <FloatingInput label="Parent Mobile" type="tel" value={parentPhone} onChange={e=>setParentPhone(e.target.value)} required />
-                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
+                    <label style={{ backgroundColor: 'white', border: documents.facePicture ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                      <input type="file" accept="image/*" capture="user" onChange={(e) => handleFileChange(e, 'facePicture')} style={{ display: 'none' }} />
+                      {documents.facePicture && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.facePicture ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                        <Camera size={20} color={documents.facePicture ? "#10b981" : "#3b82f6"} />
+                      </div>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Face Picture</span>
+                      <span style={{ fontSize: '0.75rem', color: documents.facePicture ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.facePicture ? 'Selected' : 'Upload clear face photo'}</span>
+                    </label>
 
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Work/Study Status</label>
-                    <select 
-                      style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)' }}
-                      value={workStatus}
-                      onChange={(e) => setWorkStatus(e.target.value)}
-                      required
-                    >
-                      <option value="student">Student</option>
-                      <option value="employed">Employed</option>
-                      <option value="other">Other</option>
-                    </select>
+                    <label style={{ backgroundColor: 'white', border: documents.govtFront ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                      <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'govtFront')} style={{ display: 'none' }} />
+                      {documents.govtFront && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.govtFront ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                        <Camera size={20} color={documents.govtFront ? "#10b981" : "#3b82f6"} />
+                      </div>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Govt Proof (Front)</span>
+                      <span style={{ fontSize: '0.75rem', color: documents.govtFront ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.govtFront ? 'Selected' : 'Upload front side'}</span>
+                    </label>
+
+                    <label style={{ backgroundColor: 'white', border: documents.govtBack ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                      <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'govtBack')} style={{ display: 'none' }} />
+                      {documents.govtBack && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.govtBack ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                        <Camera size={20} color={documents.govtBack ? "#10b981" : "#3b82f6"} />
+                      </div>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Govt Proof (Back)</span>
+                      <span style={{ fontSize: '0.75rem', color: documents.govtBack ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.govtBack ? 'Selected' : 'Upload back side'}</span>
+                    </label>
+
+                    {workStatus === 'student' && (
+                      <>
+                        <label style={{ backgroundColor: 'white', border: documents.collegeFront ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                          <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'collegeFront')} style={{ display: 'none' }} />
+                          {documents.collegeFront && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
+                          <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.collegeFront ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                            <Camera size={20} color={documents.collegeFront ? "#10b981" : "#3b82f6"} />
+                          </div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>College ID (Front)</span>
+                          <span style={{ fontSize: '0.75rem', color: documents.collegeFront ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.collegeFront ? 'Selected' : 'Upload front side'}</span>
+                        </label>
+                        
+                        <label style={{ backgroundColor: 'white', border: documents.collegeBack ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                          <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'collegeBack')} style={{ display: 'none' }} />
+                          {documents.collegeBack && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
+                          <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.collegeBack ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                            <Camera size={20} color={documents.collegeBack ? "#10b981" : "#3b82f6"} />
+                          </div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>College ID (Back)</span>
+                          <span style={{ fontSize: '0.75rem', color: documents.collegeBack ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.collegeBack ? 'Selected' : 'Upload back side'}</span>
+                        </label>
+                      </>
+                    )}
+                    
+                    {workStatus === 'employed' && (
+                      <>
+                        <label style={{ backgroundColor: 'white', border: documents.empFront ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                          <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'empFront')} style={{ display: 'none' }} />
+                          {documents.empFront && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
+                          <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.empFront ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                            <Camera size={20} color={documents.empFront ? "#10b981" : "#3b82f6"} />
+                          </div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Emp ID (Front)</span>
+                          <span style={{ fontSize: '0.75rem', color: documents.empFront ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.empFront ? 'Selected' : 'Upload front side'}</span>
+                        </label>
+                        <label style={{ backgroundColor: 'white', border: documents.empBack ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                          <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'empBack')} style={{ display: 'none' }} />
+                          {documents.empBack && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
+                          <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.empBack ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                            <Camera size={20} color={documents.empBack ? "#10b981" : "#3b82f6"} />
+                          </div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Emp ID (Back)</span>
+                          <span style={{ fontSize: '0.75rem', color: documents.empBack ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.empBack ? 'Selected' : 'Upload back side'}</span>
+                        </label>
+                      </>
+                    )}
                   </div>
-                </form>
+                </section>
+
+                <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: 0 }} />
+
+
+                {uploadProgress && (
+                  <div style={{ textAlign: 'center', padding: '8px', fontSize: '0.85rem', color: '#3b82f6', fontWeight: 600 }}>
+                    {uploadProgress}
+                  </div>
+                )}
               </div>
-              <div className={styles.modalFooter}>
-                <AnimatedButton type="submit" form="add-tenant-form" isLoading={isSaving}>
-                  Save Tenant Profile
-                </AnimatedButton>
+              
+              {/* Bottom Action */}
+              <div style={{ padding: '16px 20px', backgroundColor: 'transparent', zIndex: 50, marginTop: 'auto' }}>
+                <button 
+                  type="submit" 
+                  form="add-tenant-form"
+                  disabled={isSaving}
+                  style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', backgroundColor: '#3b82f6', color: 'white', padding: '16px', borderRadius: '12px', border: 'none', fontWeight: 600, fontSize: '1rem', cursor: 'pointer', transition: 'background-color 0.2s', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)' }}
+                >
+                  <div style={{ position: 'absolute', left: '8px', width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', fontSize: '1.2rem', fontWeight: 700 }}>
+                    N
+                  </div>
+                  {isSaving ? 'Saving...' : 'Save Tenant Details'}
+                </button>
               </div>
+
             </motion.div>
-          </div>
         )}
       </AnimatePresence>
     </div>

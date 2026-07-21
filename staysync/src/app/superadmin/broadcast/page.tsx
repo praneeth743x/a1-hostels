@@ -30,7 +30,7 @@ export default function GlobalBroadcast() {
       
       if (properties && properties.length > 0) {
         // Create an array of notices to insert
-        const noticesToInsert = properties.map(p => ({
+        const noticesToInsert = properties.map((p: any) => ({
           pg_id: p.pg_id,
           message: message.trim(),
         }));

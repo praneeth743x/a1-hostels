@@ -6,7 +6,7 @@ import './AnimatedButton.css';
 import { clsx } from 'clsx';
 
 interface AnimatedButtonProps extends ComponentProps<typeof motion.button> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'danger';
+  variant?: 'primary' | 'secondary' | 'success' | 'danger' | 'outline' | 'ghost';
   isLoading?: boolean;
 }
 
@@ -19,8 +19,9 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
 }) => {
   return (
     <motion.button
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.96 }}
+      whileHover={{ scale: 1.02, y: -1 }}
+      whileTap={{ scale: 0.96, y: 1 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
       className={clsx(`animated-button btn-${variant}`, isLoading && 'loading', className)}
       disabled={isLoading || props.disabled}
       {...props}
@@ -33,3 +34,4 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
     </motion.button>
   );
 };
+

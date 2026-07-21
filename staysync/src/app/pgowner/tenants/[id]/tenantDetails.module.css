@@ -1,0 +1,366 @@
+/* --- New Tenant Details Design --- */
+.tdRevampedContainer {
+  background-color: #f3f6fa;
+  min-height: 100vh;
+  padding-bottom: 120px;
+}
+
+.tdCustomHeader {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  color: white;
+  background: linear-gradient(90deg, #022055 0%, #036881 100%);
+  height: 60px;
+}
+
+.tdHeaderTitle {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.tdIconButton {
+  background: none;
+  border: none;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.tdMainCardWrapper {
+  padding: 16px;
+}
+
+.tdMainCard {
+  background: linear-gradient(135deg, #022055, #036881);
+  border-radius: 16px;
+  padding: 20px;
+  color: white;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.tdProfileSection {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.tdProfileLeft {
+  display: flex;
+  gap: 12px;
+}
+
+.tdAvatarCircle {
+  width: 50px;
+  height: 50px;
+  background-color: #000;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1.25rem;
+  font-weight: bold;
+}
+
+.tdProfileInfo h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0 0 2px 0;
+}
+
+.tdProfileInfo p {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0 0 8px 0;
+}
+
+.tdPillsWrapper {
+  display: flex;
+  gap: 8px;
+}
+
+.tdBadgeGreen {
+  background-color: #2ECC71;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tdBadgeDarkBlue {
+  background-color: #0c1a40;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.tdActionButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.tdActionBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #f1f5f9;
+  color: #022055;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+}
+
+.tdThinDivider {
+  height: 1px;
+  background-color: rgba(255, 255, 255, 0.2);
+  margin: 16px 0;
+}
+
+.tdRentSection {
+  display: flex;
+  justify-content: space-between;
+}
+
+.tdRentItem {
+  display: flex;
+  flex-direction: column;
+}
+
+.tdRentLabel {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 4px;
+}
+
+.tdRentValue {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.tdAppStatusRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tdAppStatusText {
+  font-size: 0.9rem;
+  color: white;
+}
+
+.tdBadgeTeal {
+  background-color: #4daebc;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+
+.tdNewTabs {
+  display: flex;
+  padding: 0 16px;
+  overflow-x: auto;
+  gap: 20px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.tdNewTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tdNewTab {
+  padding: 12px 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+  cursor: pointer;
+  position: relative;
+}
+
+.tdNewTabActive {
+  color: #022055;
+}
+
+.tdNewTabActive::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background-color: #022055;
+  border-radius: 3px 3px 0 0;
+}
+
+.tdNewContentWrapper {
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tdNewContentCard {
+  background-color: white;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.tdNewCardTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 16px 0;
+}
+
+.tdNewInfoRow {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.tdNewInfoRow:last-child {
+  margin-bottom: 0;
+}
+
+.tdNewInfoIcon {
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.tdNewInfoContent {
+  flex: 1;
+}
+
+.tdNewInfoLabel {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.tdNewInfoValue {
+  font-size: 0.95rem;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.tdIdProofsGrid {
+  display: flex;
+  gap: 12px;
+}
+
+.tdIdProofItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.tdIdProofImage {
+  width: 70px;
+  height: 70px;
+  background-color: #000;
+  border-radius: 12px;
+}
+
+.tdIdProofLabel {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.tdPaymentCard {
+  background-color: #f0fdf4;
+  border-radius: 12px;
+  padding: 16px;
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.tdPaymentAmount {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.tdPaymentDate {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0;
+}
+
+.tdPaymentBadge {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background-color: #86efac;
+  color: #065f46;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.tdPrimaryButton {
+  background: linear-gradient(90deg, #022055 0%, #036881 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.tdFixedBottomBtnWrapper {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 16px;
+  background-color: white;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
+  z-index: 100;
+}
+
+.tdFixedBottomBtn {
+  background-color: #0b1a47;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 1rem;
+  font-weight: 600;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+}

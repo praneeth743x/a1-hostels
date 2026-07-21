@@ -1,38 +1,63 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  --primary-indigo: #3F51B5;
-  --primary-indigo-light: #5C6BC0;
-  --primary-indigo-dark: #303F9F;
-  --secondary-cyan: #00D1FF;
-  --secondary-cyan-dark: #00B8D4;
+  /* New Premium Design System */
+  --bg-app: #F7F9FF;
+  --bg-card: #FFFFFF;
+  --primary: #4F6DFF;
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --text-main: #111827;
+  --text-secondary: #64748B;
+  --border-light: #E8EDF7;
+  --shadow-premium: 0 12px 40px rgba(15,23,42,.06);
+  --radius-container: 28px;
+  --radius-card: 32px;
+  --radius-input: 18px;
+  --radius-pill: 999px;
+  
+  /* Legacy mapping just in case */
+  --bg-offwhite: #F7F9FF;
   --bg-white: #FFFFFF;
-  --bg-offwhite: #F8FAFC; /* Slate background as per prompt */
-  --text-main: #1A1A1A;
+  --primary-indigo: #4F6DFF;
   --text-muted: #64748B;
-  --danger-red: #F44336;
-  --success-green: #4CAF50;
-  --border-light: #E2E8F0;
+  --danger-red: #EF4444;
+  --success-green: #22C55E;
   --font-family: 'Inter', sans-serif;
-  --shadow-sm: 0 2px 8px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 12px rgba(63, 81, 181, 0.08);
-  --shadow-lg: 0 12px 24px rgba(63, 81, 181, 0.12);
-  --radius-md: 12px;
-  --radius-lg: 20px;
 }
 
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+body, div, button, nav, header, section, footer, main, a, img, svg, span, p, h1, h2, h3, h4, h5, h6 {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Allow text selection ONLY in inputs and editable areas */
+input, textarea, [contenteditable="true"] {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
 }
 
 body {
   font-family: var(--font-family);
-  background-color: var(--bg-offwhite);
+  background-color: var(--bg-app);
   color: var(--text-main);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 /* Base Form Elements */

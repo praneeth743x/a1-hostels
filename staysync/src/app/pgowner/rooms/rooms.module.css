@@ -1,0 +1,952 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+.dashboardPage {
+  padding: 0px 16px 16px 16px;
+  padding-bottom: 90px;
+  min-height: 100vh;
+  background-color: #fafbfc;
+  font-family: 'Inter', system-ui, sans-serif;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.pageHeader {
+  margin-bottom: 8px;
+}
+
+.pageTitle {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.pageSubtitle {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Top Cards Layout */
+.topCardsRow {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.topCardFull {
+  background: white;
+  border-radius: 22px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+}
+
+.totalRoomsLeft {
+  width: 64px;
+  height: 64px;
+  background: #eef2ff;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2563eb;
+}
+
+.totalRoomsMiddle {
+  flex: 1;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.cardTitle {
+  font-size: 17px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.topCardHalf .cardTitle {
+  font-size: clamp(12px, 3.5vw, 15px);
+  margin-bottom: 0px;
+}
+
+.totalRoomsNumber {
+  font-size: 34px;
+  font-weight: 700;
+  color: #2563eb;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.totalRoomsSub {
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.totalRoomsSub span {
+  color: #2563eb;
+}
+
+.topCardsHalfRow {
+  display: flex;
+  gap: clamp(8px, 3vw, 12px);
+}
+
+.topCardHalf {
+  background: white;
+  border-radius: clamp(16px, 4vw, 22px);
+  padding: clamp(10px, 2.5vw, 14px);
+  flex: 1;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.occColumns {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.occCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.occVal {
+  font-size: clamp(20px, 6vw, 34px);
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: clamp(4px, 1.5vw, 8px);
+}
+
+.occVal.vacant {
+  color: #10b981;
+}
+
+.occVal.partial {
+  color: #f59e0b;
+}
+
+.occVal.full {
+  color: #ef4444;
+}
+
+.occLabel {
+  font-size: clamp(10px, 2.5vw, 13px);
+  font-weight: 500;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.occDivider {
+  width: 1px;
+  background: #f1f5f9;
+  margin: 0 clamp(4px, 1vw, 8px);
+}
+
+.bedsContent {
+  display: flex;
+  align-items: flex-end;
+  margin-top: 12px;
+  justify-content: space-between;
+}
+
+.bedsLeft {
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(6px, 2vw, 12px);
+}
+
+.bedsIconSquare {
+  width: clamp(36px, 10vw, 48px);
+  height: clamp(36px, 10vw, 48px);
+  background: #ecfdf5;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #10b981;
+}
+
+.bedsIconSquare svg {
+  width: clamp(18px, 5vw, 24px);
+  height: clamp(18px, 5vw, 24px);
+}
+
+.bedsNumberWrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.bedsNumber {
+  font-size: clamp(24px, 6vw, 34px);
+  font-weight: 700;
+  color: #10b981;
+  line-height: 1;
+}
+
+.bedsSub {
+  font-size: clamp(9px, 2.2vw, 11px);
+  font-weight: 500;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.circularProgress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.progressContainer {
+  position: relative;
+  width: clamp(48px, 15vw, 64px);
+  height: clamp(48px, 15vw, 64px);
+}
+
+.topCardHalf .progressContainer {
+  width: clamp(40px, 12vw, 52px);
+  height: clamp(40px, 12vw, 52px);
+}
+
+.topCardHalf .progressPercent {
+  font-size: clamp(9px, 2.5vw, 11px);
+}
+
+.svgCircle {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.svgCircleBg {
+  fill: none;
+  stroke: #f1f5f9;
+  stroke-width: 6;
+}
+
+.svgCirclePath {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s ease;
+}
+
+.progressTextWrapper {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progressPercent {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.progressLabel {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.progressBlue .svgCirclePath {
+  stroke: #2563eb;
+}
+
+.progressBlue .progressPercent {
+  color: #2563eb;
+}
+
+.progressBlue .progressLabel {
+  color: #2563eb;
+}
+
+.progressGreen .svgCirclePath {
+  stroke: #10b981;
+}
+
+.progressGreen .progressPercent {
+  color: #10b981;
+}
+
+.progressGreen .progressLabel {
+  color: #10b981;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot.vacant {
+  background-color: #10b981;
+}
+
+.dot.partial {
+  background-color: #f59e0b;
+}
+
+.dot.full {
+  background-color: #ef4444;
+}
+
+/* Search and Filter */
+.searchRow {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.searchBar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0 16px;
+}
+
+.searchInput {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 14px 0;
+  margin-left: 10px;
+  font-size: 0.95rem;
+  color: #334155;
+  background: transparent;
+}
+
+.searchInput::placeholder {
+  color: #94a3b8;
+}
+
+.filterBtn {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  width: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.pillsRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-bottom: 18px;
+  padding-bottom: 4px;
+}
+
+.pillsRow::-webkit-scrollbar {
+  display: none;
+}
+
+.pill {
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: white;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  border: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pill.active {
+  background: #2563eb;
+  color: white;
+  border-color: #2563eb;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+}
+
+/* Floor Accordion */
+.floorSection {
+  margin: 0 4px 12px 4px;
+  background: transparent;
+}
+
+.floorHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid #f1f5f9;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+}
+
+.floorTitleWrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.floorIconSquare {
+  width: 40px;
+  height: 40px;
+  background: #eef2ff;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floorTitleText {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.floorRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.floorPill {
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 20px;
+}
+
+.roomList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+/* Room Cards */
+.roomCard {
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #f1f5f9;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  cursor: pointer;
+}
+
+.roomBorder {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+
+.roomBorder.available {
+  background: #16a34a;
+}
+
+.roomBorder.partial {
+  background: #f97316;
+}
+
+.roomBorder.occupied {
+  background: #dc2626;
+}
+
+.roomContent {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 16px 16px 20px;
+}
+
+/* Col 1 */
+.col1 {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 65px;
+  flex-shrink: 0;
+}
+
+.roomNumber {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.statusBadge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 4px 6px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-top: 6px;
+  width: fit-content;
+}
+
+.statusBadge.available {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.statusBadge.partial {
+  background: #ffedd5;
+  color: #f97316;
+}
+
+.statusBadge.occupied {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* Col 2 */
+.col2 {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
+  padding: 0 12px;
+  min-width: 0;
+}
+
+.bedsInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.progressBar {
+  width: 100%;
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 4px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.progressFill.available {
+  background: #e2e8f0;
+}
+
+/* Gray if 0% */
+.progressFill.partial {
+  background: #f59e0b;
+}
+
+.progressFill.occupied {
+  background: #dc2626;
+}
+
+.occText {
+  font-size: 0.7rem;
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Col 3 */
+.col3 {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border-left: 1px solid #f1f5f9;
+  width: 50px;
+  flex-shrink: 0;
+}
+
+.addTenantBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2563eb;
+  background: #eff6ff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.addTenantBtn:active {
+  transform: scale(0.95);
+}
+
+/* Expanded Accordion */
+.expandedSection {
+  background: #f8fafc;
+  border-top: 1px solid #f1f5f9;
+  padding: 12px 20px;
+  margin-top: 8px;
+  border-radius: 0 0 12px 12px;
+}
+
+.tenantItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.tenantItem:last-child {
+  border-bottom: none;
+}
+
+.tenantInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.tenantName {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 2px;
+}
+
+.tenantFees {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.tenantFeeHighlight {
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.roomExtraFeeRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #cbd5e1;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.roomExtraFeeVal {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.editRoomBtn {
+  margin-top: 16px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* Modal CSS (Reusing what we had, slightly polished) */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modalContent {
+  background: white;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.modalHeader h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.closeBtn {
+  background: #f1f5f9;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.modalBody {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inputGroup label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.styledInput {
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  font-size: 1rem;
+  outline: none;
+  font-family: inherit;
+}
+
+.styledInput:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.modalFooter {
+  padding: 20px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.saveBtn {
+  background: linear-gradient(90deg, #022055, #036881);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cancelBtn {
+  background: white;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Filter Modal Styles */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+}
+
+.filterModal {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  box-shadow: 0 -10px 40px rgba(0,0,0,0.1);
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.modalHeader h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.resetBtn {
+  background: transparent;
+  border: none;
+  color: #3b82f6;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.filterSection h3 {
+  margin: 0 0 12px 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.optionsGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filterOptionBtn {
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.filterOptionBtn.selected {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #eff6ff;
+  font-weight: 600;
+}
+
+.applyBtn {
+  flex: 2;
+  padding: 14px;
+  border-radius: 4px;
+  background: #3b82f6;
+  border: none;
+  font-weight: 600;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 1rem;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.activeFiltersRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+
+.activeFiltersScroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.activeFiltersScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.activeFilterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid #bfdbfe;
+}
+.activeFilterChip button {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3b82f6;
+  cursor: pointer;
+}
+
+.clearAllFilters {
+  font-size: 0.75rem;
+  color: #ef4444;
+  background: transparent;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}

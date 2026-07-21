@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Send, CheckCircle } from 'lucide-react';
 import { AnimatedButton } from '@/components/AnimatedButton';
 import styles from '../tenant.module.css';
+import { CustomSelect } from '@/components/CustomSelect';
 
 export default function HelpDesk() {
   const [type, setType] = useState('plumbing');
@@ -42,17 +43,17 @@ export default function HelpDesk() {
       >
         <div>
           <label className="text-sm font-medium mb-2 block">Issue Category</label>
-          <select 
-            className={styles.ticketTypeSelect}
+          <CustomSelect 
             value={type}
-            onChange={(e) => setType(e.target.value)}
-          >
-            <option value="plumbing">Plumbing (e.g., Leaking Tap)</option>
-            <option value="electrical">Electrical (e.g., Fan not working)</option>
-            <option value="wifi">WiFi / Internet</option>
-            <option value="cleaning">Room Cleaning</option>
-            <option value="other">Other</option>
-          </select>
+            onChange={(val) => setType(val)}
+            options={[
+              { value: 'plumbing', label: 'Plumbing (e.g., Leaking Tap)' },
+              { value: 'electrical', label: 'Electrical (e.g., Fan not working)' },
+              { value: 'wifi', label: 'WiFi / Internet' },
+              { value: 'cleaning', label: 'Room Cleaning' },
+              { value: 'other', label: 'Other' },
+            ]}
+          />
         </div>
 
         <div>
