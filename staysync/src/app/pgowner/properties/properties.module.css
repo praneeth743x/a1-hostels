@@ -1,17 +1,117 @@
 .propertiesContainer {
   padding: 1rem;
   padding-bottom: 90px;
-  max-width: 640px;
-  margin: 0 auto;
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   user-select: none;
   -webkit-user-drag: none;
 }
 
-/* Top Add Hostel Action Button */
-.topActionRow {
+/* Global KPI Card */
+.globalKpiCard {
+  background: white;
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(226, 232, 240, 0.8);
   margin-bottom: 16px;
 }
+
+.globalKpiHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+
+.globalKpiTitle {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0F172A;
+  margin: 0;
+}
+
+.kpiFilterGroup {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+}
+
+.kpiFilterSelect, .kpiFilterInput {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #CBD5E1;
+  font-size: 0.75rem;
+  outline: none;
+  background-color: white;
+  color: #334155;
+  font-family: inherit;
+  flex: 1;
+}
+
+.globalKpiGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  background: #F8FAFC;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid #F1F5F9;
+}
+
+.globalKpiItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.globalKpiLabel {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+
+.globalKpiValue {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0F172A;
+  letter-spacing: -0.02em;
+}
+
+.expenseValue {
+  color: #E11D48;
+}
+
+.profitValue {
+  color: #10B981;
+}
+
+
+.topToolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (min-width: 768px) {
+  .topToolbar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.searchFilterGroup {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  max-width: 600px;
+}
+
 
 .addHostelBtn {
   width: 100%;
@@ -40,18 +140,21 @@
   transform: scale(0.98);
 }
 
+@media (min-width: 768px) {
+  .addHostelBtn {
+    width: auto;
+    padding: 0 24px;
+  }
+}
+
+
 .plusIconCircle {
   background: rgba(255, 255, 255, 0.2);
   border-radius: 50%;
   padding: 2px;
 }
 
-/* Search & Filter Bar */
-.searchFilterRow {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-}
+
 
 .searchBar {
   flex: 1;
@@ -101,19 +204,33 @@
   background: #F8FAFC;
 }
 
+
 /* Hostels List */
 .hostelsList {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 20px;
 }
 
+@media (min-width: 768px) {
+  .hostelsList {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .hostelsList {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+
 .hostelCard {
   background: white;
-  border-radius: 24px;
+  border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(226, 232, 240, 0.8);
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -126,7 +243,7 @@
 
 .cardImageContainer {
   position: relative;
-  height: 120px;
+  height: 90px;
   width: 100%;
   overflow: hidden;
   background: #E2E8F0;
@@ -145,11 +262,11 @@
 
 .imageIconBadge {
   position: absolute;
-  top: 14px;
-  left: 14px;
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
+  top: 10px;
+  left: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(8px);
   display: flex;
@@ -160,17 +277,17 @@
 
 .activePillBadge {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  top: 10px;
+  right: 10px;
   background: rgba(236, 253, 245, 0.95);
   color: #059669;
-  padding: 5px 12px;
-  border-radius: 20px;
-  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-size: 0.7rem;
   font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   backdrop-filter: blur(8px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
@@ -183,28 +300,99 @@
 }
 
 .cardContent {
-  padding: 12px 14px 12px 14px;
+  padding: 10px 12px;
 }
 
 .hostelName {
-  font-size: 1.25rem;
+  font-size: 1rem;
   font-weight: 800;
   color: #0F172A;
   margin: 0 0 4px 0;
   letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hostelLocation {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.8rem;
+  gap: 4px;
+  font-size: 0.75rem;
   color: #64748B;
   font-weight: 500;
   margin-bottom: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* 3-Column Stats Grid */
+.compactMetricsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.compactMetricItem {
+  display: flex;
+  flex-direction: column;
+  background: #F8FAFC;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #F1F5F9;
+}
+
+.compactMetricLabel {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #64748B;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.compactMetricValue {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0F172A;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.compactMetricSub {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #94A3B8;
+}
+
+.pendingValue {
+  color: #E11D48;
+}
+
+.compactActionsMenu {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.compactActionBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+/* Original metrics grid - Kept for fallback if needed */
 .metricsRow {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

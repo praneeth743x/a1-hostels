@@ -28,7 +28,7 @@
 /* Base Layout */
 .luxuryLayout {
   display: flex;
-  height: 100vh;
+  height: 100dvh;
   background: var(--lx-bg);
   color: var(--lx-text-main);
   font-family: 'Inter', -apple-system, sans-serif;

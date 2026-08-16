@@ -1,8 +1,7 @@
+/* Force Next.js to rebuild CSS */
 .container {
   padding: 0 1rem 80px 1rem; /* Space for bottom nav, no top padding to reduce empty space */
-  max-width: 600px;
-  margin: 0 auto;
-}
+    }
 
 .title {
   font-size: 1.5rem;
@@ -27,29 +26,28 @@
 
 .searchIcon {
   position: absolute;
-  left: 12px;
+  left: 14px;
   color: #94a3b8;
 }
 
 .searchInput {
   width: 100%;
-  padding: 12px 12px 12px 36px;
-  border-radius: 8px;
+  padding: 14px 14px 14px 40px;
+  border-radius: 12px;
   border: 1px solid #e2e8f0;
   font-size: 0.95rem;
   outline: none;
-  transition: all 0.2s ease;
   background: #ffffff;
+  color: #0f172a;
 }
-.searchInput:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+.searchInput::placeholder {
+  color: #94a3b8;
 }
 
 .filterIconButton {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   border: 1px solid #e2e8f0;
   background: #ffffff;
   display: flex;
@@ -57,7 +55,6 @@
   justify-content: center;
   color: #3b82f6;
   cursor: pointer;
-  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 .filterIconButton:hover {
@@ -127,7 +124,7 @@
   bottom: 0;
   background: rgba(15, 23, 42, 0.4);
   backdrop-filter: blur(4px);
-  z-index: 1000;
+  z-index: 99999;
 }
 
 .filterModal {
@@ -135,10 +132,12 @@
   bottom: 0;
   left: 0;
   right: 0;
+  margin: 0 auto;
+  max-width: 500px;
   background: #ffffff;
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
-  z-index: 1001;
+  z-index: 100000;
   display: flex;
   flex-direction: column;
   max-height: 90vh;
@@ -173,6 +172,7 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  flex: 1;
 }
 
 .filterSection h3 {
@@ -222,8 +222,9 @@
 .modalFooter {
   display: flex;
   gap: 12px;
-  padding: 16px 24px;
+  padding: 16px 24px calc(16px + env(safe-area-inset-bottom)) 24px;
   border-top: 1px solid #f1f5f9;
+  flex-shrink: 0;
 }
 .cancelBtn {
   flex: 1;
@@ -251,70 +252,109 @@
 
 .statsContainer {
   display: flex;
-  gap: 12px;
-  margin-bottom: 1rem;
+  gap: 10px;
+  margin-bottom: 1.25rem;
 }
 
-.totalCardHalf {
+.summaryCardBlue {
   flex: 1;
-  background: linear-gradient(135deg, #0ea5e9, #3b82f6);
-  border-radius: 8px;
-  padding: 1.25rem 1rem;
-  color: white;
-  box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.4);
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px -6px rgba(37, 99, 235, 0.4);
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.summaryCardBlue::after {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.summaryCardGreen {
+  flex: 1;
+  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px -6px rgba(16, 185, 129, 0.4);
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.summaryCardGreen::after {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+
+.summaryContent {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  z-index: 1;
+  min-width: 0;
 }
 
-.filteredCard {
-  background: linear-gradient(135deg, #10b981, #059669);
-  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.4);
-}
-
-.totalTitle {
-  font-size: 0.8rem;
-  font-weight: 500;
-  opacity: 0.9;
-  margin-bottom: 0.25rem;
-}
-
-.totalAmount {
-  font-size: 1.75rem;
+.summaryTitleWhite {
+  font-size: 0.75rem;
   font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.summaryAmountWhite {
+  font-size: clamp(0.8rem, 4vw, 1.25rem);
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  white-space: nowrap;
 }
 
 .transactionList {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 12px;
 }
 
 .transactionCard {
   background: #ffffff;
-  border-radius: 20px;
-  padding: 16px 48px 16px 16px; /* Extra right padding to prevent download button overlap */
-  box-shadow: 0 8px 24px rgba(15,23,42,0.06);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  position: relative;
-  overflow: hidden;
+  gap: 14px;
   border: 1px solid #f1f5f9;
-}
-
-.cardLeft {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .avatarCircle {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #e0f2fe, #bae6fd);
-  color: #0284c7;
+  background: #4f46e5;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -323,70 +363,155 @@
   flex-shrink: 0;
 }
 
-.cardDetails {
+.cardCenterContent {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tenantInfoRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .tenantName {
   font-weight: 700;
   color: #0f172a;
   font-size: 1.05rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.roomInfo {
+.roomBadge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 1px 4px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.dateTimeRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.8rem;
   color: #64748b;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.cardRight {
+.upiBadge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.collectorRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collectorName {
+  color: #2563eb;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardRightSide {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.amountStatusCol {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
 }
 
-.amount {
-  font-size: 1.25rem;
+.amountPositive {
+  font-size: 1.15rem;
   font-weight: 800;
-  color: #10b981;
+  color: #ea580c;
 }
 
-.amount.partial {
-  color: #f59e0b; /* Yellow/Orange for partial */
+.amountClear {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #16a34a;
 }
 
-.paymentMethod {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #64748b;
-  background: #f1f5f9;
-  padding: 4px 8px;
-  border-radius: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.pendingBadgeDue {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #ef4444;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.downloadBtn {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  background: #f8fafc;
-  border: none;
-  width: 40px;
-  height: 40px;
-  border-top-left-radius: 16px;
+.pendingBadgeClear {
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+  color: #16a34a;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.verticalDivider {
+  width: 1px;
+  height: 48px;
+  background-color: #e2e8f0;
+}
+
+.downloadIconBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #3b82f6;
+  border: 1px solid #bfdbfe;
+  background: transparent;
   cursor: pointer;
-  transition: all 0.2s ease;
+  flex-shrink: 0;
 }
-.downloadBtn:hover {
-  background: #eff6ff;
+
+.downloadActionCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 
 .emptyState {
@@ -405,4 +530,102 @@
   align-items: center;
   justify-content: center;
   color: #94a3b8;
+}
+
+@media (max-width: 768px) {
+  .transactionCard {
+    padding: 12px 10px;
+    gap: 8px;
+  }
+
+  .avatarCircle {
+    width: 40px;
+    height: 40px;
+    font-size: 1rem;
+  }
+
+  .tenantInfoRow {
+    gap: 6px;
+  }
+
+  .tenantName {
+    font-size: 0.95rem;
+  }
+
+  .upiBadge {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+    flex-shrink: 0;
+  }
+
+  .amountPositive, .amountClear {
+    font-size: 0.95rem;
+  }
+
+  .dateTimeRow, .collectorRow {
+    font-size: 0.72rem;
+  }
+
+  .cardRightSide {
+    gap: 6px;
+  }
+
+  .downloadIconBtn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .verticalDivider {
+    height: 32px;
+  }
+
+  .pendingBadgeDue, .pendingBadgeClear {
+    padding: 2px 6px;
+    font-size: 0.68rem;
+  }
+
+  .summaryAmountWhite {
+    font-size: clamp(0.75rem, 3.5vw, 1.1rem);
+  }
+}
+
+.summaryCardPurple {
+  flex: 1;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  border-radius: 16px;
+  padding: 12px 14px;
+  color: white;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+.summaryCardPurple::after {
+  content: '';
+  position: absolute;
+  right: -20%;
+  top: -20%;
+  width: 80px;
+  height: 80px;
+  background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 70%);
+  border-radius: 50%;
+}
+
+@media (max-width: 768px) {
+  .statsContainer {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: 
+      "top top"
+      "bottom-left bottom-right";
+    gap: 10px;
+  }
+  .summaryCardBlue {
+    grid-area: top;
+  }
+  .summaryCardPurple {
+    grid-area: bottom-left;
+  }
+  .summaryCardGreen {
+    grid-area: bottom-right;
+  }
 }

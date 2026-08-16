@@ -5,9 +5,9 @@
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   background-color: rgba(0, 0, 0, 0.4);
-  z-index: 999;
+  z-index: 10001;
 }
 
 .mobileDrawerContainer {
@@ -16,9 +16,9 @@
   left: 0;
   width: 85vw;
   max-width: 340px;
-  height: 100vh;
+  height: 100dvh;
   background-color: #F8F9FB;
-  z-index: 1000;
+  z-index: 10002;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -181,6 +181,15 @@
   align-items: center;
   padding: 14px 4px;
   cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: opacity 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.drawerMenuItem:active {
+  opacity: 0.75;
 }
 
 .drawerMenuItemLeft {
@@ -209,4 +218,34 @@
   font-size: 0.95rem;
   font-weight: 700;
   color: #0F172A;
+}
+
+.drawerFooter {
+  padding: 1rem;
+  background-color: #ffffff;
+  border-top: 1px solid #f1f5f9;
+  margin-top: auto;
+}
+
+.drawerLogoutBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #ef4444;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.08);
+}
+
+.drawerLogoutBtn:active {
+  opacity: 0.8;
+  background-color: #fee2e2;
 }

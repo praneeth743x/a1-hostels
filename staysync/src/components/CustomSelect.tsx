@@ -16,13 +16,25 @@ interface CustomSelectProps {
   disabled?: boolean;
   icon?: React.ReactNode;
   iconOnly?: boolean;
+  searchable?: boolean;
 }
 
-export function CustomSelect({ value, onChange, options, placeholder = 'Select an option', disabled = false, icon, iconOnly = false }: CustomSelectProps) {
+export function CustomSelect({ value, onChange, options, placeholder = 'Select an option', disabled = false, icon, iconOnly = false, searchable = false }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const selectedOption = options.find(opt => opt.value === value);
+
+  useEffect(() => {
+    if (isOpen && searchable) {
+      setSearchQuery('');
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
+    }
+  }, [isOpen, searchable]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -43,21 +55,21 @@ export function CustomSelect({ value, onChange, options, placeholder = 'Select a
           alignItems: 'center', 
           justifyContent: iconOnly ? 'center' : 'flex-start',
           width: '100%', 
-          padding: iconOnly ? '12px' : '12px 16px', 
-          paddingLeft: (icon && !iconOnly) ? '40px' : (iconOnly ? '12px' : '16px'),
-          borderRadius: '8px', 
-          border: iconOnly ? 'none' : (isOpen ? '1px solid #3b82f6' : '1px solid #cbd5e1'), 
-          backgroundColor: disabled ? '#f8fafc' : (isOpen ? '#f8fafc' : '#fff'), 
+          padding: iconOnly ? '10px' : '10px 14px', 
+          paddingLeft: (icon && !iconOnly) ? '38px' : (iconOnly ? '10px' : '14px'),
+          borderRadius: '14px', 
+          border: iconOnly ? 'none' : (isOpen ? '1px solid #4F6DFF' : '1px solid #E2E8F0'), 
+          backgroundColor: disabled ? '#F8FAFC' : '#FFFFFF', 
           cursor: disabled ? 'not-allowed' : 'pointer',
-          boxShadow: iconOnly ? '0 8px 24px rgba(15,23,42,0.1)' : (isOpen ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none'),
-          transition: 'all 0.2s ease',
-          color: selectedOption ? '#0f172a' : '#94a3b8',
-          fontSize: '0.9rem',
-          fontWeight: 400
+          boxShadow: iconOnly ? '0 6px 20px rgba(15,23,42,0.08)' : (isOpen ? '0 0 0 3.5px rgba(79, 109, 255, 0.15)' : '0 1px 3px rgba(0, 0, 0, 0.04)'),
+          transition: 'all 0.18s ease',
+          color: selectedOption ? '#0F172A' : '#94A3B8',
+          fontSize: '0.88rem',
+          fontWeight: 500
         }}
       >
         {icon && (
-          <div style={{ position: iconOnly ? 'static' : 'absolute', left: iconOnly ? 'auto' : '12px', color: (iconOnly && (value !== 'All' && value !== '')) ? '#3b82f6' : '#64748b', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+          <div style={{ position: iconOnly ? 'static' : 'absolute', left: iconOnly ? 'auto' : '12px', color: (iconOnly && (value !== 'All' && value !== '')) ? '#4F6DFF' : '#64748B', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
             {icon}
           </div>
         )}
@@ -71,10 +83,10 @@ export function CustomSelect({ value, onChange, options, placeholder = 'Select a
         {!iconOnly && (
           <ChevronDown 
             size={16} 
-            color="#94a3b8" 
+            color="#64748B" 
             style={{ 
               transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', 
-              transition: 'transform 0.2s ease' 
+              transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)' 
             }} 
           />
         )}
@@ -83,32 +95,63 @@ export function CustomSelect({ value, onChange, options, placeholder = 'Select a
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -10, scaleY: 0.95 }}
-            animate={{ opacity: 1, y: 0, scaleY: 1 }}
-            exit={{ opacity: 0, y: -10, scaleY: 0.95 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+            transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
             style={{
               position: 'absolute',
-              top: 'calc(100% + 8px)',
+              top: 'calc(100% + 6px)',
               right: iconOnly ? 0 : 'auto',
               left: iconOnly ? 'auto' : 0,
               minWidth: iconOnly ? '200px' : '100%',
-              backgroundColor: '#ffffff',
-              borderRadius: '8px',
-              border: '1px solid #e2e8f0',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-              zIndex: 50,
+              backgroundColor: '#FFFFFF',
+              borderRadius: '16px',
+              border: '1px solid #E2E8F0',
+              boxShadow: '0 12px 32px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(0, 0, 0, 0.04)',
+              zIndex: 100,
               overflow: 'hidden',
               transformOrigin: 'top'
             }}
           >
-            <div style={{ maxHeight: '250px', overflowY: 'auto', padding: '4px' }}>
-              {options.length === 0 ? (
-                <div style={{ padding: '8px 12px', color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center' }}>
+            <div style={{ 
+                maxHeight: '260px', 
+                overflowY: 'auto', 
+                scrollbarWidth: 'thin',
+                WebkitOverflowScrolling: 'touch',
+                overscrollBehavior: 'contain'
+              }}
+            >
+              {searchable && (
+                <div style={{ padding: '8px' }}>
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #E2E8F0',
+                      outline: 'none',
+                      fontSize: '0.85rem'
+                    }}
+                  />
+                </div>
+              )}
+              {options
+                .filter(opt => !searchable || (opt.label?.toString() || '').toLowerCase().includes(searchQuery.toLowerCase()))
+                .length === 0 ? (
+                <div style={{ padding: '10px 14px', color: '#94A3B8', fontSize: '0.85rem', textAlign: 'center' }}>
                   No options available
                 </div>
               ) : (
-                options.map((opt) => (
+                options
+                .filter(opt => !searchable || (opt.label?.toString() || '').toLowerCase().includes(searchQuery.toLowerCase()))
+                .map((opt) => (
                   <div
                     key={opt.value}
                     onClick={() => {
@@ -117,28 +160,28 @@ export function CustomSelect({ value, onChange, options, placeholder = 'Select a
                       setIsOpen(false);
                     }}
                     style={{
-                      padding: '8px 12px',
-                      borderRadius: '6px',
+                      padding: '9px 12px',
+                      borderRadius: '10px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       cursor: opt.disabled ? 'not-allowed' : 'pointer',
-                      backgroundColor: value === opt.value ? '#eff6ff' : 'transparent',
-                      color: value === opt.value ? '#1d4ed8' : '#334155',
-                      fontSize: '0.9rem',
-                      fontWeight: value === opt.value ? 500 : 400,
+                      backgroundColor: value === String(opt.value) ? '#EFF6FF' : 'transparent',
+                      color: value === String(opt.value) ? '#2563EB' : '#1E293B',
+                      fontSize: '0.88rem',
+                      fontWeight: value === String(opt.value) ? 600 : 450,
                       opacity: opt.disabled ? 0.4 : 1,
-                      transition: 'background-color 0.15s ease'
+                      transition: 'all 0.12s ease'
                     }}
                     onMouseEnter={(e) => {
-                      if (!opt.disabled && value !== opt.value) e.currentTarget.style.backgroundColor = '#f8fafc';
+                      if (!opt.disabled && value !== String(opt.value)) e.currentTarget.style.backgroundColor = '#F8FAFC';
                     }}
                     onMouseLeave={(e) => {
-                      if (!opt.disabled && value !== opt.value) e.currentTarget.style.backgroundColor = 'transparent';
+                      if (!opt.disabled && value !== String(opt.value)) e.currentTarget.style.backgroundColor = 'transparent';
                     }}
                   >
                     {opt.label}
-                    {value === opt.value && <Check size={16} color="#3b82f6" strokeWidth={3} />}
+                    {value === String(opt.value) && <Check size={16} color="#2563EB" strokeWidth={2.5} />}
                   </div>
                 ))
               )}

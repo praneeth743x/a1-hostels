@@ -10,18 +10,27 @@ interface AnimatedButtonProps extends ComponentProps<typeof motion.button> {
   isLoading?: boolean;
 }
 
-export const AnimatedButton: React.FC<AnimatedButtonProps> = ({ 
+export const AnimatedButton: React.FC<AnimatedButtonProps> = React.memo(({ 
   children, 
   variant = 'primary', 
   isLoading, 
   className = '', 
+  onPointerDown,
+  onTouchStart,
   ...props 
 }) => {
   return (
     <motion.button
-      whileHover={{ scale: 1.02, y: -1 }}
-      whileTap={{ scale: 0.96, y: 1 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+      whileHover={{ scale: 1.01 }}
+      whileTap={{ scale: 0.97 }}
+      transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+      onPointerDown={(e) => {
+        if (onPointerDown) onPointerDown(e);
+      }}
+      onTouchStart={(e) => {
+        if (onTouchStart) onTouchStart(e);
+      }}
+      style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', transform: 'translateZ(0)', ...(props.style || {}) }}
       className={clsx(`animated-button btn-${variant}`, isLoading && 'loading', className)}
       disabled={isLoading || props.disabled}
       {...props}
@@ -33,5 +42,6 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
       )}
     </motion.button>
   );
-};
+});
 
+AnimatedButton.displayName = 'AnimatedButton';

@@ -1,0 +1,282 @@
+"use server";
+
+import { adminDb, adminAuth } from '@/lib/firebase-admin';
+import { sendDeletionConfirmationEmail } from '@/lib/email';
+import { revalidatePath } from 'next/cache';
+import crypto from 'crypto';
+
+export async function getTenantDashboardData(email: string) {
+  try {
+    // 1. Fetch Tenant
+    const tenantQuery = await adminDb.collection('tenants').where('email', '==', email).get();
+    if (tenantQuery.empty) {
+      return { success: false, error: 'Tenant not found.' };
+    }
+    const tenantData = { id: tenantQuery.docs[0].id, ...tenantQuery.docs[0].data() } as any;
+
+    if (tenantData.is_active === false || tenantData.status === 'INACTIVE') {
+      return { success: false, error: 'ACCOUNT_DISABLED', message: 'Your tenant account or hostel access has been suspended by the administrator.' };
+    }
+
+    // 2. Fetch Properties, Roommates, Room Capacity, Payments, Notices concurrently via Promise.all
+    const tenantId = tenantData.tenant_id || tenantData.id;
+    const [pgSnap, roommatesQuery, roomSnap, duesQuery, noticesQuery, systemSettingsSnap, activityLogsSnap] = await Promise.all([
+      tenantData.pg_id ? adminDb.collection('properties').doc(tenantData.pg_id).get() : Promise.resolve(null),
+      tenantData.room_id && tenantData.pg_id
+        ? adminDb.collection('tenants').where('room_id', '==', tenantData.room_id).where('pg_id', '==', tenantData.pg_id).get()
+        : Promise.resolve({ docs: [] }),
+      tenantData.room_id ? adminDb.collection('rooms').doc(tenantData.room_id).get() : Promise.resolve(null),
+      tenantId ? adminDb.collection('payments').where('tenant_id', '==', tenantId).get() : Promise.resolve({ docs: [] }),
+      tenantData.pg_id ? adminDb.collection('notices').where('pg_id', '==', tenantData.pg_id).get() : Promise.resolve({ docs: [] }),
+      adminDb.collection('system_settings').doc('whatsapp_reminders').get(),
+      tenantId ? adminDb.collection('tenant_activity_logs').where('tenant_id', '==', tenantId).limit(20).get() : Promise.resolve({ docs: [] })
+    ]);
+
+    if (pgSnap?.exists) {
+      const pgData = pgSnap.data();
+      if (pgData?.is_active === false || pgData?.status === 'INACTIVE') {
+        return { success: false, error: 'ACCOUNT_DISABLED', message: 'Your hostel subscription has been suspended by the administrator.' };
+      }
+      if (pgData?.owner_id) {
+        const ownerDoc = await adminDb.collection('user_profiles').doc(pgData.owner_id).get();
+        if (ownerDoc.exists) {
+          const oData = ownerDoc.data();
+          if (oData?.is_active === false || oData?.status === 'disabled') {
+            return { success: false, error: 'ACCOUNT_DISABLED', message: 'The PG Owner account for this hostel has been suspended by the administrator.' };
+          }
+        }
+      }
+      tenantData.pg_name = pgData?.name || 'Unknown Hostel';
+    }
+
+    const roommates = roommatesQuery.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as any))
+      .filter(t => t.id !== tenantData.id && t.status === 'ACTIVE');
+
+    let availableBeds = 0;
+    if (roomSnap?.exists) {
+      const roomCapacity = roomSnap.data()?.capacity || 0;
+      const currentOccupants = roommatesQuery.docs.filter(d => d.data().status === 'ACTIVE').length;
+      availableBeds = Math.max(0, roomCapacity - currentOccupants);
+      tenantData.room = { id: roomSnap.id, ...roomSnap.data() };
+    }
+
+    const allPayments = duesQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+    allPayments.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    const pendingDues = allPayments.filter(p => p.status === 'pending');
+
+    const notices = noticesQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+    notices.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    const activityLogs = activityLogsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+    activityLogs.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+    const systemSettings = systemSettingsSnap?.exists ? systemSettingsSnap.data() : {};
+    const tenantPaymentsEnabled = systemSettings?.tenantPaymentsEnabled !== false;
+    console.log('[DEBUG] Fetched tenantPaymentsEnabled:', tenantPaymentsEnabled);
+
+    return {
+      success: true,
+      data: {
+        tenant: tenantData,
+        roommates,
+        availableBeds,
+        pendingDues,
+        payments: allPayments,
+        notices: notices.slice(0, 3), // Top 3 recent
+        tenantPaymentsEnabled,
+        activityLogs
+      }
+    };
+  } catch (err: any) {
+    console.error("Error fetching tenant dashboard data:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function sendPasswordResetAction(email: string, appUrl: string) {
+  try {
+    const actionCodeSettings = {
+      url: `${appUrl}/reset-password`,
+      handleCodeInApp: true,
+    };
+    let directAppResetLink = `${appUrl}/reset-password`;
+    try {
+      const rawLink = await adminAuth.generatePasswordResetLink(email, actionCodeSettings);
+      console.log('[RESET-LINK-GENERATED] Raw link:', rawLink);
+      const urlObj = new URL(rawLink);
+      const oobCode = urlObj.searchParams.get('oobCode');
+      if (oobCode) {
+        directAppResetLink = `${appUrl}/reset-password?oobCode=${oobCode}`;
+      }
+    } catch (adminErr: any) {
+      console.warn("adminAuth.generatePasswordResetLink fallback:", adminErr?.message);
+    }
+
+    return { success: true, resetLink: directAppResetLink };
+  } catch (err: any) {
+    console.error("Error in sendPasswordResetAction:", err);
+    return { success: true, resetLink: `${appUrl}/reset-password` };
+  }
+}
+
+export async function resetTenantPasswordAdmin(email: string, newPassword: string) {
+  try {
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters long.' };
+    }
+    const userRecord = await adminAuth.getUserByEmail(email);
+    await adminAuth.updateUser(userRecord.uid, { password: newPassword });
+    console.log(`[PASSWORD-UPDATED-ADMIN] Password updated for tenant ${email}`);
+    return { success: true, message: 'Password updated successfully!' };
+  } catch (err: any) {
+    console.error("Error updating password via adminAuth:", err);
+    return { success: false, error: err.message || 'Failed to update password.' };
+  }
+}
+
+export async function updateTenantRent(tenantId: string, rentAmount: number) {
+  try {
+    if (!tenantId || rentAmount === undefined || rentAmount === null) {
+      return { success: false, error: 'Tenant ID and rent amount are required' };
+    }
+
+    const tenantRef = adminDb.collection('tenants').doc(tenantId);
+    const doc = await tenantRef.get();
+    
+    if (!doc.exists) {
+      return { success: false, error: 'Tenant not found' };
+    }
+
+    await tenantRef.update({
+      rent_amount: Number(rentAmount),
+      updated_at: new Date().toISOString()
+    });
+
+    return { success: true, message: 'Monthly rent updated successfully' };
+  } catch (err: any) {
+    console.error("Error updating tenant rent:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteTenantPermanently(tenantId: string) {
+  try {
+    let tenantName = 'Tenant';
+    let roomNum = 'N/A';
+    let pgName = 'Himalaya Hostels';
+
+    const tenantDoc = await adminDb.collection('tenants').doc(tenantId).get();
+    if (tenantDoc.exists) {
+      const tenantData = tenantDoc.data() as any;
+      tenantName = tenantData.full_name || tenantData.name || tenantName;
+      roomNum = tenantData.room_number || tenantData.room || roomNum;
+      pgName = tenantData.pg_name || tenantData.hostel || pgName;
+
+      if ((!roomNum || roomNum === 'N/A') && tenantData.room_id) {
+        const roomDoc = await adminDb.collection('rooms').doc(tenantData.room_id).get();
+        if (roomDoc.exists) {
+          roomNum = roomDoc.data()?.room_number || roomNum;
+        }
+      }
+
+      if ((!pgName || pgName === 'Himalaya Hostels') && tenantData.pg_id) {
+        const propDoc = await adminDb.collection('properties').doc(tenantData.pg_id).get();
+        if (propDoc.exists) {
+          pgName = propDoc.data()?.name || pgName;
+        }
+      }
+
+      if (tenantData.uid) {
+        try {
+          await adminAuth.deleteUser(tenantData.uid);
+        } catch (e) { console.error('Failed to delete auth user:', e); }
+      }
+    }
+
+    const batch = adminDb.batch();
+    // 1. Delete tenant document permanently
+    batch.delete(adminDb.collection('tenants').doc(tenantId));
+    
+    // 2. Process payments: Preserve paid payments with snapshot info, delete unpaid dues
+    const payments = await adminDb.collection('payments').where('tenant_id', '==', tenantId).get();
+    for (const doc of payments.docs) {
+      const pData = doc.data();
+      const isPaid = pData.status === 'paid' || pData.status === 'completed' || Number(pData.amount_paid || 0) > 0;
+      
+      if (isPaid) {
+        batch.update(doc.ref, {
+          tenant_name: pData.tenant_name || tenantName,
+          room_number: pData.room_number || roomNum,
+          pg_name: pData.pg_name || pgName,
+          updated_at: new Date().toISOString()
+        });
+      } else {
+        batch.delete(doc.ref);
+      }
+    }
+    
+    // 3. Delete unpaid dues from dues collection
+    const dues = await adminDb.collection('dues').where('tenant_id', '==', tenantId).get();
+    dues.docs.forEach(doc => batch.delete(doc.ref));
+    
+    await batch.commit();
+
+    try {
+      revalidatePath('/pgowner/tenants');
+      revalidatePath('/pgowner/history');
+      revalidatePath('/pgowner/dues');
+    } catch (e) {}
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to delete tenant permanently' };
+  }
+}
+
+export async function requestTenantDeletion(tenantId: string, ownerEmail: string) {
+  try {
+    const tenantDoc = await adminDb.collection('tenants').doc(tenantId).get();
+    if (!tenantDoc.exists) return { success: false, error: 'Tenant not found' };
+    
+    const tenant = tenantDoc.data() as any;
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 60000).toISOString(); // 1 minute
+
+    const dues = await adminDb.collection('dues').where('tenant_id', '==', tenantId).get();
+    let dueAmount = 0;
+    dues.forEach(d => {
+      if (d.data().status === 'unpaid' || d.data().status === 'partial') {
+        dueAmount += Number(d.data().amount || 0) - Number(d.data().paid_amount || 0);
+      }
+    });
+
+    let hostelName = 'Hostel';
+    if (tenant.pg_id) {
+      const pgDoc = await adminDb.collection('properties').doc(tenant.pg_id).get();
+      if (pgDoc.exists) hostelName = pgDoc.data()?.name || hostelName;
+    }
+
+    const roomNo = tenant.room || tenant.room_id || 'N/A';
+    
+    await adminDb.collection('deletion_requests').doc(token).set({
+      tenantId,
+      status: 'pending',
+      expiresAt,
+      requestedAt: new Date().toISOString()
+    });
+
+    await adminDb.collection('tenants').doc(tenantId).update({
+      deletion_requested_at: new Date().toISOString()
+    });
+
+    const emailSent = await sendDeletionConfirmationEmail(ownerEmail, tenant.full_name || tenant.name || 'Tenant', token, hostelName, roomNo, dueAmount);
+    if (!emailSent) {
+      return { success: false, error: 'Failed to send confirmation email' };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}

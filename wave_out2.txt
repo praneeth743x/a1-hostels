@@ -1,0 +1,41 @@
+FOUND IN LAYOUT:
+{
+  "Description": "Remove the mobile wave header from layout.tsx to revert to the original 3 AM layout.",
+  "Instruction": "Remove the div containing mobileWaveHeader.",
+  "ReplacementChunks": [
+    {
+      "AllowMultiple": false,
+      "EndLine": 250,
+      "ReplacementContent": "      {/* EXACT MOBILE DRAWER MENU AS DESKTOP SIDEBAR */}\n      {isSidebarOpen && (\n        <div className={styles.mobileSidebarOverlay} onClick={() => setIsSidebarOpen(false)}></div>\n      )}",
+      "StartLine": 208,
+      "TargetContent": "      {/* EXACT MOBILE DRAWER MENU AS DESKTOP SIDEBAR */}\n      {isSidebarOpen && (\n        <div className={styles.mobileSidebarOverlay} onClick={() => setIsSidebarOpen(false)}></div>\n      )}\n\n      {/* Mobile Header (Hidden on Desktop) */}\n      <div className={styles.mobileWaveHeader}>\n        <div className={styles.mobileWaveHeaderTop}>\n          <div className={styles.mobileLogoSquare}>S</div>\n          <div className={styles.mobileHeaderTitle}>StaySync</div>\n          <button className={styles.hamburgerBtn} onClick={() => setIsSidebarOpen(true)}>\n            <Menu size={24} color=\"#ffffff\" />\n          </button>\n        </div>\n        <div className={styles.waveContainer}>\n          <svg className={styles.waveSvg} viewBox=\"0 0 1440 320\" preserveAspectRatio=\"none\">\n            <path fill=\"#f7f9ff\" fillOpacity=\"1\" d=\"M0,128L48,138.7C96,149,192,171,288,181.3C384,192,480,192,576,176C672,160,768,128,864,122.7C960,117,1056,139,1152,149.3C1248,160,1344,160,1392,160L1440,160L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z\"></path>\n          </svg>\n        </div>\n      </div>"
+    }
+  ],
+  "TargetFile": "c:\\Users\\prane\\PHG HOSTE\\staysync\\src\\app\\pgowner\\layout.tsx",
+  "toolAction": "Remove wave header from layout",
+  "toolSummary": "Edit layout.tsx"
+}
+FOUND IN CSS:
+{
+  "Description": "Remove the mobile header styles and padding overrides to restore the original mobile layout behavior.",
+  "Instruction": "Remove the mobileWaveHeader block, mobileLogoSquare, and contentWrapper overrides inside the @media (max-width: 768px) block.",
+  "ReplacementChunks": [
+    {
+      "AllowMultiple": false,
+      "EndLine": 2043,
+      "ReplacementContent": "  .newSidebarCloseBtn {\n    display: flex; /* Show close button on mobile */\n  }\n\n  .premiumDashboardHeader {\n    display: none !important; /* Hide massive desktop header on mobile */\n  }",
+      "StartLine": 2010,
+      "TargetContent": "  .newSidebarCloseBtn {\n    display: flex; /* Show close button on mobile */\n  }\n\n  .mobileWaveHeader {\n    display: flex;\n    flex-direction: column;\n    position: sticky;\n    top: 0;\n    z-index: 40;\n    background: linear-gradient(135deg, #094769 0%, #0d7990 100%);\n  }\n\n  .mobileWaveHeaderTop {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    padding: 16px 20px 10px 20px;\n  }\n  \n  .waveContainer {\n    width: 100%;\n    overflow: hidden;\n    line-height: 0;\n  }\n\n  .waveSvg {\n    width: 100%;\n    height: 24px; /* Adjust height of the wave */\n  }\n  \n  .premiumDashboardHeader {\n    display: none !important; /* Hide massive desktop header on mobile */\n  }"
+    },
+    {
+      "AllowMultiple": false,
+      "EndLine": 2097,
+      "ReplacementContent": "  .bottomNavItem.active svg {\n    color: #0d7990;\n    stroke-width: 2.5px;\n  }\n}\n\n/* Mobile Bottom Navigation Base (Hidden on Desktop) */",
+      "StartLine": 2081,
+      "TargetContent": "  .bottomNavItem.active svg {\n    color: #0d7990;\n    stroke-width: 2.5px;\n  }\n\n  .contentWrapper {\n    padding: 16px !important;\n    padding-bottom: 90px !important; /* Make space for the bottom nav */\n  }\n}\n\n/* Mobile Bottom Navigation Base (Hidden on Desktop) */"
+    }
+  ],
+  "TargetFile": "c:\\Users\\prane\\PHG HOSTE\\staysync\\src\\app\\pgowner\\pgowner.module.css",
+  "toolAction": "Remove mobile layout overrides from CSS",
+  "toolSummary": "Edit pgowner.module.css"
+}

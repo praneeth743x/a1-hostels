@@ -1,5 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -53,7 +54,7 @@ export default function PGOwnerLayout({
               <div style={{width: 24, height: 24, background: '#3b82f6', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 14}}>
                 S
               </div>
-              StaySync
+              Raliving
             </div>
           </div>
           
@@ -136,15 +137,15 @@ export default function PGOwnerLayout({
         </div>
         
         <div className={styles.drawerFooter}>
-          <h4 className={styles.drawerFooterTitle}>StaySync PRO</h4>
+          <h4 className={styles.drawerFooterTitle}>Raliving PRO</h4>
           <p className={styles.drawerFooterSub}>Manage multiple properties seamlessly</p>
           <div className={styles.drawerFooterLinks}>
             <Link href="#">Terms</Link>
             <Link href="#">Privacy</Link>
             <Link href="#">Help</Link>
           </div>
-          <h5 className={styles.drawerFooterBrand}>StaySync</h5>
-          <p className={styles.drawerFooterCopy}>© 2026 StaySync Inc.</p>
+          <h5 className={styles.drawerFooterBrand}>Raliving</h5>
+          <p className={styles.drawerFooterCopy}>© 2026 Raliving Inc.</p>
         </div>
       </aside>
 
@@ -153,7 +154,7 @@ export default function PGOwnerLayout({
         <div className={styles.mobileHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div className={styles.mobileLogoSquare}>S</div>
-            <span className={styles.mobileHeaderTitle}>StaySync</span>
+            <span className={styles.mobileHeaderTitle}>Raliving</span>
           </div>
           <Menu size={24} color="#0f172a" />
         </div>

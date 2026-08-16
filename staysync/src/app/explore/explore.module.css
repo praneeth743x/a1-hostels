@@ -1,0 +1,673 @@
+.pageContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background-color: transparent;
+  overflow: hidden; /* Prevent body scroll, handle scroll in mainContent */
+  position: relative;
+}
+
+.desktopHeader {
+  display: none;
+}
+.backButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1f2937;
+  text-decoration: none;
+  font-weight: 600;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+
+.mainContent {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: env(safe-area-inset-top, 24px) 24px 0 24px;
+  position: relative;
+  z-index: 1;
+  /* Hide scrollbar for cleaner look */
+  scrollbar-width: none; 
+  -ms-overflow-style: none;
+}
+.mainContent::-webkit-scrollbar {
+  display: none;
+}
+
+/* Header Area */
+.topSection {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(253, 253, 252, 0.85);
+  backdrop-filter: blur(24px) saturate(1.5);
+  padding: 16px 24px 8px;
+  margin: -24px -24px 0 -24px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-top: 12px;
+}
+
+.title {
+  font-size: 32px;
+  font-weight: 800;
+  color: #1f2937;
+  line-height: 1.1;
+  margin: 0;
+  font-family: var(--font-display, inherit);
+  letter-spacing: -0.03em;
+}
+
+.subtitle {
+  font-size: 18px;
+  color: #9ca3af;
+  margin: 8px 0 0 0;
+  font-weight: 400;
+}
+
+.mapButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  color: #8b5cf6;
+  padding: 16px 24px;
+  border-radius: 18px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* Search Bar */
+.searchContainer {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  background-color: #ffffff;
+  border: 1px solid #f3f4f6;
+  border-radius: 20px;
+  height: 56px;
+  padding: 0 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.searchIcon {
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0 16px;
+  font-size: 17px;
+  color: #1f2937;
+  outline: none;
+}
+.searchInput::placeholder {
+  color: #9ca3af;
+}
+
+.filterButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+  border: 1px solid #f3f4f6;
+  border-radius: 16px;
+  height: 56px;
+  width: 56px;
+  color: #4b5563;
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.filterButtonActive {
+  background-color: #f5f3ff;
+  border-color: #c4b5fd;
+  color: #8b5cf6;
+}
+
+.filterBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: #8b5cf6;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  height: 16px;
+  min-width: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+/* Expandable Filters Dropdown */
+.filterDropdown {
+  margin-top: 16px;
+  background-color: #ffffff;
+  border-radius: 20px;
+  border: 1px solid #f3f4f6;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.filterDropdownHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.filterDropdownTitle {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 15px;
+}
+
+.clearFiltersBtn {
+  background: none;
+  border: none;
+  color: #8b5cf6;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.filterDropdownGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.dropdownFilterItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #f3f4f6;
+  background-color: #f9fafb;
+  color: #4b5563;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dropdownFilterItemActive {
+  background-color: #f5f3ff;
+  border-color: #c4b5fd;
+  color: #8b5cf6;
+}
+
+.filterChip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #ffffff;
+  border: 1px solid #f3f4f6;
+  border-radius: 18px;
+  padding: 0 20px;
+  height: 58px;
+  font-size: 16px;
+  color: #4b5563;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primaryFilterChip {
+  background-color: #f5f3ff;
+  border: 1px solid #c4b5fd;
+  color: #8b5cf6;
+  font-weight: 500;
+  width: 130px;
+  justify-content: center;
+}
+
+/* Result Header */
+.resultHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 32px;
+  margin-bottom: 28px;
+}
+
+.resultCount {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0;
+}
+
+.foundText {
+  font-weight: 400;
+  color: #6b7280;
+}
+
+.sortButton {
+  background: none;
+  border: none;
+  font-size: 15px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.sortHighlight {
+  color: #8b5cf6;
+  font-weight: 500;
+}
+
+.sortChevron {
+  color: #8b5cf6;
+  margin-top: 2px;
+}
+
+/* Hostel List */
+.hostelList {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.hostelCard {
+  display: flex;
+  background-color: #ffffff;
+  border: 1px solid #f3f4f6;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  padding: 12px;
+  gap: 12px;
+  align-items: stretch;
+}
+
+/* Left Column */
+.cardImageContainer {
+  width: 120px;
+  height: 140px;
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.cardImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photoBadge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  backdrop-filter: blur(4px);
+}
+
+/* Right Column */
+.cardInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 4px 8px 0;
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.hostelName {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bookmarkButton {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  margin-right: -4px;
+  margin-top: -4px;
+}
+.bookmarked {
+  color: #8b5cf6;
+}
+
+.locationRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.locationIcon {
+  color: #8b5cf6;
+}
+
+.locationText {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.facilitiesRow {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.facilityIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background-color: #ecfdf5;
+  color: #10b981;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.facilityIcon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.facilityCount {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background-color: #f3f4f6;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-top: auto;
+}
+
+.priceContainer {
+  display: flex;
+  align-items: baseline;
+}
+
+.priceAmount {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.priceSuffix {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.callButton {
+  background-color: #ecfdf5;
+  color: #10b981;
+  border: 1px solid #d1fae5;
+  padding: 8px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, background-color 0.2s;
+  cursor: pointer;
+}
+
+.callButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.callButton:hover {
+  background-color: #d1fae5;
+  transform: scale(1.05);
+}
+
+/* Empty State */
+.emptyState {
+  text-align: center;
+  padding: 60px 0;
+  color: #6b7280;
+}
+.emptyState p {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 8px;
+}
+.clearSearchBtn {
+  margin-top: 16px;
+  background-color: #8b5cf6;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.bottomSpacer {
+  height: 110px; /* Leave room for bottom nav */
+}
+
+/* Fixed Bottom Navigation */
+.bottomNav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 90px;
+  background-color: #ffffff;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.04);
+  z-index: 10;
+}
+
+.navItem {
+  background: none;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+  flex: 1;
+}
+
+.navIcon {
+  color: #9ca3af;
+}
+
+.navItemActive {
+  color: #8b5cf6;
+}
+
+.activeNavPill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background-color: #f5f3ff;
+  padding: 10px 24px;
+  border-radius: 20px;
+}
+
+.navIconActive {
+  color: #8b5cf6;
+}
+
+@media (min-width: 768px) {
+  .pageContainer {
+    max-width: 100%;
+    margin: 0;
+    border: none;
+  }
+  
+  .desktopHeader {
+    display: block;
+    position: absolute;
+    top: 0;
+    width: 100%;
+    z-index: 50;
+  }
+  
+  .mainContent {
+    padding-top: 100px; /* Room for desktop glass header */
+    padding-left: 60px;
+    padding-right: 60px;
+  }
+
+  /* Center the search and filters */
+  .header {
+    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  
+  .title {
+    font-size: 42px;
+  }
+  
+  .subtitle {
+    font-size: 20px;
+  }
+  
+  .mapButton {
+    display: none; /* Hide map button in header on desktop */
+  }
+  
+  .searchContainer {
+    max-width: 600px;
+    margin: 20px auto 30px auto;
+    height: 72px;
+    border-radius: 36px;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
+  }
+
+  .filterScrollContainer {
+    display: flex;
+    justify-content: center;
+    margin-left: 0;
+    margin-right: 0;
+    margin-bottom: 40px;
+  }
+  
+  .filterChip {
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255, 0.8);
+  }
+  
+  .primaryFilterChip {
+    background: rgba(139, 92, 246, 0.1);
+  }
+  
+  /* Desktop Grid for Hostels */
+  .hostelList {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 24px;
+    padding-bottom: 60px;
+  }
+  
+  .hostelCard {
+    height: auto;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  
+  .hostelCard:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.06);
+  }
+  
+  .cardImageContainer {
+    width: 140px;
+    height: 160px;
+  }
+  
+  .cardInfo {
+    padding: 8px;
+  }
+  
+  /* Hide Mobile Nav on Desktop */
+  .bottomNav, .bottomSpacer {
+    display: none;
+  }
+}
+
+@media (min-width: 1200px) {
+  .mainContent {
+    padding-left: 120px;
+    padding-right: 120px;
+  }
+}

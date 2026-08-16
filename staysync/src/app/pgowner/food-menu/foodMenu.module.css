@@ -1,0 +1,429 @@
+.appContainer {
+  padding: 16px;
+  max-width: 600px;
+  margin: 0 auto;
+  padding-bottom: 24px;
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #f8fafc;
+  min-height: 100dvh;
+}
+
+/* Loading */
+.loadingContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 50vh;
+}
+.loadingSpinner {
+  animation: spin 1s linear infinite;
+  color: #6a1b9a;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Hostel Selector */
+.hostelSelectContainer {
+  margin-bottom: 24px;
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+  border: 1px solid #f1f5f9;
+}
+.hostelSelectWrapper {
+  position: relative;
+}
+.hostelSelectBtn {
+  background: none;
+  border: none;
+  width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  cursor: pointer;
+}
+.hostelSelectLabel {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.hostelSelectValue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  color: #0f172a;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90%;
+}
+.dropdownMenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  z-index: 100;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 0;
+  border: 1px solid #e2e8f0;
+}
+.checkboxItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.checkboxItem:hover {
+  background: #f8fafc;
+}
+
+/* Hero Card */
+.heroCard {
+  background: linear-gradient(135deg, #7e22ce, #6a1b9a);
+  border-radius: 24px;
+  padding: 24px;
+  color: white;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 24px;
+  box-shadow: 0 10px 25px rgba(106, 27, 154, 0.3);
+}
+.heroContent {
+  position: relative;
+  z-index: 2;
+  width: 60%;
+}
+.heroSub {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0 0 8px 0;
+  opacity: 0.9;
+}
+.heroTitle {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+}
+.heroDate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+.heroImageWrapper {
+  position: absolute;
+  right: -20px;
+  top: 10px;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  border: 4px solid rgba(255,255,255,0.2);
+  overflow: hidden;
+}
+.heroImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.heroBottomBar {
+  margin-top: 32px;
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 2;
+  position: relative;
+}
+.heroStat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.statLabel {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.statCount {
+  display: block;
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+/* Weekly Menu Section */
+.sectionTitle {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 16px;
+}
+
+.accordionList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.accordionCard {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+  border-left: 6px solid #e2e8f0;
+  overflow: hidden;
+  transition: all 0.3s;
+}
+
+.accordionHeader {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  cursor: pointer;
+}
+.dayIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #f8fafc;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-right: 16px;
+}
+.dayInfo {
+  flex: 1;
+}
+.dayName {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+.daySummary {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0;
+}
+.expandIcon {
+  padding: 8px;
+}
+
+.accordionContent {
+  padding: 0 16px 16px 16px;
+  border-top: 1px solid #f1f5f9;
+}
+
+/* Visual Summaries in Expanded State */
+.mealVisuals {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0;
+}
+.mealVisual {
+  flex: 1;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mealVisualHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.visualLabel {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.visualCount {
+  display: block;
+  font-size: 0.7rem;
+  color: #64748b;
+}
+.mealImg {
+  width: 100%;
+  height: 60px;
+  border-radius: 50px; /* pill shape like screenshot */
+  object-fit: cover;
+}
+
+/* Edit Section */
+.editSection {
+  margin-top: 24px;
+}
+.editTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 16px;
+}
+.mealInputGroup {
+  margin-bottom: 20px;
+  position: relative;
+}
+.mealLabel {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 8px;
+}
+.tagInputContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: white;
+  min-height: 48px;
+  align-items: center;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #10b981;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.removeTagBtn {
+  background: rgba(0,0,0,0.1);
+  border: none;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  padding: 0;
+}
+.removeTagBtn:hover {
+  background: rgba(0,0,0,0.2);
+}
+.tagInput {
+  flex: 1;
+  min-width: 150px;
+  border: none;
+  outline: none;
+  font-size: 0.9rem;
+  background: transparent;
+}
+.suggestionsDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  margin-top: 4px;
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+  z-index: 50;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.suggestionItem {
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #334155;
+  border-bottom: 1px solid #f1f5f9;
+}
+.suggestionItem:hover {
+  background: #f8fafc;
+}
+
+.saveBtn {
+  width: 100%;
+  padding: 14px;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  margin-top: 16px;
+  transition: background 0.2s;
+}
+.saveBtn:hover {
+  background: #059669;
+}
+.saveBtn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Action Bar (Download & Share) */
+.actionBarWrapper {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: center;
+}
+.actionBar {
+  background: white;
+  border-radius: 16px;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  justify-content: space-between;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+  border: 1px solid #f1f5f9;
+}
+.actionBtn {
+  background: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.95rem;
+  flex: 1;
+}
+.divider {
+  width: 1px;
+  height: 32px;
+  background: #e2e8f0;
+  margin: 0 12px;
+}

@@ -3,12 +3,10 @@
 .dashboardPage {
   padding: 0px 16px 16px 16px;
   padding-bottom: 90px;
-  min-height: 100vh;
+  min-height: 100dvh;
   background-color: #fafbfc;
   font-family: 'Inter', system-ui, sans-serif;
-  max-width: 420px;
-  margin: 0 auto;
-}
+    }
 
 .pageHeader {
   margin-bottom: 8px;
@@ -27,12 +25,164 @@
   margin: 0;
 }
 
-/* Top Cards Layout */
-.topCardsRow {
+/* ─── Stats Panel ─── */
+.statsPanel {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  border: 1px solid #f1f5f9;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.statCard {
+  border-radius: 14px;
+  padding: 10px 6px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.statEmoji {
+  font-size: 18px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.statNumber {
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.statLabel {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-top: 1px;
+}
+
+/* Card background colors */
+.statBlue   { background: #eef2ff; border: 1.5px solid #c7d2fe; }
+.statGreen  { background: #dcfce7; border: 1.5px solid #bbf7d0; }
+.statIndigo { background: #dbeafe; border: 1.5px solid #bfdbfe; }
+.statRed    { background: #fee2e2; border: 1.5px solid #fecaca; }
+.statYellow { background: #fef9c3; border: 1.5px solid #fef08a; }
+.statGray   { background: #f1f5f9; border: 1.5px solid #e2e8f0; }
+
+/* Clickable Interactive Cards */
+.clickableStatCard {
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.clickableStatCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Active Filter Highlights */
+.statRed.activeCard {
+  border-color: #ef4444;
+  background: #fef2f2;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
+  transform: translateY(-1px);
+}
+
+.statYellow.activeCard {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25);
+  transform: translateY(-1px);
+}
+
+.statGray.activeCard {
+  border-color: #10b981;
+  background: #ecfdf5;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+  transform: translateY(-1px);
+}
+
+.filterBadgeHint {
+  font-size: 0.52rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 2px 6px;
+  border-radius: 99px;
+  margin-top: 3px;
+  transition: all 0.15s ease;
+}
+
+.statRed .filterBadgeHint { color: #dc2626; background: rgba(220, 38, 38, 0.12); }
+.statYellow .filterBadgeHint { color: #d97706; background: rgba(217, 119, 6, 0.12); }
+.statGray .filterBadgeHint { color: #059669; background: rgba(5, 150, 105, 0.12); }
+
+.activeCard .filterBadgeHint {
+  background: #0f172a !important;
+  color: #ffffff !important;
+}
+
+/* Occupancy progress bar */
+.occupancyRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.occupancyLabel {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #475569;
+  white-space: nowrap;
+  min-width: 72px;
+}
+
+.occupancyBarTrack {
+  flex: 1;
+  height: 12px;
+  background: #f1f5f9;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.occupancyBarFill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #f59e0b 0%, #ef4444 100%);
+  transition: width 0.6s ease;
+}
+
+.occupancyPercent {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #0f172a;
+  white-space: nowrap;
+  min-width: 52px;
+  text-align: right;
+}
+
+/* Top Cards Layout (legacy — kept for reference, not used) */
+.topCardsRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-bottom: 24px;
 }
 
 .topCardFull {
@@ -72,7 +222,7 @@
 }
 
 .topCardHalf .cardTitle {
-  font-size: clamp(12px, 3.5vw, 15px);
+  font-size: 15px;
   margin-bottom: 0px;
 }
 
@@ -96,13 +246,13 @@
 
 .topCardsHalfRow {
   display: flex;
-  gap: clamp(8px, 3vw, 12px);
+  gap: 12px;
 }
 
 .topCardHalf {
   background: white;
-  border-radius: clamp(16px, 4vw, 22px);
-  padding: clamp(10px, 2.5vw, 14px);
+  border-radius: 22px;
+  padding: 14px;
   flex: 1;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
   display: flex;
@@ -123,10 +273,10 @@
 }
 
 .occVal {
-  font-size: clamp(20px, 6vw, 34px);
+  font-size: 34px;
   font-weight: 700;
   line-height: 1;
-  margin-bottom: clamp(4px, 1.5vw, 8px);
+  margin-bottom: 8px;
 }
 
 .occVal.vacant {
@@ -142,7 +292,7 @@
 }
 
 .occLabel {
-  font-size: clamp(10px, 2.5vw, 13px);
+  font-size: 13px;
   font-weight: 500;
   color: #0f172a;
   margin-bottom: 6px;
@@ -151,7 +301,7 @@
 .occDivider {
   width: 1px;
   background: #f1f5f9;
-  margin: 0 clamp(4px, 1vw, 8px);
+  margin: 0 8px;
 }
 
 .bedsContent {
@@ -164,12 +314,12 @@
 .bedsLeft {
   display: flex;
   align-items: flex-start;
-  gap: clamp(6px, 2vw, 12px);
+  gap: 12px;
 }
 
 .bedsIconSquare {
-  width: clamp(36px, 10vw, 48px);
-  height: clamp(36px, 10vw, 48px);
+  width: 48px;
+  height: 48px;
   background: #ecfdf5;
   border-radius: 12px;
   display: flex;
@@ -179,8 +329,8 @@
 }
 
 .bedsIconSquare svg {
-  width: clamp(18px, 5vw, 24px);
-  height: clamp(18px, 5vw, 24px);
+  width: 24px;
+  height: 24px;
 }
 
 .bedsNumberWrapper {
@@ -189,14 +339,14 @@
 }
 
 .bedsNumber {
-  font-size: clamp(24px, 6vw, 34px);
+  font-size: 34px;
   font-weight: 700;
   color: #10b981;
   line-height: 1;
 }
 
 .bedsSub {
-  font-size: clamp(9px, 2.2vw, 11px);
+  font-size: 11px;
   font-weight: 500;
   color: #64748b;
   margin-top: 4px;
@@ -210,17 +360,17 @@
 
 .progressContainer {
   position: relative;
-  width: clamp(48px, 15vw, 64px);
-  height: clamp(48px, 15vw, 64px);
+  width: 64px;
+  height: 64px;
 }
 
 .topCardHalf .progressContainer {
-  width: clamp(40px, 12vw, 52px);
-  height: clamp(40px, 12vw, 52px);
+  width: 52px;
+  height: 52px;
 }
 
 .topCardHalf .progressPercent {
-  font-size: clamp(9px, 2.5vw, 11px);
+  font-size: 11px;
 }
 
 .svgCircle {
@@ -444,29 +594,31 @@
   padding-top: 12px;
 }
 
-/* Room Cards */
+/* Room Cards - Reference Image Spec */
 .roomCard {
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: 12px;
+  background: #ffffff;
+  border-radius: 16px;
   border: 1px solid #f1f5f9;
   position: relative;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .roomBorder {
   position: absolute;
   left: 0;
-  top: 0;
-  bottom: 0;
+  top: 6px;
+  bottom: 6px;
   width: 4px;
+  border-radius: 4px;
 }
 
 .roomBorder.available {
-  background: #16a34a;
+  background: #10b981;
 }
 
 .roomBorder.partial {
@@ -474,135 +626,107 @@
 }
 
 .roomBorder.occupied {
-  background: #dc2626;
+  background: #ef4444;
 }
 
 .roomContent {
   flex: 1;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 16px 16px 16px 20px;
+  padding: 8px 8px 8px 12px;
 }
 
-/* Col 1 */
+/* Col 1: Room Number & Fraction */
 .col1 {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  width: 65px;
+  min-width: 42px;
   flex-shrink: 0;
+  margin-left: 2px;
 }
 
 .roomNumber {
-  font-size: 1.25rem;
+  font-size: 1.05rem;
   font-weight: 800;
   color: #0f172a;
   margin: 0;
+  line-height: 1.1;
 }
 
-.statusBadge {
-  font-size: 0.65rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  padding: 4px 6px;
-  border-radius: 6px;
-  display: inline-block;
-  margin-top: 6px;
-  width: fit-content;
+.occSubText {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  margin-top: 1px;
 }
 
-.statusBadge.available {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.statusBadge.partial {
-  background: #ffedd5;
-  color: #f97316;
-}
-
-.statusBadge.occupied {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-/* Col 2 */
-.col2 {
+/* Beds Row Visualization - Horizontal Fit Up to 10 Beds */
+.bedsRow {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
   flex: 1;
-  padding: 0 12px;
+  justify-content: flex-start;
+  margin: 0 6px;
   min-width: 0;
+  max-width: 100%;
 }
 
-.bedsInfo {
+.bedCard {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #0f172a;
-  white-space: nowrap;
+  justify-content: center;
+  height: 28px;
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  flex: 0 0 28px;
+  border-radius: 7px;
+  background: #ffffff;
+  box-sizing: border-box;
+  transition: transform 0.15s ease;
 }
 
-.progressBar {
-  width: 100%;
-  height: 6px;
-  background: #f1f5f9;
-  border-radius: 4px;
-  margin: 8px 0;
-  overflow: hidden;
+.bedOccupied {
+  border: 2px solid #ef4444;
+  background: #fef2f2;
 }
 
-.progressFill {
-  height: 100%;
-  border-radius: 4px;
+.bedVacant {
+  border: 2px solid #10b981;
+  background: #ecfdf5;
 }
 
-.progressFill.available {
-  background: #e2e8f0;
-}
-
-/* Gray if 0% */
-.progressFill.partial {
-  background: #f59e0b;
-}
-
-.progressFill.occupied {
-  background: #dc2626;
-}
-
-.occText {
-  font-size: 0.7rem;
-  color: #64748b;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-/* Col 3 */
+/* Col 3: Plus Action Button */
 .col3 {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  border-left: 1px solid #f1f5f9;
-  width: 50px;
+  justify-content: center;
   flex-shrink: 0;
+  margin-left: 2px;
 }
 
 .addTenantBtn {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #dbeafe;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #2563eb;
   background: #eff6ff;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+}
+
+.addTenantBtn:hover {
+  background: #dbeafe;
+  transform: scale(1.05);
 }
 
 .addTenantBtn:active {
@@ -618,73 +742,175 @@
   border-radius: 0 0 12px 12px;
 }
 
-.tenantItem {
+/* ─── Tenant Card (inside expanded room) ─── */
+.tenantCard {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.tenantCardHeader {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid #e2e8f0;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
-.tenantItem:last-child {
-  border-bottom: none;
+.tenantAvatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.tenantInfo {
+.tenantCardMeta {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .tenantName {
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   font-weight: 700;
   color: #0f172a;
-  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.tenantFees {
-  font-size: 0.7rem;
-  color: #64748b;
-}
-
-.tenantFeeHighlight {
+.extraFeeTag {
+  font-size: 0.68rem;
   font-weight: 700;
-  color: #2563eb;
+  color: #7c3aed;
+  background: #ede9fe;
+  padding: 1px 6px;
+  border-radius: 20px;
+  width: fit-content;
 }
 
+.manageChargesBtn {
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.manageChargesBtn:hover {
+  background: #e2e8f0;
+}
+
+.tenantFeeRow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: #f8fafc;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.feeBlock {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  gap: 2px;
+}
+
+.feeBlockLabel {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.feeBlockValue {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.feeDivider {
+  width: 1px;
+  height: 36px;
+  background: #e2e8f0;
+  flex-shrink: 0;
+}
+
+.emptyTenants {
+  padding: 12px 0;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+/* Room Extra Fee row */
 .roomExtraFeeRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px dashed #cbd5e1;
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: #fffbeb;
+  border: 1px dashed #fcd34d;
+  border-radius: 8px;
   font-size: 0.8rem;
+}
+
+.roomExtraFeeLabel {
   font-weight: 600;
-  color: #475569;
+  color: #92400e;
 }
 
 .roomExtraFeeVal {
-  color: #0f172a;
+  color: #b45309;
   font-weight: 800;
 }
 
+/* Edit Room button */
 .editRoomBtn {
-  margin-top: 16px;
+  margin-top: 10px;
   width: 100%;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 9px;
+  border-radius: 10px;
   background: white;
   border: 1px solid #e2e8f0;
   color: #475569;
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 700;
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
+
+.editRoomBtn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
 
 /* Modal CSS (Reusing what we had, slightly polished) */
 .modalOverlay {
@@ -696,15 +922,19 @@
   justify-content: center;
   z-index: 1000;
   padding: 1rem;
+  padding-bottom: calc(1rem + 80px); /* Avoid bottom nav bar */
 }
 
 .modalContent {
   background: white;
-  border-radius: 20px;
+  border-radius: 24px;
   width: 100%;
-  max-width: 400px;
+  max-width: min(460px, 94vw);
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+  overflow: hidden;
 }
 
 .modalHeader {
@@ -736,10 +966,11 @@
 }
 
 .modalBody {
-  padding: 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+  overflow-y: auto;
 }
 
 .inputGroup {
@@ -769,10 +1000,10 @@
 }
 
 .modalFooter {
-  padding: 20px;
+  padding: 16px;
   border-top: 1px solid #f1f5f9;
   display: flex;
-  justify-content: flex-end;
+  flex-direction: row; /* Side by side buttons */
   gap: 12px;
 }
 
@@ -780,23 +1011,26 @@
   background: linear-gradient(90deg, #022055, #036881);
   color: white;
   border: none;
-  padding: 12px 24px;
+  padding: 14px 24px;
   border-radius: 12px;
   font-weight: 700;
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  flex: 1; /* Take up equal space */
 }
 
 .cancelBtn {
   background: white;
   color: #64748b;
   border: 1px solid #cbd5e1;
-  padding: 12px 24px;
+  padding: 14px 24px;
   border-radius: 12px;
   font-weight: 700;
   cursor: pointer;
+  flex: 1; /* Take up equal space */
 }
 
 /* Filter Modal Styles */
@@ -816,6 +1050,8 @@
   bottom: 0;
   left: 0;
   right: 0;
+  margin: 0 auto;
+  max-width: 500px;
   background: #ffffff;
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
@@ -949,4 +1185,14 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+}
+@media (max-width: 1024px) {
+  .topCardsRow {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 768px) {
+  .topCardsRow {
+    grid-template-columns: 1fr;
+  }
 }

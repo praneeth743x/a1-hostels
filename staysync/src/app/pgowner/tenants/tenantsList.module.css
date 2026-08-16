@@ -1,11 +1,10 @@
-/* Tenants specific styles */
 .premiumCardsContainer {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
   z-index: 10;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .statsOverviewCard {
@@ -28,6 +27,29 @@
   align-items: center;
   justify-content: center;
   text-align: center;
+  padding: 4px 2px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.activeStatColBlue {
+  background: #eff6ff;
+  box-shadow: inset 0 0 0 1.5px #3b82f6;
+}
+
+.activeStatColPurple {
+  background: #f3e8ff;
+  box-shadow: inset 0 0 0 1.5px #9333ea;
+}
+
+.activeStatColOrange {
+  background: #ffedd5;
+  box-shadow: inset 0 0 0 1.5px #ea580c;
+}
+
+.activeStatColSlate {
+  background: #f1f5f9;
+  box-shadow: inset 0 0 0 1.5px #64748b;
 }
 
 .statDivider {
@@ -181,7 +203,7 @@
 
 .mobileDashContainer {
   background-color: transparent;
-  min-height: 100vh;
+  min-height: 100dvh;
   padding: 1rem;
   padding-bottom: 90px;
 }
@@ -516,4 +538,29 @@
   .statLabel {
     font-size: 11px;
   }
+
+  .callButtonMobile {
+    display: none !important;
+  }
 }
+
+.callButtonMobile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.callButtonMobile:active {
+  transform: scale(0.95);
+  background-color: #dcfce7;
+}
+

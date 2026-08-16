@@ -15,6 +15,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import imageCompression from 'browser-image-compression';
 import styles from './tenantsList.module.css';
 import { CustomSelect } from '@/components/CustomSelect';
+import { useHostelData } from '@/hooks/useHostelData';
+import { useHostel } from '@/context/HostelContext';
+import { AvatarImage } from '@/components/AvatarImage';
 
 const getNextUnpaidMonthAndDate = (t: any, tenantPaidPayments: any[]) => {
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -89,6 +92,92 @@ export default function TenantDirectory() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const { selectedPgId: contextPgId } = useHostel();
+  const activePgId = searchParams.get('pgId') || (filterHostel !== 'all' ? filterHostel : contextPgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('activePgId') : null));
+  const { data: hostelData } = useHostelData(activePgId);
+
+  const roomsMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    if (hostelData?.rooms && Array.isArray(hostelData.rooms)) {
+      hostelData.rooms.forEach((r: any) => {
+        if (r.id) map[r.id] = r.room_number;
+        if (r.room_id) map[r.room_id] = r.room_number;
+      });
+    }
+    return map;
+  }, [hostelData?.rooms]);
+
+  const processedFromCache = React.useMemo(() => {
+    if (hostelData?.tenants && Array.isArray(hostelData.tenants)) {
+      return hostelData.tenants.map((t: any) => {
+        const dues = (hostelData.dues || []).filter((d: any) => d.tenant_id === t.tenant_id);
+        dues.sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+        const due = dues.length > 0 ? dues[0] : null;
+
+        let nextDueDate = new Date();
+        let paymentState = 'empty';
+        let daysDiff = 0;
+
+        let targetDay = 5;
+        if (t.move_in_date) {
+          const checkin = new Date(t.move_in_date);
+          if (!isNaN(checkin.getTime())) targetDay = checkin.getDate();
+        }
+
+        const today = new Date();
+        today.setHours(0,0,0,0);
+
+        if (due) {
+          const createdAt = new Date(due.created_at || Date.now());
+          nextDueDate = new Date(createdAt);
+          nextDueDate.setDate(targetDay);
+          nextDueDate.setHours(0,0,0,0);
+
+          const diffTime = today.getTime() - nextDueDate.getTime();
+          daysDiff = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          if (daysDiff > 30) {
+            paymentState = 'critical';
+          } else if (daysDiff > 0) {
+            paymentState = 'overdue';
+          } else if (daysDiff === 0) {
+            paymentState = 'today';
+          } else {
+            paymentState = 'upcoming';
+            daysDiff = Math.abs(daysDiff);
+          }
+        } else {
+          const tenantPaid = (hostelData.payments || []).filter((p: any) => p.tenant_id === t.tenant_id);
+          const unpaidInfo = getNextUnpaidMonthAndDate(t, tenantPaid);
+          daysDiff = unpaidInfo.dueDays;
+          nextDueDate = unpaidInfo.nextDueDate;
+          paymentState = daysDiff === 0 ? 'today' : 'upcoming';
+        }
+
+        const isVacated = t.is_active === false || t.status === 'vacated' || t.status === 'VACATED';
+        const isNotice = t.status === 'notice_period' || t.status === 'notice';
+        const isPaused = t.status === 'PAUSED' || t.status === 'paused';
+        const statusLabel = isVacated ? 'Vacated' : (isPaused ? 'Paused' : (isNotice ? 'Notice Period' : 'Active'));
+        const resolvedRoom = t.rooms?.room_number || t.room_number || (t.room_id ? roomsMap[t.room_id] : null) || (t.room ? roomsMap[t.room] : null) || t.room || 'N/A';
+
+        return {
+          id: t.tenant_id || t.id,
+          name: t.full_name || t.name,
+          hostel: t.pg_name || t.hostel,
+          pg_id: t.pg_id,
+          room: resolvedRoom,
+          phone: t.mobile || t.phone,
+          status: statusLabel,
+          paymentState,
+          daysDiff
+        };
+      });
+    }
+    return [];
+  }, [hostelData, roomsMap]);
+
+  const displayTenantsList = processedFromCache.length > 0 ? processedFromCache : tenants;
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlPgId = searchParams.get('pgId');
@@ -108,6 +197,7 @@ export default function TenantDirectory() {
   // Form state
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
+  const [tenantEmail, setTenantEmail] = useState('');
   const [parentPhone, setParentPhone] = useState('');
   const [workStatus, setWorkStatus] = useState('student');
   const [selectedPg, setSelectedPg] = useState('');
@@ -127,6 +217,7 @@ export default function TenantDirectory() {
   });
   const [uploadProgress, setUploadProgress] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [openingTenantId, setOpeningTenantId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -240,6 +331,10 @@ export default function TenantDirectory() {
       alert("Please select a Hostel and Room.");
       return;
     }
+    if (!tenantEmail.trim() || !tenantEmail.includes('@')) {
+      alert("Please enter a valid email address.");
+      return;
+    }
     setIsSaving(true);
     setUploadProgress('Uploading documents...');
 
@@ -291,6 +386,7 @@ export default function TenantDirectory() {
       roomId: selectedRoom, 
       fullName, 
       phone, 
+      email: tenantEmail,
       parentPhone, 
       workStatus, 
       moveInDate: moveInDate ? moveInDate.toISOString() : new Date().toISOString(),
@@ -320,7 +416,7 @@ export default function TenantDirectory() {
       } else {
         setShowModal(false);
       }
-      setFullName(''); setPhone(''); setParentPhone(''); setMoveInDate(null);
+      setFullName(''); setPhone(''); setTenantEmail(''); setParentPhone(''); setMoveInDate(null);
       setRentAmount(''); setSecurityDeposit(''); setOpeningPendingFee(''); setHasOldPendingFee(false);
       setDocuments({ facePicture: null, govtFront: null, govtBack: null, collegeFront: null, collegeBack: null });
       setUploadProgress('');
@@ -339,53 +435,119 @@ export default function TenantDirectory() {
 
   const currentRooms = properties.find(p => p.pg_id === selectedPg)?.rooms || [];
 
-  const filteredTenants = tenants.filter(t => {
-    const matchesSearch = t.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesHostel = filterHostel === 'all' || t.pg_id === filterHostel;
-    const matchesStatus = tenantStatusFilter === 'All' || t.status === tenantStatusFilter;
-    return matchesSearch && matchesHostel && matchesStatus;
-  });
+  const filteredTenants = React.useMemo(() => {
+    return displayTenantsList.filter((t: any) => {
+      const matchesSearch = !searchTerm || t.name?.toLowerCase().includes(searchTerm.toLowerCase()) || String(t.phone || '').includes(searchTerm) || String(t.room || '').includes(searchTerm);
+      const matchesHostel = filterHostel === 'all' || !filterHostel || t.pg_id === filterHostel;
+      const matchesStatus = tenantStatusFilter === 'All' || t.status === tenantStatusFilter;
+      return matchesSearch && matchesHostel && matchesStatus;
+    });
+  }, [displayTenantsList, searchTerm, filterHostel, tenantStatusFilter]);
 
   return (
     <div className={styles.mobileDashContainer} style={{ paddingTop: showModal ? '0' : '1rem' }}>
       <AnimatePresence mode="wait">
         {!showModal ? (
-          <motion.div 
+          <div 
             key="list"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.2 }}
           >
             <div className={styles.dashboardContent} style={{ marginTop: '-16px' }}>
               {/* Floating Cards */}
               <div className={styles.premiumCardsContainer}>
                 {/* Row 1 */}
-                <motion.div 
+                <div 
                   className={styles.statsOverviewCard}
-                  initial={{ y: 30, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.15, type: 'spring', stiffness: 300, damping: 20 }}
                 >
-                  <div className={styles.statColumn}>
-                    <div className={styles.statValue} style={{ color: '#2563eb' }}>{tenants.filter(t => t.status === 'Active').length}</div>
-                    <div className={styles.statLabel}>Active<br/>Tenants</div>
+                  <div 
+                    className={styles.statColumn}
+                    onClick={() => setTenantStatusFilter(tenantStatusFilter === 'Active' ? 'All' : 'Active')}
+                    style={{
+                      cursor: 'pointer',
+                      padding: '8px 4px',
+                      borderRadius: '10px',
+                      transition: 'all 0.15s ease',
+                      background: tenantStatusFilter === 'Active' ? '#eff6ff' : 'transparent',
+                      border: tenantStatusFilter === 'Active' ? '1.5px solid #2563eb' : '1.5px solid transparent',
+                      boxShadow: tenantStatusFilter === 'Active' ? '0 2px 6px rgba(37, 99, 235, 0.15)' : 'none'
+                    }}
+                  >
+                    <div className={styles.statValue} style={{ color: '#2563eb', fontWeight: tenantStatusFilter === 'Active' ? 800 : 700 }}>
+                      {displayTenantsList.filter((t: any) => t.status === 'Active').length}
+                    </div>
+                    <div className={styles.statLabel} style={{ fontWeight: tenantStatusFilter === 'Active' ? 700 : 500, color: tenantStatusFilter === 'Active' ? '#1d4ed8' : '#64748b' }}>
+                      Active<br/>Tenants
+                    </div>
+                  </div>
+                  
+                  <div className={styles.statDivider} />
+
+                  <div 
+                    className={styles.statColumn}
+                    onClick={() => setTenantStatusFilter(tenantStatusFilter === 'Paused' ? 'All' : 'Paused')}
+                    style={{
+                      cursor: 'pointer',
+                      padding: '8px 4px',
+                      borderRadius: '10px',
+                      transition: 'all 0.15s ease',
+                      background: tenantStatusFilter === 'Paused' ? '#fffbeb' : 'transparent',
+                      border: tenantStatusFilter === 'Paused' ? '1.5px solid #d97706' : '1.5px solid transparent',
+                      boxShadow: tenantStatusFilter === 'Paused' ? '0 2px 6px rgba(217, 119, 6, 0.15)' : 'none'
+                    }}
+                  >
+                    <div className={styles.statValue} style={{ color: '#d97706', fontWeight: tenantStatusFilter === 'Paused' ? 800 : 700 }}>
+                      {displayTenantsList.filter((t: any) => t.status === 'Paused').length}
+                    </div>
+                    <div className={styles.statLabel} style={{ fontWeight: tenantStatusFilter === 'Paused' ? 700 : 500, color: tenantStatusFilter === 'Paused' ? '#b45309' : '#64748b' }}>
+                      Paused<br/>Tenants
+                    </div>
                   </div>
                   
                   <div className={styles.statDivider} />
                   
-                  <div className={styles.statColumn}>
-                    <div className={styles.statValue} style={{ color: '#8b5cf6' }}>{tenants.filter(t => t.status === 'Notice Period').length}</div>
-                    <div className={styles.statLabel}>Notice<br/>Period</div>
+                  <div 
+                    className={styles.statColumn}
+                    onClick={() => setTenantStatusFilter(tenantStatusFilter === 'Notice Period' ? 'All' : 'Notice Period')}
+                    style={{
+                      cursor: 'pointer',
+                      padding: '8px 4px',
+                      borderRadius: '10px',
+                      transition: 'all 0.15s ease',
+                      background: tenantStatusFilter === 'Notice Period' ? '#faf5ff' : 'transparent',
+                      border: tenantStatusFilter === 'Notice Period' ? '1.5px solid #8b5cf6' : '1.5px solid transparent',
+                      boxShadow: tenantStatusFilter === 'Notice Period' ? '0 2px 6px rgba(139, 92, 246, 0.15)' : 'none'
+                    }}
+                  >
+                    <div className={styles.statValue} style={{ color: '#8b5cf6', fontWeight: tenantStatusFilter === 'Notice Period' ? 800 : 700 }}>
+                      {displayTenantsList.filter((t: any) => t.status === 'Notice Period').length}
+                    </div>
+                    <div className={styles.statLabel} style={{ fontWeight: tenantStatusFilter === 'Notice Period' ? 700 : 500, color: tenantStatusFilter === 'Notice Period' ? '#6d28d9' : '#64748b' }}>
+                      Notice<br/>Period
+                    </div>
                   </div>
 
                   <div className={styles.statDivider} />
                   
-                  <div className={styles.statColumn}>
-                    <div className={styles.statValue} style={{ color: '#475569' }}>{tenants.filter(t => t.status === 'Vacated').length}</div>
-                    <div className={styles.statLabel}>Vacated<br/>Tenants</div>
+                  <div 
+                    className={styles.statColumn}
+                    onClick={() => setTenantStatusFilter(tenantStatusFilter === 'Vacated' ? 'All' : 'Vacated')}
+                    style={{
+                      cursor: 'pointer',
+                      padding: '8px 4px',
+                      borderRadius: '10px',
+                      transition: 'all 0.15s ease',
+                      background: tenantStatusFilter === 'Vacated' ? '#f1f5f9' : 'transparent',
+                      border: tenantStatusFilter === 'Vacated' ? '1.5px solid #475569' : '1.5px solid transparent',
+                      boxShadow: tenantStatusFilter === 'Vacated' ? '0 2px 6px rgba(71, 85, 105, 0.15)' : 'none'
+                    }}
+                  >
+                    <div className={styles.statValue} style={{ color: '#475569', fontWeight: tenantStatusFilter === 'Vacated' ? 800 : 700 }}>
+                      {displayTenantsList.filter((t: any) => t.status === 'Vacated').length}
+                    </div>
+                    <div className={styles.statLabel} style={{ fontWeight: tenantStatusFilter === 'Vacated' ? 700 : 500, color: tenantStatusFilter === 'Vacated' ? '#334155' : '#64748b' }}>
+                      Vacated<br/>Tenants
+                    </div>
                   </div>
-                </motion.div>
+                </div>
               </div>
               
               {/* Search & Active Filter Row */}
@@ -403,11 +565,12 @@ export default function TenantDirectory() {
           <div style={{ width: '48px', flex: 'none' }}>
             <CustomSelect 
               value={tenantStatusFilter} 
-              onChange={(val) => setTenantStatusFilter(val)}
+              onChange={(val: any) => setTenantStatusFilter(val)}
               icon={<Filter size={20} />}
               iconOnly={true}
               options={[
                 { value: 'Active', label: 'Active' },
+                { value: 'Paused', label: 'Paused' },
                 { value: 'Notice Period', label: 'Notice Period' },
                 { value: 'Vacated', label: 'Vacated' },
                 { value: 'All', label: 'All Tenants' }
@@ -437,21 +600,30 @@ export default function TenantDirectory() {
           <div className="text-center py-4 text-muted">No tenants found</div>
         )}
         <div className={styles.tenantGrid}>
-        {filteredTenants.map((t, index) => (
-          <motion.div 
+        {filteredTenants.map((t: any, index: number) => (
+          <div 
             key={t.id}
             className={styles.mobileTenantCard}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.05 }}
-            onClick={() => router.push(`/pgowner/tenants/${t.id}`)}
-            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              setOpeningTenantId(t.id);
+              router.push(`/pgowner/tenants/${t.id}`);
+            }}
+            style={{ 
+              cursor: 'pointer',
+              transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+              transform: openingTenantId === t.id ? 'scale(1.03)' : 'scale(1)',
+              borderColor: openingTenantId === t.id ? '#4F46E5' : undefined,
+              boxShadow: openingTenantId === t.id ? '0 12px 28px rgba(79, 70, 229, 0.18)' : undefined
+            }}
           >
             <div className={styles.tenantCardTop}>
               <div className={styles.tenantCardLeft}>
-                <div className={styles.tenantAvatarContainer}>
-                  <div className={styles.tenantAvatarDot}></div>
-                </div>
+                <AvatarImage 
+                  src={t.face_picture || t.facePicture || t.documents?.photo || t.documents?.facePicture || t.documents?.photo_url || t.avatar || t.photo_url || t.photoUrl} 
+                  alt={t.name || t.full_name || 'Tenant'} 
+                  name={t.name || t.full_name || '?'} 
+                  size={44} 
+                />
                 <div>
                   <h3 className={styles.tenantCardName}>{t.name}</h3>
                   <div className={styles.tenantCardPhone}>
@@ -460,9 +632,21 @@ export default function TenantDirectory() {
                   </div>
                 </div>
               </div>
-              <div className={styles.tenantStatusPill}>
-                <div className={styles.tenantStatusDot}></div>
-                Active
+              <div 
+                className={styles.tenantStatusPill}
+                style={{
+                  background: t.status === 'Paused' ? '#fef3c7' : (t.status === 'Vacated' ? '#f1f5f9' : (t.status === 'Notice Period' ? '#f3e8ff' : '#ecfdf5')),
+                  color: t.status === 'Paused' ? '#b45309' : (t.status === 'Vacated' ? '#475569' : (t.status === 'Notice Period' ? '#7e22ce' : '#047857')),
+                  borderColor: t.status === 'Paused' ? '#fde68a' : (t.status === 'Vacated' ? '#cbd5e1' : (t.status === 'Notice Period' ? '#d8b4fe' : '#a7f3d0'))
+                }}
+              >
+                <div 
+                  className={styles.tenantStatusDot}
+                  style={{
+                    background: t.status === 'Paused' ? '#d97706' : (t.status === 'Vacated' ? '#64748b' : (t.status === 'Notice Period' ? '#9333ea' : '#10b981'))
+                  }}
+                />
+                {t.status}
               </div>
             </div>
             
@@ -519,18 +703,14 @@ export default function TenantDirectory() {
               
               <ChevronRight size={18} className={styles.tenantCardChevron} />
             </div>
-          </motion.div>
+          </div>
         ))}
         </div>
             </div>
-          </motion.div>
+          </div>
         ) : (
-          <motion.div 
+          <div 
             key="form"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.2 }}
             style={{ display: 'flex', flexDirection: 'column' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', backgroundColor: 'transparent', zIndex: 50 }}>
@@ -723,6 +903,23 @@ export default function TenantDirectory() {
                       </div>
                     </div>
 
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Email Address</label>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                        </div>
+                        <input 
+                          type="email"
+                          placeholder="Enter email address"
+                          style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                          value={tenantEmail}
+                          onChange={e => setTenantEmail(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
                     <div style={{ zIndex: 48 }}>
                       <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Work/Study Status</label>
                       <CustomSelect 
@@ -895,7 +1092,7 @@ export default function TenantDirectory() {
                 </button>
               </div>
 
-            </motion.div>
+            </div>
         )}
       </AnimatePresence>
     </div>

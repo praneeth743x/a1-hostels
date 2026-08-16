@@ -1,14 +1,20 @@
 "use client";
 
+// Force Next.js to rebuild JS
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { auth } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { getPaymentHistory } from '@/app/actions/pgowner';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { rpcCall } from '@/lib/rpc';
+import { getTeamMembersAction } from '@/app/actions/teamActions';
+import { globalAppCache, saveToCache, getFromCache } from '@/lib/cache';
+import { useRouter } from 'next/navigation';
 import styles from './history.module.css';
 import { CustomSelect } from '@/components/CustomSelect';
-import { IndianRupee, Clock, Calendar, DoorClosed, AlertCircle, Download, Search, Filter, X, Check, ChevronDown } from 'lucide-react';
+import { AvatarImage } from '@/components/AvatarImage';
+import { IndianRupee, Clock, Calendar, DoorClosed, AlertCircle, Download, Search, Filter, X, Check, ChevronDown, Wallet, User } from 'lucide-react';
 import { startOfDay, endOfDay, subDays, startOfWeek, endOfWeek, subWeeks, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, startOfYear, endOfYear, isWithinInterval, parseISO, getMonth, getYear } from 'date-fns';
 
 type FilterType = 'today' | 'week' | 'month' | 'custom_month' | 'custom_year';
@@ -19,68 +25,154 @@ interface FilterState {
   customYear?: number;
   paymentStatus: string[];
   paymentMethod: string[];
+  collectedBy: string[];
 }
 
-export default function HistoryPage() {
+import { useHostel } from '@/context/HostelContext';
+import { useHostelData, notifyHostelDataChanged } from '@/hooks/useHostelData';
+import { getAppState } from '@/lib/appStateStore';
+
+import { Suspense } from 'react';
+function HistoryPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [isLoading, setIsLoading] = useState(true);
-  const [payments, setPayments] = useState<any[]>([]);
+  const { selectedPgId, pageStates, setPageState, userProfile } = useHostel();
+  const { data: hostelData, isLoading: swrLoading } = useHostelData(selectedPgId);
+  const memCache = typeof window !== 'undefined' && selectedPgId ? getAppState(`hostelData_${selectedPgId}`)?.data : null;
+  const effectiveHostelData = hostelData || memCache;
+
+  const storePayments = effectiveHostelData?.payments;
+  const storeTenants = effectiveHostelData?.tenants;
+  const storeRooms = effectiveHostelData?.rooms;
+  const savedState = pageStates['history'] || {};
+
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+
   const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
   
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filters, setFilters] = useState<FilterState>({
+  const [filters, setFilters] = useState<FilterState>(savedState.filter || {
     dateRange: 'All Time',
     customMonth: new Date().getMonth(),
     customYear: new Date().getFullYear(),
     paymentStatus: [],
     paymentMethod: [],
+    collectedBy: [],
   });
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    setPageState('history', { filter: filters });
+  }, [filters, setPageState]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const uid = localStorage.getItem('userUid') || auth.currentUser?.uid;
+      if (uid) setOwnerId(uid);
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setOwnerId(user.uid);
-        await fetchHistory(user.uid);
-      } else {
-        setIsLoading(false);
       }
     });
 
-    const handleHostelsUpdated = () => {
-      if (auth.currentUser) {
-        fetchHistory(auth.currentUser.uid);
-      }
-    };
-    window.addEventListener('hostelsUpdated', handleHostelsUpdated);
-
-    return () => {
-      unsubscribe();
-      window.removeEventListener('hostelsUpdated', handleHostelsUpdated);
-    };
+    return () => unsubscribe();
   }, []);
 
-  const fetchHistory = async (uid: string) => {
-    setIsLoading(true);
-    let activePgId = searchParams.get('pgId');
-    if (!activePgId && typeof localStorage !== 'undefined') {
-      activePgId = localStorage.getItem('activePgId');
+  useEffect(() => {
+    if (ownerId) {
+      getTeamMembersAction(ownerId).then(res => {
+        if (res.success && res.data) {
+          setTeamMembers(res.data);
+        }
+      });
     }
-    const res = await getPaymentHistory(uid, activePgId);
-    if (res.success && res.data) {
-      // Sort descending by payment_date
-      const sorted = res.data.sort((a: any, b: any) => 
-        new Date(b.payment_date || 0).getTime() - new Date(a.payment_date || 0).getTime()
-      );
-      setPayments(sorted);
-    }
-    setIsLoading(false);
-  };
+  }, [ownerId]);
 
-  const filteredPayments = useMemo(() => {
-    const now = new Date();
-    return payments.filter(p => {
+  const [realtimePayments, setRealtimePayments] = useState<any[]>([]);
+
+  // Real-time Firestore listener for instant live payment history sync across all logged-in devices
+  useEffect(() => {
+    const targetUid = ownerId || auth.currentUser?.uid || (typeof window !== 'undefined' ? localStorage.getItem('userUid') : null);
+    if (!targetUid && !selectedPgId) return;
+
+    try {
+      const q = selectedPgId
+        ? query(collection(db, 'payments'), where('pg_id', '==', selectedPgId), limit(200))
+        : query(collection(db, 'payments'), where('owner_id', '==', targetUid), limit(200));
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const docs = snapshot.docs
+          .map(d => ({ payment_id: d.id, ...d.data() }))
+          .filter((p: any) => p.status === 'paid');
+        
+        setRealtimePayments(docs);
+        notifyHostelDataChanged(selectedPgId);
+      }, (err) => {
+        console.warn('Realtime payments listener:', err?.code);
+      });
+
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Failed to attach realtime payments listener:', e);
+    }
+  }, [ownerId, selectedPgId]);
+
+  // Combine real-time Firestore payments stream with storePayments seamlessly
+  const rawPayments = useMemo(() => {
+    const map = new Map<string, any>();
+    (storePayments || []).forEach((p: any) => {
+      const id = p.payment_id || p.id;
+      if (id) map.set(id, p);
+    });
+    realtimePayments.forEach((p: any) => {
+      const id = p.payment_id || p.id;
+      if (id) map.set(id, { ...(map.get(id) || {}), ...p });
+    });
+    return Array.from(map.values());
+  }, [realtimePayments, storePayments]);
+
+  const payments = useMemo<any[]>(() => {
+    if (!rawPayments || rawPayments.length === 0) return [];
+
+    const tenantsMap: Record<string, any> = {};
+    (storeTenants || []).forEach((t: any) => {
+      const tid = t.tenant_id || t.id;
+      if (tid) tenantsMap[tid] = t;
+    });
+
+    const roomsMap: Record<string, any> = {};
+    (storeRooms || []).forEach((r: any) => {
+      const rid = r.room_id || r.id;
+      if (rid) roomsMap[rid] = r;
+    });
+
+    const enriched = rawPayments.map((p: any) => {
+      const tenant = tenantsMap[p.tenant_id] || tenantsMap[p.tenantId] || {};
+      const room = roomsMap[p.room_id] || roomsMap[tenant.room_id] || (typeof tenant.rooms === 'object' ? tenant.rooms : {}) || {};
+
+      return {
+        ...p,
+        tenant_name: p.tenant_name || tenant.full_name || tenant.name || 'Tenant',
+        room_number: p.room_number || room.room_number || tenant.room_number || tenant.room || 'N/A',
+        payment_date: p.payment_date || p.created_at || p.date || new Date().toISOString(),
+        facePicture: p.facePicture || tenant.face_picture || tenant.facePicture || tenant.documents?.photo || tenant.documents?.facePicture || tenant.documents?.photo_url || tenant.avatar || tenant.photo_url || tenant.photoUrl || null
+      };
+    });
+
+    return enriched.sort((a: any, b: any) => 
+      new Date(b.payment_date || b.created_at || 0).getTime() - new Date(a.payment_date || a.created_at || 0).getTime()
+    );
+  }, [rawPayments, storeTenants, storeRooms]);
+
+  const baseFilteredPayments = useMemo(() => {
+    return payments.filter((p: any) => {
       // Search logic
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -91,6 +183,36 @@ export default function HistoryPage() {
         if (!matchesSearch) return false;
       }
 
+      // Status logic
+      if (filters.paymentStatus.length > 0) {
+        const status = p.is_partial ? 'Partial' : (p.status === 'paid' ? 'Paid' : 'Pending');
+        if (!filters.paymentStatus.includes(status)) return false;
+      }
+
+      // Collected By logic
+      if (filters.collectedBy && filters.collectedBy.length > 0) {
+        const isOwnerSelected = ownerId && filters.collectedBy.includes(ownerId);
+        if (!p.collected_by_uid) {
+          // Treat legacy payments (no UID) as collected by the Owner
+          if (!isOwnerSelected) return false;
+        } else if (!filters.collectedBy.includes(p.collected_by_uid)) {
+          return false;
+        }
+      }
+
+      // Method logic
+      if (filters.paymentMethod.length > 0) {
+        const method = p.payment_method || 'Other';
+        if (!filters.paymentMethod.includes(method)) return false;
+      }
+
+      return true;
+    });
+  }, [payments, searchQuery, filters, ownerId]);
+
+  const filteredPayments = useMemo(() => {
+    const now = new Date();
+    return baseFilteredPayments.filter((p: any) => {
       if (!p.payment_date) return false;
       const paymentDate = parseISO(p.payment_date);
 
@@ -110,27 +232,13 @@ export default function HistoryPage() {
           break;
         default: break;
       }
-      if (!dateMatch) return false;
-
-      // Status logic
-      if (filters.paymentStatus.length > 0) {
-        const status = p.is_partial ? 'Partial' : (p.status === 'paid' ? 'Paid' : 'Pending');
-        if (!filters.paymentStatus.includes(status)) return false;
-      }
-
-      // Method logic
-      if (filters.paymentMethod.length > 0) {
-        const method = p.payment_method || 'Other';
-        if (!filters.paymentMethod.includes(method)) return false;
-      }
-
-      return true;
+      return dateMatch;
     });
-  }, [payments, searchQuery, filters]);
+  }, [baseFilteredPayments, filters.dateRange, filters.customMonth, filters.customYear]);
 
   const totalCollectedToday = useMemo(() => {
     const now = new Date();
-    return payments.reduce((sum, p) => {
+    return baseFilteredPayments.reduce((sum: number, p: any) => {
       if (!p.payment_date) return sum;
       const paymentDate = parseISO(p.payment_date);
       if (isWithinInterval(paymentDate, { start: startOfDay(now), end: endOfDay(now) })) {
@@ -138,15 +246,30 @@ export default function HistoryPage() {
       }
       return sum;
     }, 0);
-  }, [payments]);
+  }, [baseFilteredPayments]);
+
+  const myCollectionToday = useMemo(() => {
+    const now = new Date();
+    return baseFilteredPayments.reduce((sum: number, p: any) => {
+      if (!p.payment_date) return sum;
+      const paymentDate = parseISO(p.payment_date);
+      if (isWithinInterval(paymentDate, { start: startOfDay(now), end: endOfDay(now) })) {
+        const isMine = p.collected_by_uid === ownerId || (!p.collected_by_uid && userProfile?.role !== 'team_member');
+        if (isMine) {
+          return sum + (p.amount_paid || p.amount || 0);
+        }
+      }
+      return sum;
+    }, 0);
+  }, [baseFilteredPayments, ownerId, userProfile]);
 
   const totalCollectedFiltered = useMemo(() => {
-    return filteredPayments.reduce((sum, p) => sum + (p.amount_paid || p.amount || 0), 0);
+    return filteredPayments.reduce((sum: number, p: any) => sum + (p.amount_paid || p.amount || 0), 0);
   }, [filteredPayments]);
 
   const totalCollectedThisMonth = useMemo(() => {
     const now = new Date();
-    return payments.reduce((sum, p) => {
+    return baseFilteredPayments.reduce((sum: number, p: any) => {
       if (!p.payment_date) return sum;
       const paymentDate = parseISO(p.payment_date);
       if (isWithinInterval(paymentDate, { start: startOfMonth(now), end: endOfMonth(now) })) {
@@ -154,7 +277,7 @@ export default function HistoryPage() {
       }
       return sum;
     }, 0);
-  }, [payments]);
+  }, [baseFilteredPayments]);
 
   const handlePrintReceipt = (payment: any) => {
     const formatDateTime = (isoString: string) => {
@@ -166,7 +289,7 @@ export default function HistoryPage() {
     const amountPaid = Number(payment.amount_paid || payment.amount);
     
     // Generate QR code data
-    const qrData = encodeURIComponent(`StaySync Receipt\nID: ${payment.payment_id ? payment.payment_id.substring(0,8).toUpperCase() : 'N/A'}\nTenant: ${payment.tenant_name}\nAmount: ₹${amountPaid}\nPending: ₹${pendingFee}\nStatus: Successful`);
+    const qrData = encodeURIComponent(`Raliving Receipt\nID: ${payment.payment_id ? payment.payment_id.substring(0,8).toUpperCase() : 'N/A'}\nTenant: ${payment.tenant_name}\nAmount: ₹${amountPaid}\nPending: ₹${pendingFee}\nStatus: Successful`);
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${qrData}`;
 
     const receiptHtml = `
@@ -488,9 +611,9 @@ export default function HistoryPage() {
               <!-- Header -->
               <div class="header-bar">
                 <div class="brand">
-                  <div class="brand-icon">S</div>
+                  <img src="/himalaya_logo_premium.png" alt="Logo" style="width: 34px; height: 34px; object-fit: contain; border-radius: 6px; margin-right: 12px;" />
                   <div>
-                    <div class="brand-name">StaySync</div>
+                    <div class="brand-name">${payment.pg_name || 'Himalaya Hostels'}</div>
                     <div class="brand-sub">Smart PG Management</div>
                   </div>
                 </div>
@@ -556,16 +679,34 @@ export default function HistoryPage() {
                   </div>
                   <div class="detail-value">${payment.payment_method || 'N/A'}${payment.is_partial ? ' (Partial)' : ''}</div>
                 </div>
-                ${pendingFee > 0 ? `
-                <div class="detail-row">
+                <div class="detail-row" style="background: #f0fdf4; margin: 4px -8px; padding: 10px 8px; border-radius: 8px;">
                   <div class="detail-label">
-                    <div class="icon-circle" style="background:#fef2f2; color:#ef4444">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <div class="icon-circle" style="background:#dcfce7; color:#16a34a">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                     </div>
-                    Pending Fee
+                    Paid Fee Type(s)
                   </div>
-                  <div class="detail-value" style="color:#ef4444">₹${pendingFee.toLocaleString('en-IN')}</div>
-                </div>` : ''}
+                  <div class="detail-value" style="color:#16a34a; font-weight:700">
+                    ${payment.paid_fee_summary || payment.description || 'Rent Payment'}
+                  </div>
+                </div>
+                <div class="detail-row" style="${pendingFee > 0 ? 'background: #fef2f2; margin: 4px -8px; padding: 10px 8px; border-radius: 8px;' : ''}">
+                  <div class="detail-label">
+                    <div class="icon-circle" style="${pendingFee > 0 ? 'background:#fee2e2; color:#dc2626' : 'background:#dcfce7; color:#16a34a'}">
+                      ${pendingFee > 0 ? 
+                        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>` : 
+                        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`
+                      }
+                    </div>
+                    Pending Fee Types
+                  </div>
+                  <div class="detail-value" style="${pendingFee > 0 ? 'color:#dc2626; font-weight:700' : 'color:#16a34a; font-weight:700'}">
+                    ${pendingFee > 0 ? 
+                      `${payment.pending_fee_summary || 'Remaining Dues'} (Total: ₹${pendingFee.toLocaleString('en-IN')})` : 
+                      `<span style="font-size:0.75rem; background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:10px; font-weight:600">Paid in Full (Clear)</span>`
+                    }
+                  </div>
+                </div>
                 
                 <div class="amount-box">
                   <div class="detail-label">
@@ -597,7 +738,7 @@ export default function HistoryPage() {
 
               <!-- Footer -->
               <div class="receipt-footer">
-                <div style="margin-bottom: 4px;">Generated by <span class="brand-text">StaySync</span></div>
+                <div style="margin-bottom: 4px;">Generated by <span class="brand-text">Raliven Innovations</span></div>
                 <div>Thank you for your payment!</div>
               </div>
             </div>
@@ -634,36 +775,42 @@ export default function HistoryPage() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className={styles.container} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-        <div className="spinner"></div>
-      </div>
-    );
-  }
+
 
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const years = [new Date().getFullYear(), new Date().getFullYear() - 1, new Date().getFullYear() - 2];
+
+  if (!isMounted) return null;
 
   return (
     <div className={styles.container}>
 
       <div className={styles.statsContainer}>
-        <div className={styles.totalCardHalf}>
-          <div className={styles.totalTitle}>Today's Collection</div>
-          <div className={styles.totalAmount}>₹{totalCollectedToday.toLocaleString('en-IN')}</div>
-        </div>
-        <div className={`${styles.totalCardHalf} ${styles.filteredCard}`}>
-          <div className={styles.totalTitle}>
-            {searchQuery ? 'Search Results' : 
-             (filters.dateRange === 'Month' && filters.customMonth !== undefined && filters.customYear !== undefined ? `${months[filters.customMonth]} ${filters.customYear}` :
-             (filters.dateRange !== 'All Time' ? filters.dateRange : 
-             (filters.paymentStatus.length > 0 || filters.paymentMethod.length > 0 ? 'Filtered' : `${months[new Date().getMonth()]} ${new Date().getFullYear()}`)))}
+        <div className={styles.summaryCardBlue}>
+          <div className={styles.summaryContent}>
+            <div className={styles.summaryTitleWhite}>Today's Collection</div>
+            <div className={styles.summaryAmountWhite}>₹{totalCollectedToday.toLocaleString('en-IN')}</div>
           </div>
-          <div className={styles.totalAmount}>
-            ₹{((filters.dateRange !== 'All Time' || filters.paymentStatus.length > 0 || filters.paymentMethod.length > 0 || searchQuery !== '') 
-                ? totalCollectedFiltered 
-                : totalCollectedThisMonth).toLocaleString('en-IN')}
+        </div>
+        <div className={styles.summaryCardPurple}>
+          <div className={styles.summaryContent}>
+            <div className={styles.summaryTitleWhite}>My Collection Today</div>
+            <div className={styles.summaryAmountWhite}>₹{myCollectionToday.toLocaleString('en-IN')}</div>
+          </div>
+        </div>
+        <div className={styles.summaryCardGreen}>
+          <div className={styles.summaryContent}>
+            <div className={styles.summaryTitleWhite}>
+              {searchQuery ? 'Search Results' : 
+               (filters.dateRange === 'Month' && filters.customMonth !== undefined && filters.customYear !== undefined ? `${months[filters.customMonth]} ${filters.customYear}` :
+               (filters.dateRange !== 'All Time' ? filters.dateRange : 
+               (filters.paymentStatus.length > 0 || filters.paymentMethod.length > 0 ? 'Filtered' : `${months[new Date().getMonth()]} ${new Date().getFullYear()}`)))}
+            </div>
+            <div className={styles.summaryAmountWhite}>
+              ₹{((filters.dateRange !== 'All Time' || filters.paymentStatus.length > 0 || filters.paymentMethod.length > 0 || searchQuery !== '') 
+                  ? totalCollectedFiltered 
+                  : totalCollectedThisMonth).toLocaleString('en-IN')}
+            </div>
           </div>
         </div>
       </div>
@@ -679,12 +826,15 @@ export default function HistoryPage() {
             className={styles.searchInput}
           />
         </div>
-        <button className={styles.filterIconButton} onClick={() => setIsFilterOpen(true)}>
-          <Filter size={20} />
+        <button className={styles.filterBtn} onClick={() => setIsFilterOpen(true)} style={{ position: 'relative' }}>
+          <Filter size={18} />
+          {(filters.dateRange !== 'All Time' || filters.paymentStatus.length > 0 || filters.paymentMethod.length > 0 || filters.collectedBy.length > 0) && (
+            <div style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, backgroundColor: '#ea580c', borderRadius: '50%' }} />
+          )}
         </button>
       </div>
 
-      {(filters.dateRange !== 'All Time' || filters.paymentStatus.length > 0 || filters.paymentMethod.length > 0) && (
+      {(filters.dateRange !== 'All Time' || filters.paymentStatus.length > 0 || filters.paymentMethod.length > 0 || filters.collectedBy.length > 0) && (
         <div className={styles.activeFiltersRow}>
           <div className={styles.activeFiltersScroll}>
             {filters.dateRange !== 'All Time' && (
@@ -702,48 +852,133 @@ export default function HistoryPage() {
                 {method} <button onClick={() => setFilters({...filters, paymentMethod: filters.paymentMethod.filter(m => m !== method)})}><X size={12}/></button>
               </div>
             ))}
+            {filters.collectedBy.map(collector => {
+              const name = teamMembers?.find(m => (m.auth_uid || m.id) === collector)?.name || (collector === ownerId ? 'Owner' : 'Collector');
+              return (
+                <div key={collector} className={styles.activeFilterChip}>
+                  {name} <button onClick={() => setFilters({...filters, collectedBy: filters.collectedBy.filter(c => c !== collector)})}><X size={12}/></button>
+                </div>
+              );
+            })}
           </div>
-          <button className={styles.clearAllFilters} onClick={() => setFilters({ dateRange: 'All Time', paymentStatus: [], paymentMethod: [] })}>
+          <button className={styles.clearAllFilters} onClick={() => setFilters({ dateRange: 'All Time', paymentStatus: [], paymentMethod: [], collectedBy: [], customMonth: new Date().getMonth(), customYear: new Date().getFullYear() })}>
             Clear All
           </button>
         </div>
       )}
 
       <div className={styles.transactionList}>
-        {filteredPayments.length > 0 ? (
-          filteredPayments.map((payment) => (
-            <motion.div 
-              key={payment.payment_id} 
-              className={styles.transactionCard}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <div className={styles.cardLeft}>
-                <div className={styles.avatarCircle}>
-                   {payment.tenant_name ? payment.tenant_name.charAt(0).toUpperCase() : 'U'}
+        {(swrLoading && !effectiveHostelData && !!selectedPgId) && payments.length === 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} style={{ height: '80px', backgroundColor: '#f1f5f9', borderRadius: '16px', animation: 'pulse 1.5s infinite' }} />
+            ))}
+          </div>
+        ) : filteredPayments.length > 0 ? (
+          filteredPayments.map((payment: any) => {
+            const pendingBal = Number(payment.pending_balance || 0);
+            const isClear = pendingBal <= 0;
+            const isExpanded = expandedCardId === payment.payment_id;
+
+            return (
+              <div 
+                key={payment.payment_id} 
+                className={styles.transactionCard}
+                onClick={() => setExpandedCardId(prev => prev === payment.payment_id ? null : payment.payment_id)}
+                style={{ cursor: 'pointer', flexDirection: 'column', alignItems: 'stretch' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                  <AvatarImage 
+                    src={payment.facePicture} 
+                    name={payment.tenant_name || 'T'} 
+                    alt={payment.tenant_name || 'T'} 
+                    size={42} 
+                  />
+                  
+                  <div className={styles.cardCenterContent}>
+                    <div className={styles.tenantInfoRow}>
+                      <span className={styles.tenantName}>{payment.tenant_name}</span>
+                      <span className={styles.upiBadge}>{payment.payment_method || 'UPI'}</span>
+                    </div>
+                    
+                    <div className={styles.dateTimeRow}>
+                      <span>{new Date(payment.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                      <span>•</span>
+                      <span>{new Date(payment.payment_date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                    </div>
+
+                    <div className={styles.collectorRow} style={{ marginTop: '4px' }}>
+                      <User size={12} />
+                      <span>Collected by: <span className={styles.collectorName}>{payment.collected_by_name || 'System'}</span></span>
+                    </div>
+                  </div>
+
+                  <div className={styles.cardRightSide}>
+                    <div className={styles.amountStatusCol}>
+                      <span className={isClear ? styles.amountClear : styles.amountPositive}>
+                        +₹{Number(payment.amount_paid || payment.amount || 0).toLocaleString('en-IN')}
+                      </span>
+                      <span className={isClear ? styles.pendingBadgeClear : styles.pendingBadgeDue}>
+                        {isClear ? 'Clear' : `Due: ₹${pendingBal.toLocaleString('en-IN')}`}
+                      </span>
+                    </div>
+                    
+                    <div className={styles.verticalDivider} />
+                    
+                    <div className={styles.downloadActionCol}>
+                      <span className={styles.roomBadge}>Rm {payment.room_number}</span>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePrintReceipt(payment);
+                        }} 
+                        className={styles.downloadIconBtn} 
+                        title="Download / Print Receipt"
+                        aria-label="Download Receipt"
+                      >
+                        <Download size={14} strokeWidth={2.5} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className={styles.cardDetails}>
-                  <div className={styles.tenantName}>{payment.tenant_name}</div>
-                  <div className={styles.roomInfo}>
-                    Room {payment.room_number} • {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+
+                {/* Pure CSS GPU-Accelerated Accordion Panel */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateRows: isExpanded ? '1fr' : '0fr',
+                  transition: 'grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1)',
+                  overflow: 'hidden',
+                  width: '100%'
+                }}>
+                  <div style={{
+                    minHeight: 0,
+                    opacity: isExpanded ? 1 : 0,
+                    transform: isExpanded ? 'translateY(0)' : 'translateY(-6px)',
+                    transition: 'opacity 0.22s ease, transform 0.22s ease',
+                    borderTop: isExpanded ? '1px solid #f1f5f9' : '1px solid transparent',
+                    marginTop: isExpanded ? '10px' : '0px',
+                    paddingTop: isExpanded ? '10px' : '0px'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', fontSize: '0.82rem', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: '#047857', fontWeight: 600 }}>🟢 Fee Paid:</span>
+                        <span style={{ color: '#065f46', fontWeight: 700 }}>{payment.paid_fee_summary || payment.description || 'Rent'}</span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: isClear ? '#475569' : '#dc2626', fontWeight: 600 }}>
+                          {isClear ? '⚪ Pending Fees:' : '🔴 Pending Fees Remaining:'}
+                        </span>
+                        <span style={{ color: isClear ? '#475569' : '#b91c1c', fontWeight: 700 }}>
+                          {payment.pending_fee_summary || (isClear ? 'None (Fully Cleared)' : `Remaining Balance (₹${pendingBal.toLocaleString('en-IN')})`)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-
-              <div className={styles.cardRight}>
-                <div className={`${styles.amount} ${payment.is_partial ? styles.partial : ''}`}>
-                  ₹{payment.amount_paid || payment.amount}
-                </div>
-                <div className={styles.paymentMethod}>
-                  {payment.payment_method || 'UPI'} {payment.is_partial && '(Partial)'}
-                </div>
-              </div>
-              
-              <button onClick={() => handlePrintReceipt(payment)} className={styles.downloadBtn} aria-label="Download Receipt">
-                <Download size={18} />
-              </button>
-            </motion.div>
-          ))
+            );
+          })
         ) : (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
@@ -761,6 +996,8 @@ export default function HistoryPage() {
             onClose={() => setIsFilterOpen(false)} 
             filters={filters} 
             setFilters={setFilters} 
+            teamMembers={teamMembers}
+            ownerId={ownerId}
           />
         )}
       </AnimatePresence>
@@ -768,7 +1005,7 @@ export default function HistoryPage() {
   );
 }
 
-function FilterModal({ isOpen, onClose, filters, setFilters }: { isOpen: boolean, onClose: () => void, filters: FilterState, setFilters: (f: FilterState) => void }) {
+function FilterModal({ isOpen, onClose, filters, setFilters, teamMembers, ownerId }: { isOpen: boolean, onClose: () => void, filters: FilterState, setFilters: (f: FilterState) => void, teamMembers?: any[], ownerId?: string | null }) {
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
   const applyFilters = () => {
@@ -781,7 +1018,12 @@ function FilterModal({ isOpen, onClose, filters, setFilters }: { isOpen: boolean
     return [...array, item];
   };
 
-  const dateOptions = ['Today', 'Yesterday', 'This Week', 'Last Week', 'Month', 'This Quarter', 'This Year', 'All Time'];
+  const collectorOptions = [
+    { uid: ownerId, name: 'Owner' },
+    ...(teamMembers || []).filter(m => m.permissions?.collectPayments).map(m => ({ uid: m.auth_uid || m.id, name: m.name || m.full_name }))
+  ].filter(c => c.uid);
+
+  const dateOptions = ['All Time', 'Today', 'Yesterday', 'This Week', 'Last Week', 'Month', 'This Quarter', 'This Year'];
   const statusOptions = ['Paid', 'Partial', 'Pending', 'Overdue', 'Refunded'];
   const methodOptions = ['UPI', 'Cash', 'Bank', 'Card', 'Other'];
 
@@ -807,7 +1049,7 @@ function FilterModal({ isOpen, onClose, filters, setFilters }: { isOpen: boolean
         <div className={styles.modalHeader}>
           <h2>Filters</h2>
           <button 
-            onClick={() => setLocalFilters({ dateRange: 'All Time', customMonth: new Date().getMonth(), customYear: new Date().getFullYear(), paymentStatus: [], paymentMethod: [] })} 
+            onClick={() => setLocalFilters({ dateRange: 'All Time', customMonth: new Date().getMonth(), customYear: new Date().getFullYear(), paymentStatus: [], paymentMethod: [], collectedBy: [] })} 
             className={styles.resetBtn}
           >
             Reset
@@ -883,6 +1125,22 @@ function FilterModal({ isOpen, onClose, filters, setFilters }: { isOpen: boolean
               ))}
             </div>
           </div>
+
+          <div className={styles.filterSection}>
+            <h3>Collected By</h3>
+            <div className={styles.optionsGrid}>
+              {collectorOptions.map(opt => (
+                <button 
+                  key={opt.uid as string} 
+                  className={`${styles.filterOptionBtn} ${(localFilters.collectedBy || []).includes(opt.uid as string) ? styles.selected : ''}`}
+                  onClick={() => setLocalFilters({...localFilters, collectedBy: toggleArrayItem(localFilters.collectedBy || [], opt.uid as string)})}
+                >
+                  {(localFilters.collectedBy || []).includes(opt.uid as string) && <Check size={12} />}
+                  {opt.name}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className={styles.modalFooter}>
@@ -893,3 +1151,5 @@ function FilterModal({ isOpen, onClose, filters, setFilters }: { isOpen: boolean
     </>
   );
 }
+
+export default function HistoryPage() { return <Suspense fallback={<div>Loading...</div>}><HistoryPageContent /></Suspense>; }

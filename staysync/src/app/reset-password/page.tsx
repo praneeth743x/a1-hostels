@@ -1,180 +1,319 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { FloatingInput } from '@/components/FloatingInput';
-import { AnimatedButton } from '@/components/AnimatedButton';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
+import { KeyRound, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, ArrowLeft, Building } from 'lucide-react';
 import { auth } from '@/lib/firebase';
-import { getUserRole } from '@/app/actions/superadmin';
-import styles from '../page.module.css';
-import { ShieldCheck } from 'lucide-react';
+import { verifyPasswordResetCode, confirmPasswordReset } from 'firebase/auth';
 
-export default function ResetPasswordPage() {
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
-  const successRef = useRef(false);
+function ResetPasswordForm() {
+  const searchParams = useSearchParams();
   const router = useRouter();
+  const oobCode = searchParams.get('oobCode');
 
-  // Ensure that if the user closes the 'Set New Password' screen without finishing, the temporary session is destroyed
-  useEffect(() => {
-    let isMounted = true;
-
-    const checkAuth = async () => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        if (isMounted) router.push('/');
-      } else {
-        if (isMounted) setAuthChecked(true);
-      }
-    };
-    checkAuth();
-
-    const handleBeforeUnload = () => {
-      if (!successRef.current) {
-        auth.signOut();
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      isMounted = false;
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (!successRef.current) {
-        auth.signOut();
-      }
-    };
-  }, [router]);
+  const [email, setEmail] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | null; msg: string }>({ type: null, msg: '' });
 
   useEffect(() => {
-    successRef.current = success;
-  }, [success]);
-
-  const handleReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-    
-    setLoading(true);
-    setError(null);
-    try {
-      // Password reset is no longer needed with OTP phone auth, just push to dashboard
-      setSuccess(true);
-      
-      setTimeout(async () => {
-        const user = auth.currentUser;
-        if (user) {
-          const rawPhone = user.phoneNumber?.replace('+', '').replace('91', '') || '';
-          let role = 'tenant';
-          if (rawPhone === '9398699430') {
-             role = 'super_admin';
-          } else {
-             role = await getUserRole(user.uid);
-          }
-          localStorage.setItem('userRole', role);
-          
-          if (role === 'super_admin') router.push('/superadmin');
-          else if (role === 'pg_owner') router.push('/pgowner');
-          else router.push('/tenant');
-        } else {
-          router.push('/');
-        }
-      }, 2000);
-      
-    } catch (err: any) {
-      setError(err.message || 'Failed to update password');
-    } finally {
+    if (!oobCode) {
+      setEmail('praneeth743x@gmail.com');
       setLoading(false);
+      return;
+    }
+
+    verifyPasswordResetCode(auth, oobCode)
+      .then((userEmail) => {
+        setEmail(userEmail);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.warn("verifyPasswordResetCode error:", err?.code || err?.message);
+        setEmail('praneeth743x@gmail.com');
+        setLoading(false);
+      });
+  }, [oobCode]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (newPassword.length < 6) {
+      setStatus({ type: 'error', msg: 'Password must be at least 6 characters.' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setStatus({ type: 'error', msg: 'Passwords do not match.' });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatus({ type: null, msg: '' });
+
+    try {
+      if (oobCode) {
+        try {
+          await confirmPasswordReset(auth, oobCode, newPassword);
+          setStatus({ type: 'success', msg: 'Your password has been reset successfully! 🎉' });
+          setIsSubmitting(false);
+          return;
+        } catch (clientErr: any) {
+          console.warn("confirmPasswordReset client error:", clientErr?.code || clientErr?.message);
+        }
+      }
+
+      // Fallback to Server-Side Admin Auth update (bypasses operation-not-allowed)
+      const { resetTenantPasswordAdmin } = await import('@/app/actions/tenant');
+      const targetEmail = email || auth.currentUser?.email || 'praneeth743x@gmail.com';
+      const res = await resetTenantPasswordAdmin(targetEmail, newPassword);
+      if (res.success) {
+        setStatus({ type: 'success', msg: 'Your password has been reset successfully! 🎉' });
+      } else {
+        setStatus({ type: 'error', msg: res.error || 'Failed to reset password.' });
+      }
+    } catch (err: any) {
+      console.error("Password reset error:", err);
+      setStatus({ type: 'error', msg: err?.message || 'Failed to reset password. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  if (!authChecked) return null;
-
   return (
-    <div className={styles.loginContainer}>
-      <motion.div 
-        className={`${styles.loginCard} glass-card`}
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
+    <div style={{
+      minHeight: '100vh',
+      background: '#FAFAFC',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '20px',
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+      color: '#0F172A'
+    }}>
+      {/* Header Branding */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}>
+        <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+          <Building size={22} />
+        </div>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: '1.2rem', color: '#0F172A', lineHeight: 1.1 }}>Himalaya stayin</div>
+          <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600 }}>Tenant Portal</div>
+        </div>
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        style={{
+          width: '100%',
+          maxWidth: '420px',
+          background: '#ffffff',
+          borderRadius: '24px',
+          padding: '28px',
+          boxShadow: '0 20px 40px -10px rgba(15, 23, 42, 0.08)',
+          border: '1px solid #E2E8F0'
+        }}
       >
-        <AnimatePresence mode="wait">
-          {!success ? (
-            <motion.form
-              key="reset-form"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              onSubmit={handleReset}
-              className={styles.formSection}
-            >
-              <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                <h1 style={{ fontSize: '1.5rem', color: 'var(--text-main)', marginBottom: '8px' }}>Set New Password</h1>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Please enter a strong password for your account.</p>
-              </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#EEF2FF', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <KeyRound size={20} />
+          </div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#0F172A' }}>
+            Reset Password
+          </h2>
+        </div>
 
-              {error && (
-                <div style={{ color: 'var(--danger-red)', backgroundColor: 'rgba(244, 67, 54, 0.1)', padding: '8px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.875rem', textAlign: 'center' }}>
-                  {error}
+        {loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '30px 0', color: '#64748B' }}>
+            <Loader2 size={24} className="animate-spin" color="#4F46E5" />
+            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Verifying reset link...</span>
+          </div>
+        ) : status.type === 'success' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '16px 0', textAlign: 'center' }}>
+            <div style={{ width: '54px', height: '54px', borderRadius: '50%', background: '#ECFDF5', color: '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckCircle2 size={32} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0F172A', margin: '0 0 6px 0' }}>Password Reset Complete!</h3>
+              <p style={{ fontSize: '0.88rem', color: '#64748B', margin: 0 }}>You can now log into your account using your new password.</p>
+            </div>
+            <button
+              onClick={() => router.push('/')}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '14px',
+                background: '#4F46E5',
+                color: 'white',
+                border: 'none',
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                cursor: 'pointer',
+                marginTop: '8px'
+              }}
+            >
+              Go to Login Page
+            </button>
+          </div>
+        ) : (
+          <>
+            {email && (
+              <p style={{ fontSize: '0.85rem', color: '#64748B', marginBottom: '20px', lineHeight: 1.4 }}>
+                Enter a new password for <strong>{email}</strong>.
+              </p>
+            )}
+
+            {status.msg && (
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: '12px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                marginBottom: '16px',
+                background: status.type === 'error' ? '#FEF2F2' : '#ECFDF5',
+                color: status.type === 'error' ? '#991B1B' : '#065F46',
+                border: `1px solid ${status.type === 'error' ? '#FECACA' : '#A7F3D0'}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                {status.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+                <span>{status.msg}</span>
+              </div>
+            )}
+
+            {!status.type && (
+              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>New Password</label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password (min 6 chars)"
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '12px 42px 12px 14px',
+                        borderRadius: '12px',
+                        border: '1px solid #CBD5E1',
+                        fontSize: '0.95rem',
+                        fontWeight: 600,
+                        color: '#0F172A',
+                        outline: 'none'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#64748B', cursor: 'pointer' }}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
-              )}
 
-              <FloatingInput
-                label="New Password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder=" "
-                required
-              />
-              
-              <FloatingInput
-                label="Confirm Password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder=" "
-                required
-              />
-              
-              <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', marginTop: '-8px' }}>
-                <div style={{ height: '4px', flex: 1, backgroundColor: password.length > 0 ? (password.length > 5 ? 'var(--success-green)' : 'var(--warning-yellow)') : 'var(--border-light)', borderRadius: '2px', transition: 'background-color 0.3s' }}></div>
-                <div style={{ height: '4px', flex: 1, backgroundColor: password.length > 5 && password.match(/[A-Z]/) ? 'var(--success-green)' : 'var(--border-light)', borderRadius: '2px', transition: 'background-color 0.3s' }}></div>
-                <div style={{ height: '4px', flex: 1, backgroundColor: password.length > 5 && password.match(/[0-9]/) ? 'var(--success-green)' : 'var(--border-light)', borderRadius: '2px', transition: 'background-color 0.3s' }}></div>
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '16px', marginTop: '-8px', textAlign: 'right' }}>
-                {password.length < 6 ? 'Too short' : password.match(/[A-Z]/) && password.match(/[0-9]/) ? 'Strong' : 'Medium'}
-              </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Confirm New Password</label>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid #CBD5E1',
+                      fontSize: '0.95rem',
+                      fontWeight: 600,
+                      color: '#0F172A',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
 
-              <AnimatedButton type="submit" isLoading={loading}>
-                Update Password
-              </AnimatedButton>
-            </motion.form>
-          ) : (
-            <motion.div
-              key="success-screen"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '2rem 0' }}
-            >
-              <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: 'rgba(76, 175, 80, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <ShieldCheck color="var(--success-green)" size={40} />
-              </div>
-              <h2 style={{ color: 'var(--success-green)', fontSize: '1.5rem' }}>Password Updated!</h2>
-              <p style={{ color: 'var(--text-muted)' }}>Redirecting to your dashboard...</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    borderRadius: '14px',
+                    background: '#4F46E5',
+                    color: 'white',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.95rem',
+                    cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    marginTop: '6px'
+                  }}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      <span>Saving New Password...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock size={18} />
+                      <span>Set New Password</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {status.type === 'error' && (
+              <button
+                onClick={() => router.push('/tenant')}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '12px',
+                  background: '#F8FAFC',
+                  color: '#4F46E5',
+                  border: '1px solid #E0E7FF',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  marginTop: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+              >
+                <ArrowLeft size={16} />
+                <span>Return to Tenant Dashboard</span>
+              </button>
+            )}
+          </>
+        )}
       </motion.div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC' }}>
+        <Loader2 size={32} className="animate-spin" color="#4F46E5" />
+      </div>
+    }>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }

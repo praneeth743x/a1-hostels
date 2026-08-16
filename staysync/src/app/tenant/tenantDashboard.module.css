@@ -1,0 +1,1127 @@
+/* 
+  Task-Focused Mobile-First Single-Screen Tenant Portal CSS Module
+  Google Pay / Apple Wallet / PhonePe UX. Target Height: ~620px.
+*/
+
+.appContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  .appContainer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+}
+
+/* 1. Greeting Section (~80px) */
+.greetingCard {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 14px 18px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 76px;
+}
+
+@media (min-width: 768px) {
+  .greetingCard {
+    grid-column: span 2;
+  }
+}
+
+.greetingLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #4f46e5;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.avatarImg {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.greetingTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.greetingSub {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.activeDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #16a34a;
+  display: inline-block;
+}
+
+/* 2. Pending Due Hero Card (~140px) */
+.dueCardHero {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 16px 20px;
+  border: 1px solid #fee2e2;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.06);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 136px;
+}
+
+@media (min-width: 768px) {
+  .dueCardHero {
+    grid-column: span 2;
+  }
+}
+
+.dueCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dueLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #991b1b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dueAmount {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #dc2626;
+  letter-spacing: -0.02em;
+}
+
+.payBtn {
+  width: 100%;
+  background: #4f46e5;
+  color: white;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.payBtn:hover {
+  background: #4338ca;
+}
+
+/* 3. 2x2 Quick Stats Grid (~200px) */
+.statsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  min-height: 190px;
+}
+
+.statBox {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 14px;
+  border: 1px solid rgba(79, 70, 229, 0.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.statBox:hover {
+  transform: translateY(-2px);
+  border-color: #4f46e5;
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.12);
+  background: #fafaff;
+}
+
+.statTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.statLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.statIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bgIndigo { background: #eef2ff; color: #4f46e5; }
+.bgGreen { background: #f0fdf4; color: #16a34a; }
+.bgAmber { background: #fffbeb; color: #d97706; }
+.bgBlue { background: #f0f9ff; color: #0284c7; }
+
+.statVal {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+  margin-top: 6px;
+}
+
+.statAction {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #4f46e5;
+  margin-top: 6px;
+}
+
+/* 4. Latest Payment Snippet (~80px) */
+.latestPaymentCard {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 14px 18px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72px;
+}
+
+.paymentLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.paymentIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #f0fdf4;
+  color: #16a34a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.paymentTitle {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.paymentDate {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.paymentRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.paymentAmount {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.paidBadge {
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.viewAllBtn {
+  color: #4f46e5;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Tab Views Container for Payments, Notices, Profile */
+.tabViewCard {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tabViewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #f8fafc;
+  padding-bottom: 12px;
+}
+
+.tabViewTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 5. Fixed Floating Bottom Navigation Bar (Matched to PG Owner Style) */
+.mobileBottomNav {
+  display: block;
+  position: fixed;
+  bottom: max(12px, calc(env(safe-area-inset-bottom) + 4px));
+  left: 12px;
+  right: 12px;
+  z-index: 100;
+  border-radius: 20px;
+  background: #ffffff;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  width: calc(100% - 24px);
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  .mobileBottomNav {
+    left: 50%;
+    transform: translateX(-50%);
+    width: 480px;
+    bottom: 24px;
+    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+  }
+}
+
+.mobileBottomNavInner {
+  display: flex;
+  justify-content: space-around;
+  padding: 6px 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.bottomNavItem {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 0 7px 0;
+  color: #94a3b8;
+  background: transparent;
+  border: none;
+  text-decoration: none;
+  font-size: 0.62rem;
+  font-weight: 600;
+  gap: 3px;
+  position: relative;
+  cursor: pointer;
+  transition: color 200ms ease;
+  z-index: 3;
+  min-width: 0;
+}
+
+.bottomNavItem:active {
+  opacity: 0.75;
+}
+
+.bottomNavItem svg {
+  transition: transform 200ms ease, color 200ms ease;
+}
+
+.bottomNavItemActive {
+  color: #4F46E5;
+  font-weight: 700;
+}
+
+.bottomNavItemActive svg {
+  color: #4F46E5;
+  stroke-width: 2.5px;
+  filter: drop-shadow(0 0 8px rgba(79, 70, 229, 0.3));
+}
+
+.activeTabLine {
+  position: absolute;
+  bottom: 2px;
+  width: 20px;
+  height: 3px;
+  background-color: #4F46E5;
+  border-radius: 4px;
+  box-shadow: 0 0 8px rgba(79, 70, 229, 0.6);
+}
+
+.logoutBtn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid #fecdd3;
+  background: #fff1f2;
+  color: #e11d48;
+  font-weight: 700;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  margin-top: 16px;
+  transition: all 0.15s ease;
+}
+
+.logoutBtn:hover {
+  background: #ffe4e6;
+}
+
+/* Redesigned Profile View Styles */
+.profileHeroCard {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 20px 24px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.profileAvatarWrapper {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  flex-shrink: 0;
+}
+
+.profileAvatarImg {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid white;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+
+.profileAvatarFallback {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  font-weight: 700;
+  border: 3px solid white;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+
+.profileVerifiedBadge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 26px;
+  height: 26px;
+  background: #6366f1;
+  color: white;
+  border-radius: 50%;
+  border: 2px solid white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.4);
+}
+
+.profileInfoRight {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profileName {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.profileRoom {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.profileBadgeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.profileActivePill {
+  background: #ecfdf5;
+  color: #16a34a;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.profileHostelName {
+  font-size: 0.85rem;
+  color: #64748b;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* Info List Card */
+.profileInfoCard {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 8px 20px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+}
+
+.profileInfoRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.profileInfoRow:last-child {
+  border-bottom: none;
+}
+
+.profileInfoLeft {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.profileIconBox {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: #f5f3ff;
+  color: #6366f1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profileInfoLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.profileInfoValue {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 1px;
+}
+
+/* Quick Actions Section */
+.quickActionsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.quickActionsTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.quickActionsGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.quickActionCard {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.quickActionCard:hover {
+  background: #ffffff;
+  border-color: #6366f1;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
+}
+
+.quickActionLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.quickActionIconBox {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: white;
+  color: #6366f1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.quickActionName {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.quickActionSubtext {
+  font-size: 0.7rem;
+  color: #64748b;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+/* Password Update Modal Styles */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(6px);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.passwordModalContent {
+  background: #ffffff;
+  width: 100%;
+  max-width: 440px;
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+  border: 1px solid #e2e8f0;
+  position: relative;
+}
+
+.passwordModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.passwordModalTitle {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.passwordModalSubtext {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-bottom: 18px;
+  line-height: 1.4;
+}
+
+.passwordModalInputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.passwordModalLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.passwordModalInputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.passwordInput {
+  width: 100%;
+  padding: 12px 42px 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #0f172a;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.passwordInput:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.eyeToggleBtn {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+}
+
+.submitPasswordBtn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 14px;
+  background: #4f46e5;
+  color: white;
+  border: none;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  transition: background 0.15s ease;
+}
+
+.submitPasswordBtn:hover {
+  background: #4338ca;
+}
+
+.submitPasswordBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.emailFallbackBtn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #4f46e5;
+  border: 1px solid #e0e7ff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+  transition: background 0.15s ease;
+}
+
+.emailFallbackBtn:hover {
+  background: #eef2ff;
+}
+
+/* WORLD CLASS SHIMMER SKELETON ANIMATIONS */
+@keyframes shimmerPulse {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeletonBase {
+  background: linear-gradient(90deg, #f1f5f9 25%, #cbd5e1 37%, #f1f5f9 63%);
+  background-size: 200% 100%;
+  animation: shimmerPulse 1.4s ease-in-out infinite;
+  border-radius: 10px;
+}
+
+.skeletonGreeting {
+  height: 84px;
+  border-radius: 20px;
+  background: #ffffff;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.05);
+  border: 1px solid #e2e8f0;
+}
+
+.skeletonAvatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.skeletonGreetingLines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.skeletonLineTitle {
+  height: 18px;
+  width: 140px;
+  border-radius: 6px;
+}
+
+.skeletonLineSub {
+  height: 12px;
+  width: 90px;
+  border-radius: 4px;
+}
+
+.skeletonDueCard {
+  height: 146px;
+  border-radius: 22px;
+  background: #ffffff;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 6px 20px -3px rgba(15, 23, 42, 0.06);
+  border: 1px solid #e2e8f0;
+}
+
+.skeletonQuickGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.skeletonQuickCard {
+  height: 74px;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 14px;
+  box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.04);
+  border: 1px solid #e2e8f0;
+}
+
+/* --- NEW MOBILE REDESIGN STYLES --- */
+
+.mobileKpiGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.mobileKpiCard {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobileKpiHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.iconDanger { color: #ef4444; }
+.iconSuccess { color: #22c55e; }
+.iconPrimary { color: #4f46e5; }
+.textDanger { color: #ef4444 !important; }
+
+.mobileKpiVal {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.mobileKpiSub {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.mobilePaymentDetailsHero {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 20px;
+  border: 2px solid #ef4444;
+  box-shadow: 0 8px 24px -4px rgba(239, 68, 68, 0.15);
+  display: flex;
+  flex-direction: column;
+}
+
+.mobilePaymentHeroHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.mobilePaymentHeroTitle {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+  text-transform: uppercase;
+}
+
+.mobilePaymentHeroBadge {
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dotWarning {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #dc2626;
+}
+
+.mobilePaymentHeroAmount {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+}
+
+.mobileInvoiceSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobileInvoiceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.mobileInvoiceTitle {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.mobileInvoiceList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobileInvoiceCard {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobileInvoiceCardTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.mobileInvoiceBadge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #6366f1;
+  background: #e0e7ff;
+  padding: 2px 8px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-bottom: 4px;
+}
+
+.mobileInvoiceDesc {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.mobileInvoiceAmount {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.mobileInvoiceCardMid {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mobileInvoiceMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.mobileInvoiceCardBot {
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.btnOutlineFull {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  background: #ffffff;
+  border: 1px solid #4f46e5;
+  color: #4f46e5;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btnOutlineFull:active {
+  background: #eef2ff;
+}
+
+.btnGhostFull {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  background: #f8fafc;
+  border: none;
+  color: #0f172a;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btnGhostFull:active {
+  background: #f1f5f9;
+}

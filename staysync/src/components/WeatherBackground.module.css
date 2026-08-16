@@ -162,7 +162,7 @@
 }
 
 @keyframes fall {
-  to { transform: translateY(100vh); }
+  to { transform: translateY(100dvh); }
 }
 
 /* Snow */
@@ -176,7 +176,7 @@
 
 @keyframes snowFall {
   0% { transform: translateY(-10px) translateX(0); }
-  100% { transform: translateY(100vh) translateX(50px); }
+  100% { transform: translateY(100dvh) translateX(50px); }
 }
 
 /* Lightning */

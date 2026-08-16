@@ -1,21 +1,47 @@
 "use client";
 
+import { toast } from 'react-hot-toast';
+
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BedDouble, Home, Users, Search, LayoutGrid, ChevronDown, ChevronUp, ChevronRight, X, Save, Building2, Plus, Edit, SlidersHorizontal } from 'lucide-react';
-import { auth } from '@/lib/firebase';
+import { BedDouble, Home, Users, Search, ChevronDown, ChevronUp, ChevronRight, X, Save, Building2, Plus, Edit, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { auth, db } from '@/lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { getDashboardStats, updateRoomDetails, addTenantConstantFee, addTenantOneTimeCharge } from '@/app/actions/pgowner';
+import { globalAppCache, saveToCache, getFromCache } from '@/lib/cache';
+import { useRouter } from 'next/navigation';
+import { rpcCall } from '@/lib/rpc';
+import { useHostel, usePermissions } from '@/context/HostelContext';
+import { PERMISSIONS } from '@/constants/permissions';
+import ProtectedRoute from '@/components/ProtectedRoute';
+import { useHostelData } from '@/hooks/useHostelData';
+import { SelectHostelPrompt } from '@/components/SelectHostelPrompt';
+import { perfLogger } from '@/lib/perfLogger';
 import styles from './rooms.module.css';
 import { AnimatedButton } from '@/components/AnimatedButton';
+import { AvatarImage } from '@/components/AvatarImage';
+
+export interface ExtraChargeItem {
+  id: string;
+  name: string;
+  amount: number | '';
+  type: 'monthly' | 'onetime';
+  effectFrom: 'next' | 'current';
+}
 
 export default function RoomsManager() {
-  const [isLoading, setIsLoading] = useState(true);
+  const { selectedProperty, selectedPgId, pageStates, setPageState } = useHostel();
+  const { hasPermission } = usePermissions();
+  const { data: hostelData } = useHostelData(selectedPgId);
+  const storeRooms = hostelData?.rooms;
+  const storeTenants = hostelData?.tenants;
+  const savedState = pageStates['rooms'] || {};
+
+  const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const canManageRooms = hasPermission(PERMISSIONS.MANAGE_ROOMS);
   const [floors, setFloors] = useState<any[]>([]);
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [totalRooms, setTotalRooms] = useState(0);
   const [vacantRooms, setVacantRooms] = useState(0);
@@ -23,7 +49,7 @@ export default function RoomsManager() {
   const [fullRooms, setFullRooms] = useState(0);
   const [totalBeds, setTotalBeds] = useState(0);
   const [occupiedBeds, setOccupiedBeds] = useState(0);
-
+  
   // Accordion state
   const [openFloors, setOpenFloors] = useState<Record<string, boolean>>({});
   const [expandedRooms, setExpandedRooms] = useState<Record<string, boolean>>({});
@@ -33,81 +59,165 @@ export default function RoomsManager() {
   };
 
   // Filter state
-  const [activeFilter, setActiveFilter] = useState('All');
-  const [localFilters, setLocalFilters] = useState('All');
+  const [activeFilter, setActiveFilter] = useState<string>(savedState.filter || 'All');
+  const [localFilters, setLocalFilters] = useState<string>(savedState.filter || 'All');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Auto-expand all floors when a filter or search query is active so matching rooms list out immediately
+  useEffect(() => {
+    if (activeFilter !== 'All' || searchQuery) {
+      const allOpen: Record<string, boolean> = {};
+      floors.forEach(f => {
+        allOpen[f.floor] = true;
+      });
+      setOpenFloors(prev => ({ ...prev, ...allOpen }));
+    }
+  }, [activeFilter, searchQuery, floors]);
+
+  useEffect(() => {
+    perfLogger.logNavigationStart('/pgowner/rooms');
+    perfLogger.logRenderStart('RoomsManager');
+    perfLogger.logPageSummary('Rooms');
+    return () => {
+      perfLogger.logRenderEnd('RoomsManager');
+    };
+  }, []);
+
+  useEffect(() => {
+    setPageState('rooms', { filter: activeFilter });
+  }, [activeFilter, setPageState]);
 
   // Modal state
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
   const [editBeds, setEditBeds] = useState<number | ''>(1);
-  const [editFee, setEditFee] = useState<number | ''>(0);
+  const [extraCharges, setExtraCharges] = useState<ExtraChargeItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+
+  const handleAddExtraCharge = () => {
+    setExtraCharges(prev => [
+      ...prev,
+      {
+        id: 'charge_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+        name: '',
+        amount: '',
+        type: 'monthly',
+        effectFrom: 'next'
+      }
+    ]);
+  };
+
+  const handleUpdateExtraCharge = (id: string, field: keyof ExtraChargeItem, val: any) => {
+    setExtraCharges(prev => prev.map(c => c.id === id ? { ...c, [field]: val } : c));
+  };
+
+  const handleRemoveExtraCharge = (id: string) => {
+    setExtraCharges(prev => prev.filter(c => c.id !== id));
+  };
 
   // Manage Charges Modal state
   const [chargeTenant, setChargeTenant] = useState<any>(null);
-  const [chargeType, setChargeType] = useState<'constant' | 'onetime'>('constant');
+  const [chargeType, setChargeType] = useState<'monthly' | 'onetime'>('monthly');
   const [chargeAmount, setChargeAmount] = useState<number | ''>('');
-  const [chargeDesc, setChargeDesc] = useState('');
-  const [isSavingCharge, setIsSavingCharge] = useState(false);
+  const [chargeDesc, setChargeDesc] = useState<string>('');
+  const [isSavingCharge, setIsSavingCharge] = useState<boolean>(false);
 
-  const fetchRooms = async (uid: string) => {
-    try {
-      let currentId = searchParams.get('pgId');
-      if (!currentId && typeof localStorage !== 'undefined') {
-         currentId = localStorage.getItem('activePgId');
-      }
-      const res = await getDashboardStats(uid, currentId ? [currentId] : null);
-      if (res.success && res.data) {
-        const floorData = res.data.formattedRoomData || [];
-        setFloors(floorData);
 
-        let tRooms = 0, vRooms = 0, pRooms = 0, fRooms = 0;
-        let tBeds = 0, oBeds = 0;
-        const oFloors: Record<string, boolean> = {};
 
-        floorData.forEach((f: any) => {
-          oFloors[f.floor] = false; // closed by default
-          f.rooms.forEach((r: any) => {
-            tRooms++;
-            if (r.status === 'available') vRooms++;
-            else if (r.status === 'partial') pRooms++;
-            else if (r.status === 'occupied') fRooms++;
-
-            tBeds += (r.beds || 0);
-            oBeds += (r.occ || 0);
-          });
-        });
-
-        setTotalRooms(tRooms);
-        setVacantRooms(vRooms);
-        setPartialRooms(pRooms);
-        setFullRooms(fRooms);
-        setTotalBeds(tBeds);
-        setOccupiedBeds(oBeds);
-        setOpenFloors(oFloors);
-      } else if (!res.success) {
-        setErrorMsg(res.error || 'Failed to fetch room stats');
-      }
-    } catch (e: any) {
-      console.error(e);
-      setErrorMsg(e.message || 'An error occurred');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setIsLoading(true);
-        await fetchRooms(user.uid);
-      } else {
+    if (!storeRooms || storeRooms.length === 0) {
+      setIsLoading(false);
+      return;
+    }
+    
+    const floorMap: Record<string, any[]> = {};
+    storeRooms.forEach((r: any) => {
+      const floorName = r.floor || 'Floor 1';
+      if (!floorMap[floorName]) floorMap[floorName] = [];
+
+      const roomTenants = (storeTenants || []).filter((t: any) => (t.room_id === r.room_id || t.room === r.room_number) && (t.is_active !== false || t.status === 'Active' || t.status === 'notice_period' || t.status === 'Notice Period'));
+      const occ = roomTenants.length;
+      const beds = Number(r.total_beds || r.beds || 2);
+      const status = occ >= beds ? 'occupied' : occ === 0 ? 'available' : 'partial';
+
+      const roomNum = r.num || r.room_number || r.room || r.number || r.name || (r.id ? `Room ${r.id}` : 'Room');
+
+      floorMap[floorName].push({
+        ...r,
+        num: roomNum,
+        beds,
+        occ,
+        status,
+        tenants: roomTenants
+      });
+    });
+
+    const formattedFloorData = Object.keys(floorMap).map(floor => {
+      const sortedRooms = [...floorMap[floor]].sort((a: any, b: any) => {
+        const numA = parseInt(String(a.num).replace(/[^0-9]/g, ''), 10);
+        const numB = parseInt(String(b.num).replace(/[^0-9]/g, ''), 10);
+        if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+          return numA - numB;
+        }
+        return String(a.num).localeCompare(String(b.num), undefined, { numeric: true, sensitivity: 'base' });
+      });
+
+      return {
+        floor,
+        rooms: sortedRooms
+      };
+    }).sort((a: any, b: any) => {
+      const floorA = parseInt(String(a.floor).replace(/[^0-9]/g, ''), 10);
+      const floorB = parseInt(String(b.floor).replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(floorA) && !isNaN(floorB) && floorA !== floorB) {
+        return floorA - floorB;
+      }
+      return String(a.floor).localeCompare(String(b.floor), undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    setFloors(formattedFloorData);
+
+    let tRooms = 0, vRooms = 0, pRooms = 0, fRooms = 0;
+    let tBeds = 0, oBeds = 0;
+    const oFloors: Record<string, boolean> = {};
+
+    formattedFloorData.forEach((f: any) => {
+      oFloors[f.floor] = false;
+      f.rooms.forEach((r: any) => {
+        tRooms++;
+        if (r.status === 'available') vRooms++;
+        else if (r.status === 'partial') pRooms++;
+        else if (r.status === 'occupied') fRooms++;
+        tBeds += (r.beds || 0);
+        oBeds += (r.occ || 0);
+      });
+    });
+
+    setTotalRooms(tRooms);
+    setVacantRooms(vRooms);
+    setPartialRooms(pRooms);
+    setFullRooms(fRooms);
+    setTotalBeds(tBeds);
+    setOccupiedBeds(oBeds);
+    setOpenFloors(oFloors);
+    setIsLoading(false);
+  }, [storeRooms, storeTenants]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user) {
         router.push('/');
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [router]);
 
   const toggleFloor = (floor: string) => {
     setOpenFloors(prev => ({ ...prev, [floor]: !prev[floor] }));
@@ -116,7 +226,36 @@ export default function RoomsManager() {
   const handleOpenModal = (room: any) => {
     setSelectedRoom(room);
     setEditBeds(room.beds || 1);
-    setEditFee(room.extraFee || 0);
+
+    const savedCharges = room.extra_charges || room.extraCharges || [];
+    if (Array.isArray(savedCharges) && savedCharges.length > 0) {
+      setExtraCharges(savedCharges.map((c: any) => ({
+        id: c.id || 'c_' + Math.random().toString(36).substring(2, 9),
+        name: c.name || c.reason || 'Extra Fee',
+        amount: c.amount !== undefined ? c.amount : '',
+        type: c.type || 'monthly',
+        effectFrom: c.effectFrom || 'next'
+      })));
+    } else {
+      const savedFee = Number(room.extraFee ?? room.extra_fee ?? 0);
+      if (savedFee > 0) {
+        setExtraCharges([{
+          id: 'c_1',
+          name: 'Extra Fee',
+          amount: savedFee,
+          type: 'monthly',
+          effectFrom: 'next'
+        }]);
+      } else {
+        setExtraCharges([{
+          id: 'c_' + Date.now(),
+          name: '',
+          amount: '',
+          type: 'monthly',
+          effectFrom: 'next'
+        }]);
+      }
+    }
   };
 
   const handleCloseModal = () => {
@@ -125,8 +264,10 @@ export default function RoomsManager() {
 
   const handleOpenChargeModal = (tenant: any) => {
     setChargeTenant(tenant);
-    setChargeType('constant');
-    setChargeAmount(tenant.extraFee || '');
+    setChargeType('monthly');
+    // Pre-fill with current monthly rent (try all backend field variants)
+    const currentRent = tenant.fee ?? tenant.rent_amount ?? tenant.monthly_rent ?? tenant.rent ?? '';
+    setChargeAmount(currentRent !== '' ? Number(currentRent) : '');
     setChargeDesc('');
   };
 
@@ -138,36 +279,44 @@ export default function RoomsManager() {
     if (!chargeTenant) return;
     setIsSavingCharge(true);
     try {
-      const amt = chargeAmount === '' ? 0 : chargeAmount;
-      if (chargeType === 'constant') {
-        const res = await addTenantConstantFee(chargeTenant.id, amt);
+      const amt = chargeAmount === '' ? 0 : Number(chargeAmount);
+      let res;
+      if (chargeType === 'monthly') {
+        // Update the tenant's monthly rent
+        res = await rpcCall('updateTenantRent', chargeTenant.id ?? chargeTenant.tenant_id, amt);
         if (res.success) {
-          // Update local state
+          // Reflect updated rent in local UI
           setFloors(floors.map(floor => ({
             ...floor,
             rooms: floor.rooms.map((r: any) => ({
               ...r,
               tenants: r.tenants ? r.tenants.map((t: any) =>
-                t.id === chargeTenant.id ? { ...t, extraFee: amt } : t
+                (t.id === chargeTenant.id || t.tenant_id === chargeTenant.tenant_id)
+                  ? { ...t, fee: amt, rent_amount: amt, monthly_rent: amt }
+                  : t
               ) : []
             }))
           })));
           setChargeTenant(null);
         } else {
-          alert('Failed to save constant fee: ' + res.error);
+          toast.error('Failed to update monthly rent: ' + res.error);
         }
       } else {
-        const pgId = localStorage.getItem('activePgId') || '';
-        const res = await addTenantOneTimeCharge(pgId, chargeTenant.id, amt, chargeDesc || 'One-time charge');
+        if (!chargeDesc || !chargeDesc.trim()) {
+          toast.error('Please enter a name/description for this charge.');
+          setIsSavingCharge(false);
+          return;
+        }
+        res = await rpcCall('addTenantOneTimeCharge', chargeTenant.pg_id, chargeTenant.id ?? chargeTenant.tenant_id, amt, chargeDesc.trim());
         if (res.success) {
-          alert('One-time charge added successfully to current month.');
+          toast.success('One-time charge added successfully to current month.');
           setChargeTenant(null);
         } else {
-          alert('Failed to add one-time charge: ' + res.error);
+          toast.error('Failed to add one-time charge: ' + res.error);
         }
       }
     } catch (e: any) {
-      alert('Error: ' + e.message);
+      toast.error('Error: ' + e.message);
     } finally {
       setIsSavingCharge(false);
     }
@@ -177,17 +326,34 @@ export default function RoomsManager() {
     if (!selectedRoom) return;
     setIsSaving(true);
 
-    const finalBeds = editBeds === '' ? 1 : editBeds;
-    const finalFee = editFee === '' ? 0 : editFee;
+    const finalBeds = editBeds === '' ? 1 : Number(editBeds);
+
+    // Clean valid charges
+    const validCharges = extraCharges
+      .map(c => ({ ...c, amount: c.amount === '' ? 0 : Number(c.amount) }))
+      .filter(c => c.amount > 0);
+
+    // Sum monthly charges
+    const totalMonthlyExtra = validCharges
+      .filter(c => c.type === 'monthly')
+      .reduce((sum, c) => sum + c.amount, 0);
 
     try {
-      const res = await updateRoomDetails(selectedRoom.roomId, finalBeds, finalFee);
+      const res = await rpcCall('updateRoomDetails', selectedRoom.id, finalBeds, totalMonthlyExtra, validCharges);
       if (res.success) {
+        // Update local floor/room state
         setFloors(floors.map(floor => ({
           ...floor,
           rooms: floor.rooms.map((r: any) =>
-            r.roomId === selectedRoom.roomId
-              ? { ...r, beds: finalBeds, extraFee: finalFee, status: r.occ >= finalBeds ? 'occupied' : r.occ > 0 ? 'partial' : 'available' }
+            r.id === selectedRoom.id
+              ? {
+                  ...r,
+                  beds: finalBeds,
+                  extraFee: totalMonthlyExtra,
+                  extra_fee: totalMonthlyExtra,
+                  extra_charges: validCharges,
+                  status: r.occ >= finalBeds ? 'occupied' : r.occ > 0 ? 'partial' : 'available'
+                }
               : r
           )
         })));
@@ -200,7 +366,7 @@ export default function RoomsManager() {
             let rStatus = r.status;
             let rBeds = r.beds || 0;
             let rOcc = r.occ || 0;
-            if (r.roomId === selectedRoom.roomId) {
+            if (r.id === selectedRoom.id) {
               rStatus = r.occ >= finalBeds ? 'occupied' : r.occ > 0 ? 'partial' : 'available';
               rBeds = finalBeds;
             }
@@ -208,7 +374,6 @@ export default function RoomsManager() {
             if (rStatus === 'available') vRooms++;
             else if (rStatus === 'partial') pRooms++;
             else if (rStatus === 'occupied') fRooms++;
-
             tBeds += rBeds;
             oBeds += rOcc;
           });
@@ -220,12 +385,41 @@ export default function RoomsManager() {
         setTotalBeds(tBeds);
         setOccupiedBeds(oBeds);
 
+        // Apply charges for one-time or current period items
+        if (selectedRoom.tenants && selectedRoom.tenants.length > 0) {
+          const roomLabel = selectedRoom.num ?? selectedRoom.room_number ?? selectedRoom.id;
+          for (const charge of validCharges) {
+            const amt = Number(charge.amount);
+            const feeReason = charge.name.trim() || 'Extra Room Fee';
+
+            if (charge.type === 'onetime') {
+              const periodText = charge.effectFrom === 'next' ? 'starting next due date' : 'current period';
+              for (const t of selectedRoom.tenants) {
+                const tenantId = t.id ?? t.tenant_id;
+                const pgId = t.pg_id ?? selectedPgId;
+                if (!tenantId || !pgId) continue;
+                const desc = `Room ${roomLabel} — ${feeReason} (₹${amt}) (${periodText})`;
+                await rpcCall('addTenantOneTimeCharge', pgId, tenantId, amt, desc);
+              }
+            } else if (charge.type === 'monthly' && charge.effectFrom === 'current') {
+              for (const t of selectedRoom.tenants) {
+                const tenantId = t.id ?? t.tenant_id;
+                const pgId = t.pg_id ?? selectedPgId;
+                if (!tenantId || !pgId) continue;
+                const desc = `Room ${roomLabel} — ${feeReason} (₹${amt}) — current month`;
+                await rpcCall('addTenantOneTimeCharge', pgId, tenantId, amt, desc);
+              }
+            }
+          }
+        }
+
         handleCloseModal();
       } else {
-        alert("Failed to save room details.");
+        toast.error("Failed to save room details.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      toast.error("Error saving room settings: " + err.message);
     } finally {
       setIsSaving(false);
     }
@@ -235,85 +429,97 @@ export default function RoomsManager() {
     return <div style={{ height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', color: 'red' }}>Error: {errorMsg}</div>;
   }
 
-  if (isLoading) {
-    return <div style={{ height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>Loading...</div>;
+  if (isLoading && floors.length === 0 && !hostelData) {
+    return (
+      <div style={{ padding: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <div key={i} style={{ height: '70px', backgroundColor: '#f1f5f9', borderRadius: '10px' }} />
+          ))}
+        </div>
+        <div style={{ height: '200px', backgroundColor: '#f8fafc', borderRadius: '12px' }} />
+      </div>
+    );
+  }
+
+  if (!selectedPgId && !selectedProperty) {
+    return <SelectHostelPrompt pageTitle="Rooms Management" />;
   }
 
   return (
-    <div className={styles.dashboardPage}>
-      {/* KPIs */}
-      <div className={styles.topCardsRow}>
-        <div className={styles.topCardFull}>
-          <div className={styles.totalRoomsLeft}>
-            <LayoutGrid size={28} strokeWidth={2} />
+    <ProtectedRoute permission={PERMISSIONS.VIEW_ROOMS}>
+      <div className={styles.dashboardPage}>
+      {/* ─── Stats Panel ─── */}
+      <div className={styles.statsPanel}>
+        <div className={styles.statsGrid}>
+
+          {/* Total Rooms */}
+          <div className={`${styles.statCard} ${styles.statBlue}`}>
+            <div className={styles.statEmoji}>🏢</div>
+            <div className={styles.statNumber} style={{ color: '#3730a3' }}>{totalRooms}</div>
+            <div className={styles.statLabel}>Total Rooms</div>
           </div>
-          <div className={styles.totalRoomsMiddle}>
-            <div className={styles.cardTitle}>Total Rooms</div>
-            <div className={styles.totalRoomsNumber}>{totalRooms}</div>
+
+          {/* Tenants Housed (active tenants) */}
+          <div className={`${styles.statCard} ${styles.statGreen}`}>
+            <div className={styles.statEmoji}>👥</div>
+            <div className={styles.statNumber} style={{ color: '#15803d' }}>{occupiedBeds}</div>
+            <div className={styles.statLabel}>Tenants Housed</div>
           </div>
-          <div className={`${styles.circularProgress} ${styles.progressBlue}`}>
-            <div className={styles.progressContainer}>
-              <svg viewBox="0 0 64 64" className={styles.svgCircle}>
-                <circle cx="32" cy="32" r="28" className={styles.svgCircleBg} />
-                <circle cx="32" cy="32" r="28" className={styles.svgCirclePath}
-                  style={{ strokeDasharray: 2 * Math.PI * 28, strokeDashoffset: 2 * Math.PI * 28 * (1 - ((totalRooms - vacantRooms) / (totalRooms || 1))) }} />
-              </svg>
-              <div className={styles.progressTextWrapper}>
-                <span className={styles.progressPercent}>{Math.round(((totalRooms - vacantRooms) / (totalRooms || 1)) * 100)}%</span>
-              </div>
-            </div>
+
+          {/* Total Beds */}
+          <div className={`${styles.statCard} ${styles.statIndigo}`}>
+            <div className={styles.statEmoji}>📦</div>
+            <div className={styles.statNumber} style={{ color: '#1d4ed8' }}>{totalBeds}</div>
+            <div className={styles.statLabel}>Total Beds</div>
+          </div>
+
+          {/* Fully Occupied (Clickable Filter) */}
+          <div
+            className={`${styles.statCard} ${styles.statRed} ${styles.clickableStatCard} ${activeFilter === 'Full' ? styles.activeCard : ''}`}
+            onClick={() => setActiveFilter(prev => prev === 'Full' ? 'All' : 'Full')}
+          >
+            <div className={styles.statEmoji}>🔒</div>
+            <div className={styles.statNumber} style={{ color: '#dc2626' }}>{fullRooms}</div>
+            <div className={styles.statLabel}>Fully Occupied</div>
+            <div className={styles.filterBadgeHint}>{activeFilter === 'Full' ? '✓ Filtered' : 'Tap to filter'}</div>
+          </div>
+
+          {/* Partially Filled (Clickable Filter) */}
+          <div
+            className={`${styles.statCard} ${styles.statYellow} ${styles.clickableStatCard} ${activeFilter === 'Partial' ? styles.activeCard : ''}`}
+            onClick={() => setActiveFilter(prev => prev === 'Partial' ? 'All' : 'Partial')}
+          >
+            <div className={styles.statEmoji}>🟠</div>
+            <div className={styles.statNumber} style={{ color: '#d97706' }}>{partialRooms}</div>
+            <div className={styles.statLabel}>Partially Filled</div>
+            <div className={styles.filterBadgeHint}>{activeFilter === 'Partial' ? '✓ Filtered' : 'Tap to filter'}</div>
+          </div>
+
+          {/* Vacant (Clickable Filter) */}
+          <div
+            className={`${styles.statCard} ${styles.statGray} ${styles.clickableStatCard} ${activeFilter === 'Vacant' ? styles.activeCard : ''}`}
+            onClick={() => setActiveFilter(prev => prev === 'Vacant' ? 'All' : 'Vacant')}
+          >
+            <div className={styles.statEmoji}>⚪</div>
+            <div className={styles.statNumber} style={{ color: '#059669' }}>{vacantRooms}</div>
+            <div className={styles.statLabel}>Vacant</div>
+            <div className={styles.filterBadgeHint}>{activeFilter === 'Vacant' ? '✓ Filtered' : 'Tap to filter'}</div>
           </div>
         </div>
 
-        <div className={styles.topCardsHalfRow}>
-          <div className={styles.topCardHalf}>
-            <div className={styles.cardTitle}>Rooms Occupancy</div>
-            <div className={styles.occColumns}>
-              <div className={styles.occCol}>
-                <span className={`${styles.occVal} ${styles.vacant}`}>{vacantRooms}</span>
-                <span className={styles.occLabel}>Vacant</span>
-                <span className={`${styles.dot} ${styles.vacant}`}></span>
-              </div>
-              <div className={styles.occDivider} />
-              <div className={styles.occCol}>
-                <span className={`${styles.occVal} ${styles.partial}`}>{partialRooms}</span>
-                <span className={styles.occLabel}>Partial</span>
-                <span className={`${styles.dot} ${styles.partial}`}></span>
-              </div>
-              <div className={styles.occDivider} />
-              <div className={styles.occCol}>
-                <span className={`${styles.occVal} ${styles.full}`}>{fullRooms}</span>
-                <span className={styles.occLabel}>Full</span>
-                <span className={`${styles.dot} ${styles.full}`}></span>
-              </div>
-            </div>
+        {/* Occupancy Progress Bar */}
+        <div className={styles.occupancyRow}>
+          <span className={styles.occupancyLabel}>Occupancy</span>
+          <div className={styles.occupancyBarTrack}>
+            <div
+              className={styles.occupancyBarFill}
+              style={{ width: `${totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0}%` }}
+            />
           </div>
-
-          <div className={styles.topCardHalf}>
-            <div className={styles.cardTitle}>Beds</div>
-            <div className={styles.bedsContent}>
-              <div className={styles.bedsLeft}>
-                <div className={styles.bedsIconSquare}>
-                  <BedDouble size={24} strokeWidth={2} />
-                </div>
-                <div className={styles.bedsNumberWrapper}>
-                  <span className={styles.bedsNumber}>{totalBeds}</span>
-                </div>
-              </div>
-              <div className={`${styles.circularProgress} ${styles.progressGreen}`}>
-                <div className={styles.progressContainer}>
-                  <svg viewBox="0 0 64 64" className={styles.svgCircle}>
-                    <circle cx="32" cy="32" r="28" className={styles.svgCircleBg} />
-                    <circle cx="32" cy="32" r="28" className={styles.svgCirclePath}
-                      style={{ strokeDasharray: 2 * Math.PI * 28, strokeDashoffset: 2 * Math.PI * 28 * (1 - (occupiedBeds / (totalBeds || 1))) }} />
-                  </svg>
-                  <div className={styles.progressTextWrapper}>
-                    <span className={styles.progressPercent}>{Math.round((occupiedBeds / (totalBeds || 1)) * 100)}%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <span className={styles.occupancyPercent}>
+            {totalBeds > 0 ? ((occupiedBeds / totalBeds) * 100).toFixed(1) : '0.0'}%
+          </span>
         </div>
       </div>
 
@@ -406,7 +612,15 @@ export default function RoomsManager() {
       {(() => {
         const filteredFloors = floors.map(floor => {
           const filteredRooms = floor.rooms.filter((r: any) => {
-            if (searchQuery && !r.num.toString().includes(searchQuery)) return false;
+            if (searchQuery) {
+              const query = searchQuery.toLowerCase();
+              const matchesRoom = r.num.toString().toLowerCase().includes(query);
+              const matchesTenant = (r.tenants || []).some((t: any) => 
+                (t.name || t.full_name || '').toLowerCase().includes(query) ||
+                (t.phone || t.mobile || '').includes(query)
+              );
+              if (!matchesRoom && !matchesTenant) return false;
+            }
 
             if (activeFilter === 'Vacant' && r.status !== 'available') return false;
             if (activeFilter === 'Partial' && r.status !== 'partial') return false;
@@ -440,48 +654,44 @@ export default function RoomsManager() {
                   </div>
                 </div>
 
-                <AnimatePresence>
-                  {openFloors[floor.floor] && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      style={{ overflow: 'hidden' }}
-                    >
-                      <div className={styles.roomList}>
-                        {floor.rooms.map((room: any) => {
-                          const occPct = room.beds > 0 ? Math.round((room.occ / room.beds) * 100) : 0;
-                          return (
-                            <motion.div
-                              key={room.roomId}
-                              className={styles.roomCard}
-                              whileTap={{ scale: 0.98 }}
-                              onClick={() => toggleRoom(room.roomId)}
-                            >
-                              <div className={`${styles.roomBorder} ${styles[room.status]}`}></div>
-                              <div className={styles.roomContent}>
-                                <div className={styles.col1}>
-                                  <h3 className={styles.roomNumber}>{room.num}</h3>
-                                  <span className={`${styles.statusBadge} ${styles[room.status]}`}>
-                                    {room.status === 'occupied' ? 'FULL' : room.status === 'available' ? 'VACANT' : room.status.toUpperCase()}
-                                  </span>
-                                </div>
+                {openFloors[floor.floor] && (
+                  <div
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <div className={styles.roomList}>
+                      {floor.rooms.map((room: any, index: number) => {
+                        const occPct = room.beds > 0 ? Math.round((room.occ / room.beds) * 100) : 0;
+                        return (
+                          <div
+                            key={room.id || room.room_id || `room_${floor.floor}_${index}`}
+                            className={styles.roomCard}
+                            onClick={() => toggleRoom(room.id)}
+                          >
+                            <div className={`${styles.roomBorder} ${styles[room.status]}`}></div>
+                            <div className={styles.roomContent}>
+                              <div className={styles.col1}>
+                                <h3 className={styles.roomNumber}>{room.num || room.room_number || room.room || room.number || room.name || 'Room'}</h3>
+                                <span className={styles.occSubText}>{room.occ}/{room.beds}</span>
+                              </div>
 
-                                <div className={styles.col2}>
-                                  <div className={styles.bedsInfo}>
-                                    <BedDouble size={16} color="#64748b" />
-                                    {room.occ} / {room.beds} Beds
-                                  </div>
-                                  <div className={styles.progressBar}>
+                              <div className={styles.bedsRow}>
+                                {Array.from({ length: room.beds || 1 }).map((_, bIdx) => {
+                                  const isOccupied = bIdx < room.occ;
+                                  const totalBedsCount = room.beds || 1;
+                                  const iconSize = totalBedsCount > 4 ? 13 : 15;
+                                  return (
                                     <div
-                                      className={`${styles.progressFill} ${styles[room.status]}`}
-                                      style={{ width: `${Math.max(occPct, 5)}%` }}
-                                    ></div>
-                                  </div>
-                                  <div className={styles.occText}>{occPct}% Occupied</div>
-                                </div>
+                                      key={bIdx}
+                                      className={`${styles.bedCard} ${isOccupied ? styles.bedOccupied : styles.bedVacant}`}
+                                    >
+                                      <BedDouble size={iconSize} strokeWidth={2.5} color={isOccupied ? '#ef4444' : '#10b981'} />
+                                    </div>
+                                  );
+                                })}
+                              </div>
 
-                                <div className={styles.col3}>
+                              <div className={styles.col3}>
+                                {canManageRooms && (
                                   <div
                                     className={styles.addTenantBtn}
                                     style={{
@@ -491,41 +701,38 @@ export default function RoomsManager() {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (room.status === 'occupied') {
-                                        alert('This room is fully occupied. Cannot add more tenants.');
+                                        toast.error('This room is fully occupied. Cannot add more tenants.');
                                         return;
                                       }
-                                      router.push(`/pgowner/tenants?add=true&roomId=${room.roomId}&returnUrl=/pgowner/rooms`);
+                                      router.push(`/pgowner/tenants?add=true&roomId=${room.id}&returnUrl=/pgowner/rooms`);
                                     }}
                                   >
-                                    <Plus size={16} strokeWidth={3} />
+                                    <Plus size={16} strokeWidth={2.5} color="#2563eb" />
                                   </div>
-                                </div>
+                                )}
                               </div>
+                            </div>
 
-                              <AnimatePresence>
-                                {expandedRooms[room.roomId] && (
-                                  <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    style={{ overflow: 'hidden' }}
-                                  >
-                                    <div className={styles.expandedSection}>
-                                      {room.tenants && room.tenants.length > 0 ? (
-                                        room.tenants.map((t: any) => (
-                                          <div key={t.id} className={styles.tenantItem}>
-                                            <div className={styles.tenantInfo}>
-                                              <span className={styles.tenantName}>{t.name}</span>
-                                              <span className={styles.tenantFees}>
-                                                Fee: ₹{t.fee} | Deposit: ₹{t.securityDeposit}
-                                              </span>
+                            {expandedRooms[room.id] && (
+                              <div style={{ overflow: 'hidden' }}>
+                                <div className={styles.expandedSection}>
+                                  {room.tenants && room.tenants.length > 0 ? (
+                                    room.tenants.map((t: any) => {
+                                      const fee = t.fee ?? t.rent_amount ?? t.monthly_rent ?? t.rent ?? 0;
+                                      const deposit = t.securityDeposit ?? t.security_deposit ?? t.deposit ?? 0;
+                                      const extra = t.extraFee ?? t.extra_fee ?? 0;
+                                      return (
+                                        <div key={t.id || t.tenant_id} className={styles.tenantCard}>
+                                          <div className={styles.tenantCardHeader}>
+                                            <AvatarImage src={t.face_picture || t.facePicture || t.documents?.photo || t.documents?.facePicture || t.documents?.photo_url || t.avatar || t.photo_url || t.photoUrl} alt={t.name || t.full_name || 'Tenant'} name={t.name || t.full_name || '?'} size={36} />
+                                            <div className={styles.tenantCardMeta}>
+                                              <span className={styles.tenantName}>{t.name || t.full_name || 'Unnamed'}</span>
+                                              {extra > 0 && (
+                                                <span className={styles.extraFeeTag}>+₹{extra} extra</span>
+                                              )}
                                             </div>
-                                            <span className={styles.tenantFeeHighlight}>
-                                              {t.extraFee > 0 ? `+₹${t.extraFee}` : '-'}
-                                            </span>
                                             <button
-                                              className={styles.editRoomBtn}
-                                              style={{ padding: '4px 8px', fontSize: '0.75rem', marginTop: 0 }}
+                                              className={styles.manageChargesBtn}
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 handleOpenChargeModal(t);
@@ -534,36 +741,54 @@ export default function RoomsManager() {
                                               Manage Charges
                                             </button>
                                           </div>
-                                        ))
-                                      ) : (
-                                        <div style={{ padding: '8px 0', color: '#64748b', fontSize: '0.8rem', textAlign: 'center' }}>No tenants in this room.</div>
-                                      )}
+                                          <div className={styles.tenantFeeRow}>
+                                            <div className={styles.feeBlock}>
+                                              <span className={styles.feeBlockLabel}>Monthly Rent</span>
+                                              <span className={styles.feeBlockValue}>₹{Number(fee).toLocaleString('en-IN')}</span>
+                                            </div>
+                                            <div className={styles.feeDivider} />
+                                            <div className={styles.feeBlock}>
+                                              <span className={styles.feeBlockLabel}>Security Deposit</span>
+                                              <span className={styles.feeBlockValue}>₹{Number(deposit).toLocaleString('en-IN')}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className={styles.emptyTenants}>
+                                      <span>🛏️ No tenants — room is vacant</span>
+                                    </div>
+                                  )}
 
+                                      {/* Room Extra Fee */}
                                       <div className={styles.roomExtraFeeRow}>
-                                        <span>Room Extra Fee</span>
-                                        <span className={styles.roomExtraFeeVal}>₹{room.extraFee}</span>
+                                        <span className={styles.roomExtraFeeLabel}>Room Extra Fee</span>
+                                        <span className={styles.roomExtraFeeVal}>
+                                          ₹{Number(room.extraFee ?? room.extra_fee ?? 0).toLocaleString('en-IN')}
+                                        </span>
                                       </div>
 
-                                      <button
-                                        className={styles.editRoomBtn}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleOpenModal(room);
-                                        }}
-                                      >
-                                        <Edit size={16} /> Edit Room
-                                      </button>
+                                      {canManageRooms && (
+                                        <button
+                                          className={styles.editRoomBtn}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenModal(room);
+                                          }}
+                                        >
+                                          <Edit size={15} /> Edit Room
+                                        </button>
+                                      )}
                                     </div>
-                                  </motion.div>
+                                  </div>
                                 )}
-                              </AnimatePresence>
-                            </motion.div>
-                          );
-                        })}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    )}
               </section>
             ))}
           </>
@@ -612,19 +837,171 @@ export default function RoomsManager() {
                   )}
                 </div>
 
-                <div className={styles.inputGroup}>
-                  <label>Extra Room Fee (₹)</label>
-                  <input
-                    type="number"
-                    className={styles.styledInput}
-                    value={editFee}
-                    onChange={e => {
-                      const val = e.target.value;
-                      if (val === '') setEditFee('');
-                      else setEditFee(parseInt(val));
-                    }}
-                    min="0"
-                  />
+                {/* ─── MULTIPLE EXTRA ROOM CHARGES SECTION ─── */}
+                <div className={styles.inputGroup} style={{ marginTop: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <label style={{ margin: 0, fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>
+                      Extra Room Charges
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleAddExtraCharge}
+                      style={{
+                        background: '#eff6ff',
+                        color: '#2563eb',
+                        border: '1.5px solid #bfdbfe',
+                        borderRadius: '10px',
+                        padding: '6px 14px',
+                        fontSize: '0.78rem',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      + Add Charge
+                    </button>
+                  </div>
+
+                  {extraCharges.length === 0 ? (
+                    <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '12px', border: '1px dashed #cbd5e1', textAlign: 'center', fontSize: '0.8rem', color: '#64748b' }}>
+                      No extra charges. Tap "+ Add Charge" above to add AC, Parking, Maintenance, etc.
+                    </div>
+                  ) : (
+                    extraCharges.map((charge) => (
+                      <div
+                        key={charge.id}
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '16px',
+                          padding: '16px',
+                          marginBottom: '12px',
+                          position: 'relative'
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveExtraCharge(charge.id)}
+                          style={{
+                            position: 'absolute',
+                            right: '12px',
+                            top: '12px',
+                            background: '#fee2e2',
+                            color: '#ef4444',
+                            border: 'none',
+                            borderRadius: '8px',
+                            width: '28px',
+                            height: '28px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '12px', marginBottom: '16px', paddingRight: '32px' }}>
+                          <div>
+                            <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '6px', display: 'block' }}>Charge Name</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. AC Fee"
+                              className={styles.styledInput}
+                              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: '0.85rem' }}
+                              value={charge.name}
+                              onChange={e => handleUpdateExtraCharge(charge.id, 'name', e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '6px', display: 'block' }}>Amount</label>
+                            <div style={{ position: 'relative' }}>
+                              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 800, color: '#2563eb', fontSize: '0.9rem' }}>₹</span>
+                              <input
+                                type="number"
+                                placeholder="0"
+                                className={styles.styledInput}
+                                style={{ width: '100%', boxSizing: 'border-box', paddingLeft: '28px', paddingRight: '12px', paddingTop: '10px', paddingBottom: '10px', fontSize: '0.9rem', fontWeight: 800 }}
+                                value={charge.amount}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  handleUpdateExtraCharge(charge.id, 'amount', val === '' ? '' : Number(val));
+                                }}
+                                min="0"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: '10px', padding: '4px', flex: 1 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateExtraCharge(charge.id, 'type', 'monthly')}
+                              style={{
+                                flex: 1, padding: '6px', borderRadius: '8px', border: 'none',
+                                background: charge.type === 'monthly' ? '#ffffff' : 'transparent',
+                                color: charge.type === 'monthly' ? '#0f172a' : '#64748b',
+                                fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',
+                                boxShadow: charge.type === 'monthly' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              Monthly
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateExtraCharge(charge.id, 'type', 'onetime')}
+                              style={{
+                                flex: 1, padding: '6px', borderRadius: '8px', border: 'none',
+                                background: charge.type === 'onetime' ? '#ffffff' : 'transparent',
+                                color: charge.type === 'onetime' ? '#0f172a' : '#64748b',
+                                fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',
+                                boxShadow: charge.type === 'onetime' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              One-Time
+                            </button>
+                          </div>
+
+                          <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: '10px', padding: '4px', flex: 1 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateExtraCharge(charge.id, 'effectFrom', 'next')}
+                              style={{
+                                flex: 1, padding: '6px', borderRadius: '8px', border: 'none',
+                                background: charge.effectFrom === 'next' ? '#ffffff' : 'transparent',
+                                color: charge.effectFrom === 'next' ? '#0f172a' : '#64748b',
+                                fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',
+                                boxShadow: charge.effectFrom === 'next' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              Next Bill
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateExtraCharge(charge.id, 'effectFrom', 'current')}
+                              style={{
+                                flex: 1, padding: '6px', borderRadius: '8px', border: 'none',
+                                background: charge.effectFrom === 'current' ? '#ffffff' : 'transparent',
+                                color: charge.effectFrom === 'current' ? '#0f172a' : '#64748b',
+                                fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',
+                                boxShadow: charge.effectFrom === 'current' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              Current
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -668,23 +1045,38 @@ export default function RoomsManager() {
               </div>
 
               <div className={styles.modalBody}>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                {/* Tab switcher */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', background: '#f1f5f9', borderRadius: '10px', padding: '4px' }}>
                   <button
-                    style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: chargeType === 'constant' ? '#3b82f6' : '#fff', color: chargeType === 'constant' ? '#fff' : '#475569', fontWeight: 600, cursor: 'pointer' }}
-                    onClick={() => setChargeType('constant')}
+                    style={{ flex: 1, padding: '8px 12px', borderRadius: '7px', border: 'none', backgroundColor: chargeType === 'monthly' ? '#fff' : 'transparent', color: chargeType === 'monthly' ? '#0f172a' : '#64748b', fontWeight: 700, cursor: 'pointer', boxShadow: chargeType === 'monthly' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.2s', fontSize: '0.85rem' }}
+                    onClick={() => {
+                      setChargeType('monthly');
+                      const currentRent = chargeTenant?.fee ?? chargeTenant?.rent_amount ?? chargeTenant?.monthly_rent ?? chargeTenant?.rent ?? '';
+                      setChargeAmount(currentRent !== '' ? Number(currentRent) : '');
+                    }}
                   >
-                    Constant Fee
+                    💰 Monthly Fee
                   </button>
                   <button
-                    style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: chargeType === 'onetime' ? '#3b82f6' : '#fff', color: chargeType === 'onetime' ? '#fff' : '#475569', fontWeight: 600, cursor: 'pointer' }}
-                    onClick={() => setChargeType('onetime')}
+                    style={{ flex: 1, padding: '8px 12px', borderRadius: '7px', border: 'none', backgroundColor: chargeType === 'onetime' ? '#fff' : 'transparent', color: chargeType === 'onetime' ? '#0f172a' : '#64748b', fontWeight: 700, cursor: 'pointer', boxShadow: chargeType === 'onetime' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.2s', fontSize: '0.85rem' }}
+                    onClick={() => {
+                      setChargeType('onetime');
+                      setChargeAmount('');
+                    }}
                   >
-                    One-Time
+                    ⚡ One-Time
                   </button>
                 </div>
 
+                {chargeType === 'monthly' && (
+                  <div style={{ marginBottom: '8px', padding: '10px 14px', background: '#f0fdf4', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#166534', fontWeight: 600 }}>Current rent: </span>
+                    <span style={{ fontSize: '0.9rem', color: '#15803d', fontWeight: 800 }}>₹{Number(chargeTenant?.fee ?? chargeTenant?.rent_amount ?? chargeTenant?.monthly_rent ?? 0).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+
                 <div className={styles.inputGroup}>
-                  <label>Amount (₹)</label>
+                  <label>{chargeType === 'monthly' ? 'New Monthly Rent (₹)' : 'Amount (₹)'}</label>
                   <input
                     type="number"
                     className={styles.styledInput}
@@ -696,20 +1088,22 @@ export default function RoomsManager() {
                     }}
                   />
                   <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                    {chargeType === 'constant' ? 'Added to rent every month. Set 0 to remove.' : 'Added once to the current pending bill.'}
+                    {chargeType === 'monthly' ? 'Sets the recurring monthly rent for this tenant.' : 'Added once to the current pending bill.'}
                   </span>
                 </div>
 
                 {chargeType === 'onetime' && (
                   <div className={styles.inputGroup} style={{ marginTop: '12px' }}>
-                    <label>Description</label>
+                    <label>Charge Name <span style={{ color: '#EF4444' }}>*</span></label>
                     <input
                       type="text"
                       className={styles.styledInput}
                       placeholder="e.g. Electricity Bill - Aug"
                       value={chargeDesc}
                       onChange={e => setChargeDesc(e.target.value)}
+                      required
                     />
+                    <span style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '2px', display: 'block' }}>Required — this name will appear in the dues breakdown.</span>
                   </div>
                 )}
 
@@ -728,5 +1122,6 @@ export default function RoomsManager() {
         )}
       </AnimatePresence>
     </div>
+  </ProtectedRoute>
   );
 }

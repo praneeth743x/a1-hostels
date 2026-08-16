@@ -1,0 +1,158 @@
+Created At: 2026-08-13T11:51:45Z
+Completed At: 2026-08-13T11:51:45Z
+File Path: `file:///c:/Users/prane/PHG%20HOSTE/staysync/src/app/pgowner/dues/page.tsx`
+Total Lines: 2320
+Total Bytes: 108841
+Showing lines 1 to 150
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: "use client";
+2: 
+3: import { toast } from 'react-hot-toast';
+4: 
+5: import React, { useState, useEffect } from 'react';
+6: import { motion, AnimatePresence } from 'framer-motion';
+7: import { Bell, CheckCircle, Search, Filter, Phone, Building2, MessageCircle } from 'lucide-react';
+8: import { auth } from '@/lib/firebase';
+9: import { onAuthStateChanged } from 'firebase/auth';
+10: import { globalAppCache, saveToCache, getFromCache } from '@/lib/cache';
+11: import { rpcCall } from '@/lib/rpc';
+12: import { useRouter } from 'next/navigation';
+13: import styles from './dues.module.css';
+14: import { sendRentReminderAction, sendBulkRentRemindersAction, sendFeeReceiptAction } from '@/app/actions/whatsapp';
+15: import { AvatarImage } from '@/components/AvatarImage';
+16: import { BulletNotification, ToastMessage, ToastType, TenantDispatchResult } from '@/components/BulletNotification';
+17: import { AnimatedButton } from '@/components/AnimatedButton';
+18: import { IndianRupee, X, XCircle, AlertCircle } from 'lucide-react';
+19: import { CustomSelect } from '@/components/CustomSelect';
+20: import { Users, Clock, Play, Calendar } from 'lucide-react';
+21: 
+22: const WhatsappIcon = ({ size = 24, color = "currentColor", fill = "currentColor" }) => (
+23:   <svg viewBox="0 0 24 24" width={size} height={size} fill={fill} xmlns="http://www.w3.org/2000/svg">
+24:     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.82 9.82 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
+25:   </svg>
+26: );
+27: 
+28: import { useHostel } from '@/context/HostelContext';
+29: import { useHostelData } from '@/hooks/useHostelData';
+30: import { SelectHostelPrompt } from '@/components/SelectHostelPrompt';
+31: import { perfLogger } from '@/lib/perfLogger';
+32: 
+33: export default function DuesPage() {
+34:   const router = useRouter();
+35:   const { selectedProperty, selectedPgId, pageStates, setPageState, currentUser, userProfile } = useHostel();
+36:   const { data: hostelData, mutate } = useHostelData(selectedPgId);
+37:   const storeDues = hostelData?.dues;
+38:   const storeTenants = hostelData?.tenants;
+39:   const storePayments = hostelData?.payments;
+40:   const storeRooms = hostelData?.rooms;
+41:   const savedState = pageStates['dues'] || {};
+42: 
+43:   const [isLoading, setIsLoading] = useState(false);
+44:   const [dues, setDues] = useState<any[]>(storeDues || []);
+45:   const [paidPayments, setPaidPayments] = useState<any[]>(storePayments || []);
+46:   const [ownerId, setOwnerId] = useState<string | null>(null);
+47:   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+48:   const [confirmingAction, setConfirmingAction] = useState<{ id: string, type: 'full' | 'settle' | 'partial' } | null>(null);
+49:   const [collectedAmount, setCollectedAmount] = useState<number | ''>('');
+50:   const [selectedChargeIds, setSelectedChargeIds] = useState<Set<string>>(new Set());
+51:   const [paymentMethod, setPaymentMethod] = useState('UPI');
+52:   const [isCollecting, setIsCollecting] = useState(false);
+53:   const [tenants, setTenants] = useState<any[]>([]);
+54:   const [searchTerm, setSearchTerm] = useState<string>('');
+55:   const [isFilterOpen, setIsFilterOpen] = useState(false);
+56:   const [filters, setFilters] = useState<any>(savedState.filter || { status: 'All', duration: 'All', month: '' });
+57:   const [localFilters, setLocalFilters] = useState<any>(savedState.filter || { status: 'All', duration: 'All', month: '' });
+58: 
+59:   // Bulk WhatsApp Modal state
+60:   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+61:   const [bulkFilterOption, setBulkFilterOption] = useState<'all' | '3days' | '7days'>('all');
+62:   const [isSendingBulk, setIsSendingBulk] = useState(false);
+63:   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; success: number; fail: number } | null>(null);
+64: 
+65:   // Bullet Toast Notifications state & Report Modal
+66:   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+67:   const [selectedReportModal, setSelectedReportModal] = useState<ToastMessage | null>(null);
+68: 
+69:   const addToast = (type: ToastType, title: string, description?: string, results?: TenantDispatchResult[]) => {
+70:     const id = Math.random().toString(36).substring(2, 9);
+71:     setToasts(prev => [...prev, { id, type, title, description, results }]);
+72:     setTimeout(() => {
+73:       setToasts(prev => prev.filter(t => t.id !== id));
+74:     }, 6000);
+75:   };
+76: 
+77:   const removeToast = (id: string) => {
+78:     setToasts(prev => prev.filter(t => t.id !== id));
+79:   };
+80: 
+81:   const [successPaymentData, setSuccessPaymentData] = useState<{
+82:     payment_id: string;
+83:     tenant_name: string;
+84:     tenant_phone?: string;
+85:     room_number: string;
+86:     pg_name: string;
+87:     payment_method: string;
+88:     amount_paid: number;
+89:     pending_balance: number;
+90:     payment_date: string;
+91:   } | null>(null);
+92: 
+93:   const [resumeTenantTarget, setResumeTenantTarget] = useState<any | null>(null);
+94:   const [resumeMaintenanceOption, setResumeMaintenanceOption] = useState<'none' | 'charge'>('none');
+95:   const [resumeMaintenanceFee, setResumeMaintenanceFee] = useState<string>('');
+96:   const [resumeCollectChoice, setResumeCollectChoice] = useState<'now' | 'later'>('now');
+97:   const [resumePaymentMethod, setResumePaymentMethod] = useState<string>('UPI');
+98:   const [isResumingTenant, setIsResumingTenant] = useState(false);
+99: 
+100:   const [isMounted, setIsMounted] = useState(false);
+101: 
+102:   useEffect(() => {
+103:     setIsMounted(true);
+104:   }, []);
+105: 
+106:   useEffect(() => {
+107:     perfLogger.logNavigationStart('/pgowner/dues');
+108:     perfLogger.logRenderStart('DuesPage');
+109:     perfLogger.logPageSummary('Dues');
+110:     return () => {
+111:       perfLogger.logRenderEnd('DuesPage');
+112:     };
+113:   }, []);
+114: 
+115:   useEffect(() => {
+116:     setPageState('dues', { filter: filters });
+117:   }, [filters, setPageState]);
+118: 
+119:   useEffect(() => {
+120:     if (typeof window !== 'undefined') {
+121:       const uid = localStorage.getItem('userUid') || auth.currentUser?.uid;
+122:       if (uid) setOwnerId(uid);
+123:     }
+124: 
+125:     const unsubscribe = onAuthStateChanged(auth, (user) => {
+126:       if (user) {
+127:         setOwnerId(user.uid);
+128:       }
+129:       setIsLoading(false);
+130:     });
+131: 
+132:     return () => unsubscribe();
+133:   }, []);
+134: 
+135:   useEffect(() => {
+136:     if (storeDues) setDues(storeDues);
+137:     if (storeTenants) setTenants(storeTenants);
+138:     if (storePayments) setPaidPayments(storePayments);
+139:     setIsLoading(false);
+140:   }, [storeDues, storeTenants, storePayments]);
+141: 
+142:   const fetchDues = async (uid: string) => {
+143:     try {
+144:       let currentId = typeof localStorage !== 'undefined' ? localStorage.getItem('activePgId') : null;
+145: 
+146:       const cacheKey = `dues_${uid}_${currentId}`;
+147:       
+148:       // Fetch tenants to calculate payment stats
+149:       const tenantsRes = await rpcCall('getTenants', uid, currentId);
+150:       if (tenantsRes.success && tenantsRes.data) {
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

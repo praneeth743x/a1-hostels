@@ -1,266 +1,278 @@
+/* 
+  Tenant Portal Layout CSS - Matched exactly to PG Owner Dashboard Style
+*/
+
 .tenantLayout {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  background-color: var(--bg-offwhite);
-  padding-bottom: 80px; /* Space for bottom nav */
+  min-height: 100dvh;
+  background-color: #FAFAFC;
+  color: #0f172a;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding-bottom: 80px;
+}
+
+/* Mobile Gradient Wave Header (Matched exactly to PG Owner Dashboard) */
+.mobileWaveHeader {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: calc(56px + env(safe-area-inset-top));
+  z-index: 90;
+  background: transparent;
+  pointer-events: none;
+  animation: headerBreathe 6s ease-in-out infinite;
+}
+
+@keyframes headerBreathe {
+  0%, 100% { filter: drop-shadow(0 6px 14px rgba(79, 70, 229, 0.15)); }
+  50% { filter: drop-shadow(0 8px 18px rgba(124, 58, 237, 0.22)); }
+}
+
+@media (min-width: 768px) {
+  .tenantLayout {
+    max-width: 100%;
+    margin: 0 auto;
+    position: relative;
+    border: none;
+    box-shadow: none;
+  }
+  .mobileWaveHeader {
+    display: none;
+  }
+}
+
+.mobileWaveHeaderTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: max(8px, env(safe-area-inset-top)) 16px 2px 16px;
+  color: white;
+  background: linear-gradient(90deg, #4F46E5 0%, #7C3AED 50%, #A855F7 100%);
+  pointer-events: auto;
+}
+
+.mobileHeaderTitleContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobileHeaderTitle {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: 0.2px;
+  color: #ffffff;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.mobileHeaderSubtitle {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 1px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  text-align: center;
+}
+
+.bellIconContainer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  outline: none;
+}
+
+.notificationDot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  background-color: #EF4444;
+  border-radius: 50%;
+  border: 2px solid #A855F7;
+  animation: pulseDot 4s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes pulseDot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.85; }
+}
+
+.waveContainer {
+  width: 100%;
+  overflow: visible;
+  line-height: 0;
+  margin-top: -1px;
+  pointer-events: auto;
+}
+
+.waveSvg {
+  width: 100%;
+  height: 36px;
+  display: block;
+  animation: waveSubtle 5s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+@keyframes waveSubtle {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.05); }
+}
+
+/* Notification Popover Dropdown */
+.notifDropdown {
+  position: absolute;
+  top: 54px;
+  right: 16px;
+  width: 320px;
+  max-height: 420px;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+  border: 1px solid #e2e8f0;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.notifHeader {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8fafc;
+}
+
+.notifTitle {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notifList {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  max-height: 320px;
+  padding: 8px;
+}
+
+.notifItem {
+  padding: 12px;
+  border-radius: 12px;
+  display: flex;
+  gap: 12px;
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+
+.notifItem:hover {
+  background: #f8fafc;
+}
+
+.notifIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #eef2ff;
+  color: #4f46e5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.notifItemTitle {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.notifItemMsg {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.notifItemTime {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  margin-top: 4px;
+  font-weight: 600;
 }
 
 .mainContent {
   flex: 1;
-  padding: 1.5rem;
-  overflow-y: auto;
+  width: 100%;
+  padding-top: calc(96px + env(safe-area-inset-top));
+  padding-bottom: 24px;
 }
 
 .contentWrapper {
-  max-width: 600px; /* Constrain for mobile-first feel */
+  max-width: 600px;
   margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-/* Mobile Bottom Navigation */
-.bottomNav {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 80px;
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  padding-bottom: env(safe-area-inset-bottom);
-  border-top: 1px solid var(--border-light);
-  background-color: rgba(255, 255, 255, 0.9);
-  z-index: 100;
-}
-
-.navLink {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--text-muted);
-  text-decoration: none;
-  font-weight: 500;
-  flex: 1;
-  padding: 0.5rem 0;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.navIconWrapper {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 40px;
-  height: 40px;
-}
-
-.navIcon {
-  position: relative;
-  z-index: 2;
-  transition: color 0.2s;
-}
-
-.navLabel {
-  font-size: 0.75rem;
-  transition: color 0.2s;
-}
-
-.navIndicator {
-  position: absolute;
-  inset: 0;
-  background-color: rgba(63, 81, 181, 0.1);
-  border-radius: 50%;
-  z-index: 1;
-}
-
-.navLink.active {
-  color: var(--primary-indigo);
-}
-
-.logoutBtn {
-  color: var(--text-muted);
-}
-
-/* Tenant Page Common */
-.pageHeader {
-  margin-bottom: 1rem;
-}
-
-.pageTitle {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--text-main);
-  letter-spacing: -0.02em;
-}
-
-/* Payment Hub */
-.activeBillCard {
-  background: linear-gradient(135deg, var(--primary-indigo-dark), var(--primary-indigo));
-  border-radius: var(--radius-lg);
-  padding: 2rem;
-  color: white;
-  box-shadow: 0 12px 24px rgba(63, 81, 181, 0.3);
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  position: relative;
-  overflow: hidden;
-}
-
-/* Shine effect */
-.activeBillCard::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent);
-  transform: skewX(-20deg);
-  animation: shine 4s infinite;
-}
-
-@keyframes shine {
-  0% { left: -100%; }
-  20% { left: 200%; }
-  100% { left: 200%; }
-}
-
-.billHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.billTitle {
-  font-size: 1rem;
-  font-weight: 600;
-  opacity: 0.9;
-}
-
-.billStatus {
-  background-color: rgba(255, 255, 255, 0.2);
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.billAmount {
-  font-size: 3rem;
-  font-weight: 700;
-  line-height: 1;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-}
-
-.currency {
-  font-size: 1.5rem;
-  margin-top: 0.25rem;
-}
-
-.payNowWrapper {
-  margin-top: 0.5rem;
-}
-
-/* Roommate View */
-.sectionTitle {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin-bottom: 1rem;
-  margin-top: 1rem;
-}
-
-.roommateList {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.roommateCard {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  border-radius: var(--radius-md);
-  background-color: var(--bg-white);
-  border: 1px solid var(--border-light);
-}
-
-.avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background-color: var(--bg-offwhite);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: var(--primary-indigo);
-  font-weight: 600;
-  font-size: 1.25rem;
-}
-
-.roommateInfo {
-  flex: 1;
-}
-
-.roommateName {
-  font-weight: 600;
-  font-size: 1rem;
-}
-
-.roommateDetail {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-/* Help Desk */
-.supportForm {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  background-color: var(--bg-white);
-  padding: 1.5rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-light);
-}
-
-.ticketTypeSelect {
   width: 100%;
-  padding: 14px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  font-family: var(--font-family);
-  font-size: 1rem;
-  background-color: var(--bg-offwhite);
-  outline: none;
-  transition: border-color 0.2s;
+  padding: 0 16px;
 }
 
-.ticketTypeSelect:focus {
-  border-color: var(--primary-indigo);
+@media (min-width: 768px) {
+  .contentWrapper {
+    max-width: 1080px;
+    padding: 0 24px;
+  }
 }
 
-.textareaField {
-  width: 100%;
-  padding: 14px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  font-family: var(--font-family);
-  font-size: 1rem;
-  background-color: var(--bg-offwhite);
-  outline: none;
-  resize: vertical;
-  min-height: 120px;
+@media (min-width: 1024px) {
+  .tenantLayout {
+    padding-bottom: 0;
+    min-height: 100dvh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .mainContent {
+    padding-top: 0;
+    padding-bottom: 0;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .contentWrapper {
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    height: 100%;
+  }
 }
 
-.textareaField:focus {
-  border-color: var(--primary-indigo);
-}
