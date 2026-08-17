@@ -15,7 +15,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import imageCompression from 'browser-image-compression';
 import styles from './tenantsList.module.css';
 import { CustomSelect } from '@/components/CustomSelect';
-import { useHostelData } from '@/hooks/useHostelData';
+import { useHostelData, notifyHostelDataChanged } from '@/hooks/useHostelData';
 import { useHostel } from '@/context/HostelContext';
 import { AvatarImage } from '@/components/AvatarImage';
 
@@ -85,8 +85,7 @@ export default function TenantDirectory() {
   const [filterHostel, setFilterHostel] = useState('all');
   const [tenantStatusFilter, setTenantStatusFilter] = useState('Active');
   const [showModal, setShowModal] = useState(false);
-  const [tenants, setTenants] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [properties, setProperties] = useState<any[]>([]);
   const router = useRouter();
@@ -176,7 +175,7 @@ export default function TenantDirectory() {
     return [];
   }, [hostelData, roomsMap]);
 
-  const displayTenantsList = processedFromCache.length > 0 ? processedFromCache : tenants;
+  const displayTenantsList = processedFromCache;
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -219,91 +218,7 @@ export default function TenantDirectory() {
   const [isSaving, setIsSaving] = useState(false);
   const [openingTenantId, setOpeningTenantId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setOwnerId(user.uid);
-        const propsRes = await getPropertiesWithRooms(user.uid);
-        const currentId = localStorage.getItem('activePgId');
-        if (propsRes.success && propsRes.data) {
-          setProperties(propsRes.data);
-          if (currentId && propsRes.data.some((p: any) => p.pg_id === currentId)) {
-            setSelectedPg(currentId);
-          } else if (propsRes.data.length > 0) {
-            setSelectedPg((propsRes.data[0] as any).pg_id);
-          }
-        }
-        const res = await getTenants(user.uid, currentId);
-        const duesRes = await getPendingDues(user.uid, currentId);
-        const historyRes = await getPaymentHistory(user.uid, currentId);
-        
-        if (res.success && res.data) {
-          const dues = duesRes.success && duesRes.data ? duesRes.data : [];
-          const paidPayments = historyRes.success && historyRes.data ? historyRes.data : [];
-          
-          setTenants(res.data.map((t: any) => {
-            const tenantDues = dues.filter((d: any) => d.tenant_id === t.tenant_id);
-            tenantDues.sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-            const due = tenantDues.length > 0 ? tenantDues[0] : null;
-            
-            let nextDueDate = new Date();
-            let paymentState = 'empty';
-            let daysDiff = 0;
-            
-            let targetDay = 5;
-            if (t.move_in_date) {
-              const checkin = new Date(t.move_in_date);
-              if (!isNaN(checkin.getTime())) targetDay = checkin.getDate();
-            }
 
-            const today = new Date();
-            today.setHours(0,0,0,0);
-
-            if (due) {
-              const createdAt = new Date(due.created_at || Date.now());
-              nextDueDate = new Date(createdAt);
-              nextDueDate.setDate(targetDay);
-              nextDueDate.setHours(0,0,0,0);
-              
-              const diffTime = today.getTime() - nextDueDate.getTime();
-              daysDiff = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              
-              if (daysDiff > 30) {
-                paymentState = 'critical';
-              } else if (daysDiff > 0) {
-                paymentState = 'overdue';
-              } else if (daysDiff === 0) {
-                paymentState = 'today';
-              } else {
-                paymentState = 'upcoming';
-                daysDiff = Math.abs(daysDiff);
-              }
-            } else {
-              const tenantPaid = paidPayments.filter((p: any) => p.tenant_id === t.tenant_id);
-              const unpaidInfo = getNextUnpaidMonthAndDate(t, tenantPaid);
-              daysDiff = unpaidInfo.dueDays;
-              nextDueDate = unpaidInfo.nextDueDate;
-              paymentState = daysDiff === 0 ? 'today' : 'upcoming';
-            }
-
-            return {
-              id: t.tenant_id,
-              name: t.full_name,
-              hostel: t.pg_name,
-              pg_id: t.pg_id,
-              room: t.rooms?.room_number || 'N/A',
-              phone: t.mobile,
-              status: t.is_active === false ? 'Vacated' : (t.status === 'notice_period' ? 'Notice Period' : 'Active'),
-              paymentState,
-              daysDiff
-            };
-          }));
-        }
-      }
-      setIsLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
 
   useEffect(() => {
     if (selectedPg && selectedRoom && properties.length > 0) {
@@ -401,15 +316,7 @@ export default function TenantDirectory() {
       const selectedHostelName = properties.find(p => p.pg_id === selectedPg)?.name || '';
       const selectedRoomName = properties.find(p => p.pg_id === selectedPg)?.rooms.find((r:any) => r.room_id === selectedRoom)?.room_number || '';
       
-      setTenants([{
-        id: res.data[0].tenant_id,
-        name: fullName,
-        hostel: selectedHostelName,
-        pg_id: selectedPg,
-        room: selectedRoomName,
-        phone: phone,
-        status: 'Active'
-      }, ...tenants]);
+      notifyHostelDataChanged(selectedPg);
       
       if (returnUrl) {
         router.push(returnUrl);

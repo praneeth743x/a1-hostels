@@ -19,107 +19,6 @@ import styles from './pgowner.module.css';
 import drawerStyles from './drawer.module.css';
 import AccessDeniedCard from '@/components/AccessDeniedCard';
 
-function OptimisticRouteSkeleton({ targetRoute }: { targetRoute: string }) {
-  if (targetRoute.includes('/tenants')) {
-    return (
-      <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', minHeight: '65vh' }}>
-        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
-          <div style={{ height: '70px', minWidth: '90px', backgroundColor: '#f1f5f9', borderRadius: '14px', animation: 'pulse 1.2s infinite ease-in-out' }} />
-          <div style={{ height: '70px', minWidth: '90px', backgroundColor: '#f1f5f9', borderRadius: '14px', animation: 'pulse 1.2s infinite ease-in-out' }} />
-          <div style={{ height: '70px', minWidth: '90px', backgroundColor: '#f1f5f9', borderRadius: '14px', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        </div>
-        <div style={{ height: '48px', width: '100%', backgroundColor: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        <div style={{ height: '48px', width: '100%', backgroundColor: '#4F46E5', opacity: 0.15, borderRadius: '14px', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        <div style={{ height: '110px', width: '100%', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        <div style={{ height: '110px', width: '100%', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-      </div>
-    );
-  }
-
-  if (targetRoute.includes('/rooms')) {
-    return (
-      <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', minHeight: '65vh' }}>
-        <div style={{ height: '44px', width: '100%', backgroundColor: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px' }}>
-          <div style={{ height: '130px', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-          <div style={{ height: '130px', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-          <div style={{ height: '130px', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-          <div style={{ height: '130px', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        </div>
-      </div>
-    );
-  }
-
-  if (targetRoute.includes('/dues')) {
-    return (
-      <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', minHeight: '65vh' }}>
-        {/* Total Pending Fee Card Skeleton */}
-        <div style={{ background: '#EF4444', borderRadius: '20px', padding: '16px 20px', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 8px 24px rgba(239, 68, 68, 0.25)' }}>
-          <div>
-            <div style={{ fontSize: '0.8rem', opacity: 0.9, fontWeight: 600 }}>Total Pending Fee</div>
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: '4px' }}>₹...</div>
-          </div>
-          <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Banknote size={22} color="white" />
-          </div>
-        </div>
-
-        {/* 3 Summary Pills Skeleton */}
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ flex: 1, background: '#FFF5F5', borderRadius: '16px', border: '1px solid #FECDD3', padding: '12px 4px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', fontWeight: 800, color: '#ef4444' }}>-</div>
-            <div style={{ fontSize: '10px', fontWeight: 700, color: '#b91c1c' }}>OVERDUE</div>
-          </div>
-          <div style={{ flex: 1, background: '#FFFBEB', borderRadius: '16px', border: '1px solid #FDE68A', padding: '12px 4px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', fontWeight: 800, color: '#f59e0b' }}>-</div>
-            <div style={{ fontSize: '10px', fontWeight: 700, color: '#d97706' }}>DUE TODAY</div>
-          </div>
-          <div style={{ flex: 1, background: '#FFFBEB', borderRadius: '16px', border: '1px solid #FDE68A', padding: '12px 4px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', fontWeight: 800, color: '#d97706' }}>-</div>
-            <div style={{ fontSize: '10px', fontWeight: 700, color: '#b45309' }}>DUE TOMORROW</div>
-          </div>
-        </div>
-
-        {/* Search Bar Placeholder */}
-        <div style={{ height: '46px', width: '100%', backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-
-        {/* Card Shell */}
-        <div style={{ height: '100px', width: '100%', backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', borderLeft: '5px solid #ef4444', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        <div style={{ height: '100px', width: '100%', backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', borderLeft: '5px solid #3b82f6', animation: 'pulse 1.2s infinite ease-in-out' }} />
-      </div>
-    );
-  }
-
-  if (targetRoute.includes('/chat')) {
-    return (
-      <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', minHeight: '65vh' }}>
-        <div style={{ height: '48px', width: '100%', backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        <div style={{ display: 'flex', gap: '12px', flex: 1, minHeight: '400px' }}>
-          <div style={{ width: '280px', backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-          <div style={{ flex: 1, backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        </div>
-      </div>
-    );
-  }
-
-  if (targetRoute.includes('/complaints')) {
-    return (
-      <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', minHeight: '65vh' }}>
-        <div style={{ height: '48px', width: '100%', backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        <div style={{ height: '100px', width: '100%', backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-        <div style={{ height: '100px', width: '100%', backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', minHeight: '65vh' }}>
-      <div style={{ height: '32px', width: '180px', backgroundColor: '#e2e8f0', borderRadius: '10px', animation: 'pulse 1.2s infinite ease-in-out' }} />
-      <div style={{ height: '180px', width: '100%', backgroundColor: '#f1f5f9', borderRadius: '16px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-      <div style={{ height: '140px', width: '100%', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0', animation: 'pulse 1.2s infinite ease-in-out' }} />
-    </div>
-  );
-}
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -130,14 +29,12 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
 
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [optimisticPathname, setOptimisticPathname] = useState<string>(pathname);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
   useEffect(() => {
-    setOptimisticPathname(pathname);
     setIsMobileDrawerOpen(false);
     setAppState('lastOpenedPage', pathname);
     navTracer.mark('t11_pageCommitted', `Completed navigation to: ${pathname}`);
@@ -152,13 +49,15 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     }
     lastNavTimeRef.current = { path: targetPath, time: now };
 
-    setOptimisticPathname(targetPath);
+    lastNavTimeRef.current = { path: targetPath, time: now };
     navTracer.startNavigation(targetPath);
     setIsMobileDrawerOpen(false);
-    try {
-      router.push(targetPath);
-    } catch (e) {}
-  }, [router]);
+    
+    // We REMOVED router.push(targetPath) here.
+    // The `<Link>` component natively handles the navigation.
+    // Having router.push() inside an onClick/onPointerDown handler on a <Link>
+    // causes a race condition that makes Next.js App Router fall back to a hard reload.
+  }, []);
 
   // Non-blocking idle route prefetching for instant native zero-latency transitions
   useEffect(() => {
@@ -605,7 +504,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
   }), [routePrefix, isStaff, hasPermission, selectedPgId, permissions]);
 
   const activePageInfo = useMemo(() => {
-    const currentPath = optimisticPathname || pathname;
+    const currentPath = pathname;
     
     // Check main menu items first
     const matchedMenu = mainMenuItems.find(item => item.path !== '#' && item.path.length > 2 && currentPath.includes(item.path));
@@ -631,7 +530,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
     }
 
     return { title: 'Dashboard', Icon: LayoutDashboard };
-  }, [optimisticPathname, pathname, mainMenuItems]);
+  }, [pathname, mainMenuItems]);
 
   useEffect(() => {
     if (currentUser?.email) {
@@ -735,7 +634,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
         <div className={drawerStyles.drawerSection}>
           <h4 className={drawerStyles.drawerSectionTitle}>MAIN MENU</h4>
           {mainMenuItems.map((item, index) => {
-            const currentPath = optimisticPathname || pathname;
+            const currentPath = pathname;
             const isMatch = currentPath === item.path || currentPath.startsWith(item.path + '/');
             
             return (
@@ -745,7 +644,6 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                 prefetch={true}
                 onMouseEnter={() => routePrefetcher.prefetchSingle(router, item.path)}
                 onTouchStart={() => routePrefetcher.prefetchSingle(router, item.path)}
-                onPointerDown={() => handleNavClick(item.path)}
                 className={drawerStyles.drawerMenuItem}
                 style={{ 
                   textDecoration: 'none',
@@ -1203,7 +1101,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
           <div className={styles.desktopHeaderBottomRow}>
             <div className={styles.desktopNavTabs}>
               {(() => {
-                const currentPath = optimisticPathname || pathname;
+                const currentPath = pathname;
                 return (
                   <>
                     {(!isMounted || hasPermission(PERMISSIONS.VIEW_DASHBOARD)) && (
@@ -1560,9 +1458,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
               </button>
             </div>
           ) : (
-            <React.Suspense fallback={<OptimisticRouteSkeleton targetRoute={optimisticPathname || pathname} />}>
-              {children}
-            </React.Suspense>
+            children
           )}
         </div>
             </main>
@@ -1573,7 +1469,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
       <nav className={styles.mobileBottomNav}>
         <div className={styles.mobileBottomNavInner} style={{ paddingBottom: 'env(safe-area-inset-bottom)', position: 'relative' }}>
           {(() => {
-            const currentPath = optimisticPathname || pathname;
+            const currentPath = pathname;
             const navItems = [
               { href: `${routePrefix}/dashboard`, label: "Dashboard", icon: Home, matchKey: '/dashboard', show: !isMounted || (hasPermission ? hasPermission(PERMISSIONS.VIEW_DASHBOARD) : true) },
               { href: `${routePrefix}/tenants`, label: "Tenants", icon: Users, matchKey: '/tenants', show: !isMounted || (hasAnyPermission ? hasAnyPermission(PERMISSIONS.VIEW_TENANTS, PERMISSIONS.MANAGE_TENANTS) : true) },

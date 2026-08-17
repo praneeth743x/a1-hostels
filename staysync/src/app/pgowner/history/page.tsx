@@ -75,14 +75,6 @@ function HistoryPageContent() {
       const uid = localStorage.getItem('userUid') || auth.currentUser?.uid;
       if (uid) setOwnerId(uid);
     }
-
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setOwnerId(user.uid);
-      }
-    });
-
-    return () => unsubscribe();
   }, []);
 
   useEffect(() => {

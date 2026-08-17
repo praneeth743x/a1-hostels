@@ -210,14 +210,7 @@ export default function RoomsManager() {
     setIsLoading(false);
   }, [storeRooms, storeTenants]);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        router.push('/');
-      }
-    });
-    return () => unsubscribe();
-  }, [router]);
+
 
   const toggleFloor = (floor: string) => {
     setOpenFloors(prev => ({ ...prev, [floor]: !prev[floor] }));

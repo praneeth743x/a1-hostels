@@ -60,14 +60,6 @@ function FoodMenuPageContent() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setOwnerId(user.uid);
-      } else {
-        setIsLoading(false);
-      }
-    });
-
     const handleHostelsUpdated = () => {
       const currentId = localStorage.getItem('activePgId');
       if (currentId) {
@@ -77,7 +69,6 @@ function FoodMenuPageContent() {
     window.addEventListener('hostelsUpdated', handleHostelsUpdated);
 
     return () => {
-      unsubscribe();
       window.removeEventListener('hostelsUpdated', handleHostelsUpdated);
     };
   }, []);

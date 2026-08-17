@@ -12,6 +12,7 @@ import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { getTenantComplaints, submitComplaint, addTenantComplaintReply, clearTenantChat } from '@/app/actions/complaints';
 import { sendPasswordResetAction } from '@/app/actions/tenant';
+import { useRouter } from 'next/navigation';
 import styles from './DesktopTenantDashboard.module.css';
 
 interface DesktopTenantDashboardProps {
@@ -41,6 +42,7 @@ export default function DesktopTenantDashboard({
   isProcessing,
   errorMsg
 }: DesktopTenantDashboardProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'Dashboard' | 'Payments' | 'Notices' | 'Complaints' | 'Settings'>('Dashboard');
 
   // Toolbar & Table Controls State
@@ -767,7 +769,7 @@ export default function DesktopTenantDashboard({
                   </div>
                 </div>
 
-                <div className={styles.kpiCard} onClick={() => window.location.href = '/tenant/complaints'}>
+                <div className={styles.kpiCard} onClick={() => router.push('/tenant/complaints')}>
                   <div className={styles.kpiHeaderRow}>
                     <div className={`${styles.kpiIconWrapper} ${styles.bgPrimarySoft}`}>
                       <MessageSquare size={20} />

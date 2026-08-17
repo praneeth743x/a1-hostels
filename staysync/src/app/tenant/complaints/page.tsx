@@ -14,10 +14,12 @@ import { submitComplaint, getTenantComplaints } from '@/app/actions/complaints';
 import { getTenantDashboardData } from '@/app/actions/tenant';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import styles from '../DesktopTenantDashboard.module.css';
 
 export default function TenantComplaintsPage() {
   const isDesktop = useMediaQuery('(min-width: 1024px)');
+  const router = useRouter();
   
   const [complaints, setComplaints] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -586,7 +588,7 @@ export default function TenantComplaintsPage() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => window.location.href = item.href}
+                      onClick={() => router.push(item.href)}
                       className={`${styles.navItem} ${isActive ? styles.navItemActive : ''}`}
                     >
                       <Icon size={16} />
@@ -599,7 +601,7 @@ export default function TenantComplaintsPage() {
             
             <div className={styles.navGroup} style={{ marginTop: 'auto' }}>
               <button
-                onClick={() => window.location.href = '/tenant'}
+                onClick={() => router.push('/tenant')}
                 className={styles.navItem}
               >
                 <User size={16} />
@@ -608,7 +610,7 @@ export default function TenantComplaintsPage() {
             </div>
           </div>
 
-          <div className={styles.sidebarFooter} onClick={() => window.location.href = '/tenant'}>
+          <div className={styles.sidebarFooter} onClick={() => router.push('/tenant')}>
             <img 
               src={tenantInfo?.face_picture || `https://ui-avatars.com/api/?name=${tenantInfo?.full_name || 'T'}&background=e5e7eb&color=111827`} 
               alt="Profile" 

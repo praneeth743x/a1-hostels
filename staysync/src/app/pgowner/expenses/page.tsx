@@ -72,14 +72,7 @@ function ExpensesPageContent() {
     }
   }, [storeProperties, selectedPgId]);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setOwnerId(user.uid);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+
 
   // Instant Local Cache Loading
   useEffect(() => {

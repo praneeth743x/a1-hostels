@@ -311,15 +311,7 @@ function DuesPageContent() {
 
   // Load fresh dues directly from server / snapshot without flashing stale SWR cache
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setOwnerId(user.uid);
-      }
-    });
 
-    return () => unsubscribe();
-  }, []);
 
   // Real-time Firestore listener for instant live Dues update (Authoritative Source of Truth)
   useEffect(() => {
