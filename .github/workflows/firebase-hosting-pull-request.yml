@@ -23,3 +23,5 @@ jobs:
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_A1_HOSTELS }}'
           projectId: a1-hostels
           entryPoint: staysync
+        env:
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
