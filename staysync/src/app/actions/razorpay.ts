@@ -3,11 +3,16 @@
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 
-// Initialize Razorpay server instance
-const razorpay = new Razorpay({
-  key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '',
-  key_secret: process.env.RAZORPAY_KEY_SECRET || '',
-});
+// Initialize Razorpay lazily to prevent CI build errors when env vars are absent
+function getRazorpayClient() {
+  if (!process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID) {
+    throw new Error("RAZORPAY_KEY_ID is missing");
+  }
+  return new Razorpay({
+    key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET || '',
+  });
+}
 
 export async function createRazorpayOrder(amountPaise: number, receiptId: string) {
   try {
@@ -15,6 +20,7 @@ export async function createRazorpayOrder(amountPaise: number, receiptId: string
       throw new Error("Amount must be at least 100 paise");
     }
 
+    const razorpay = getRazorpayClient();
     const options = {
       amount: amountPaise,
       currency: "INR",
