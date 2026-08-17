@@ -1,16 +1,18 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.staysync.app',
-  appName: 'StaySync',
+  appId: 'com.a1hostels.app',
+  appName: 'A1 Hostels',
   webDir: 'public',
   server: {
-    url: process.env.NEXT_PUBLIC_APP_URL || 'https://YOUR_NEW_APP.web.app',
+    url: process.env.NEXT_PUBLIC_APP_URL || 'https://a1-hostels.web.app',
     cleartext: true,
     allowNavigation: [
       "*.firebaseapp.com",
       "accounts.google.com",
-      "*.googleapis.com"
+      "*.googleapis.com",
+      "*.google.com",
+      "*.gstatic.com"
     ]
   },
   plugins: {

@@ -6,6 +6,7 @@ export interface PaymentStatusInfo {
   status: 'PAID' | 'DUE_TODAY' | 'UPCOMING' | 'OVERDUE' | 'CRITICAL' | 'VACATED' | 'PAUSED';
   isVirtual: boolean;
   virtualMonth: string;
+  virtualRentRemaining?: number;
 }
 
 const getNextUnpaidMonthAndDate = (t: any, tenantPaidPayments: any[], currentDate: Date) => {
@@ -32,27 +33,41 @@ const getNextUnpaidMonthAndDate = (t: any, tenantPaidPayments: any[], currentDat
     nextDueDate.setDate(targetDay);
   }
 
-  if (tenantPaidPayments && tenantPaidPayments.length > 0) {
-    const paidMonths = tenantPaidPayments.map((p: any) => p.month).filter(Boolean);
+  const parseNum = (val: any) => {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    return Number(val.toString().replace(/,/g, '')) || 0;
+  };
 
+  let virtualRentRemaining = parseNum(t.rent_amount) || parseNum(t.monthly_rent) || parseNum(t.rent) || 0;
+
+  if (tenantPaidPayments && tenantPaidPayments.length > 0) {
     let maxIterations = 24;
     while (maxIterations > 0) {
       const currentMonthFull = monthNames[nextDueDate.getMonth()];
       const currentMonthShort = shortMonthNames[nextDueDate.getMonth()];
+      const currentYear = nextDueDate.getFullYear();
 
-      const isAlreadyPaid = paidMonths.some((m: string) => {
-        if (!m) return false;
-        const lowerM = m.toLowerCase();
-        return (
-          lowerM.includes(currentMonthFull.toLowerCase()) || 
-          lowerM.includes(currentMonthShort.toLowerCase())
-        );
+      const rentPaymentsForMonth = tenantPaidPayments.filter((p: any) => {
+        const m = (p.month || p.description || '').toLowerCase();
+        if (p.type === 'security_deposit' || p.type === 'security-deposit' || m.includes('deposit') || m.includes('opening')) return false;
+        if (p.type === 'one-time' || m.includes('bill') || m.includes('extra')) return false;
+        
+        const hasMonth = m.includes(currentMonthFull.toLowerCase()) || m.includes(currentMonthShort.toLowerCase());
+        const hasYear = m.includes(currentYear.toString());
+        const containsAnyYear = /202\d/.test(m);
+        
+        return containsAnyYear ? (hasMonth && hasYear) : hasMonth;
       });
 
-      if (isAlreadyPaid) {
+      const amountPaidForMonth = rentPaymentsForMonth.reduce((sum, p) => sum + parseNum(p.amount_paid || p.amount), 0);
+      const rentAmount = parseNum(t.rent_amount) || parseNum(t.monthly_rent) || parseNum(t.rent) || 0;
+
+      if (rentAmount > 0 && amountPaidForMonth >= rentAmount) {
         nextDueDate.setMonth(nextDueDate.getMonth() + 1);
         maxIterations--;
       } else {
+        virtualRentRemaining = Math.max(0, rentAmount - amountPaidForMonth);
         break;
       }
     }
@@ -65,7 +80,8 @@ const getNextUnpaidMonthAndDate = (t: any, tenantPaidPayments: any[], currentDat
   return {
     dueDays,
     nextDueDate,
-    monthShort: nextDueDate.toLocaleString('default', { month: 'short' })
+    monthShort: nextDueDate.toLocaleString('default', { month: 'short' }),
+    virtualRentRemaining
   };
 };
 
@@ -87,8 +103,14 @@ export function getTenantPaymentStatus(
     p.status !== 'pending'
   );
 
-  const pendingAmount = tenantPendingDues.reduce((acc, d) => acc + (Number(d.amount) || 0), 0);
-  const paidAmount = tenantPaid.reduce((acc, p) => acc + (Number(p.amount_paid || p.amount) || 0), 0);
+  const parseNum = (val: any) => {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    return Number(val.toString().replace(/,/g, '')) || 0;
+  };
+
+  const pendingAmount = tenantPendingDues.reduce((acc, d) => acc + parseNum(d.amount), 0);
+  const paidAmount = tenantPaid.reduce((acc, p) => acc + parseNum(p.amount_paid || p.amount), 0);
 
   let dueDate: Date | null = null;
   let daysOverdue = 0;
@@ -99,12 +121,14 @@ export function getTenantPaymentStatus(
   const today = new Date(currentDate);
   today.setHours(0,0,0,0);
 
+  let virtualRentRemaining = 0;
+
   if (isVacated) {
-    return { pendingAmount, paidAmount, dueDate: null, daysOverdue: 0, status: 'VACATED', isVirtual: false, virtualMonth: '' };
+    return { pendingAmount, paidAmount, dueDate: null, daysOverdue: 0, status: 'VACATED', isVirtual: false, virtualMonth: '', virtualRentRemaining: 0 };
   }
   
   if (isPaused) {
-    return { pendingAmount, paidAmount, dueDate: null, daysOverdue: 0, status: 'PAUSED', isVirtual: false, virtualMonth: '' };
+    return { pendingAmount, paidAmount, dueDate: null, daysOverdue: 0, status: 'PAUSED', isVirtual: false, virtualMonth: '', virtualRentRemaining: 0 };
   }
 
   // 1. Check if there are explicit pending dues (invoices)
@@ -132,6 +156,7 @@ export function getTenantPaymentStatus(
     daysOverdue = unpaidInfo.dueDays;
     dueDate = unpaidInfo.nextDueDate;
     virtualMonth = unpaidInfo.monthShort;
+    virtualRentRemaining = unpaidInfo.virtualRentRemaining;
     isVirtual = true;
   }
 
@@ -153,6 +178,7 @@ export function getTenantPaymentStatus(
     daysOverdue,
     status,
     isVirtual,
-    virtualMonth
+    virtualMonth,
+    virtualRentRemaining
   };
 }

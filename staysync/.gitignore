@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# native app builds
+public/a1-hostels.apk
+android/app/build/
+ios/App/build/

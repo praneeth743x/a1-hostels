@@ -14,6 +14,17 @@ export interface ReceiptData {
 }
 
 export function generateReceiptHTML(data: ReceiptData): string {
+  let logoBase64 = '';
+  try {
+    const logoPath = path.join(process.cwd(), 'public', 'himalaya_logo_premium.png');
+    if (fs.existsSync(logoPath)) {
+      const buffer = fs.readFileSync(logoPath);
+      logoBase64 = `data:image/png;base64,${buffer.toString('base64')}`;
+    }
+  } catch (e) {
+    console.error("Failed to read logo for base64 embed:", e);
+  }
+
   const {
     receiptId,
     dateTimeStr,
@@ -316,7 +327,7 @@ export function generateReceiptHTML(data: ReceiptData): string {
     <div class="receipt-content">
       <div class="header-bar">
         <div class="brand">
-          <img src="/himalaya_logo_premium.png" alt="Logo" style="width: 34px; height: 34px; object-fit: contain; border-radius: 6px; margin-right: 12px;" />
+          <img src="${logoBase64 || '/himalaya_logo_premium.png'}" alt="Logo" style="width: 34px; height: 34px; object-fit: contain; border-radius: 6px; margin-right: 12px;" />
           <div>
             <div class="brand-name">${hostelName || 'A1 Hostels'}</div>
             <div class="brand-sub">Smart PG Management</div>

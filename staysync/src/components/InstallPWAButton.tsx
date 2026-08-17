@@ -72,36 +72,35 @@ export default function InstallPWAButton() {
             <button className={styles.closeModalBtn} onClick={() => setShowIOSInstruction(false)}>
               <X size={20} />
             </button>
-            <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#1e293b' }}>Install Raliving App</h3>
-            
-            {isIOS ? (
-              <div style={{ color: '#475569', fontSize: '0.95rem', lineHeight: '1.5' }}>
-                <p style={{ marginBottom: '12px' }}>To install the Raliving app on your iPhone or iPad:</p>
-                <ol style={{ paddingLeft: '20px', margin: 0 }}>
-                  <li style={{ marginBottom: '10px' }}>
-                    Tap the <strong>Share</strong> button <Share size={16} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> at the bottom of your screen.
-                  </li>
-                  <li>
-                    Scroll down and tap <strong>Add to Home Screen</strong> <PlusSquare size={16} style={{ display: 'inline', verticalAlign: 'text-bottom' }} />.
-                  </li>
-                </ol>
-              </div>
-            ) : (
-              <div style={{ color: '#475569', fontSize: '0.95rem', lineHeight: '1.5' }}>
-                <p style={{ marginBottom: '12px' }}>To install the app on this browser:</p>
-                <ol style={{ paddingLeft: '20px', margin: 0 }}>
-                  <li style={{ marginBottom: '10px' }}>
-                    Click the browser menu (three dots in the top right corner).
-                  </li>
-                  <li>
-                    Select <strong>Install App</strong> or <strong>Add to Home Screen</strong>.
-                  </li>
-                </ol>
-                <p style={{ marginTop: '16px', fontSize: '0.85rem', color: '#64748b' }}>
-                  (If you don't see this option, look for an install icon <Download size={14} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> in the right side of your URL bar).
-                </p>
-              </div>
-            )}
+             <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#1e293b' }}>Install A1 Hostels</h3>
+             
+             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+               {/* Android Section */}
+               <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                 <h4 style={{ margin: '0 0 6px 0', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.92rem', fontWeight: 700 }}>
+                   🤖 Android (Chrome)
+                 </h4>
+                 <ol style={{ paddingLeft: '18px', margin: 0, fontSize: '0.85rem', color: '#475569', lineHeight: '1.4' }}>
+                   <li style={{ marginBottom: '4px' }}>Tap the browser menu (three dots in the top right corner).</li>
+                   <li>Select <strong>Install App</strong> or <strong>Add to Home Screen</strong>.</li>
+                 </ol>
+               </div>
+
+               {/* iOS Section */}
+               <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                 <h4 style={{ margin: '0 0 6px 0', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.92rem', fontWeight: 700 }}>
+                   🍏 iOS / iPhone (Safari)
+                 </h4>
+                 <ol style={{ paddingLeft: '18px', margin: 0, fontSize: '0.85rem', color: '#475569', lineHeight: '1.4' }}>
+                   <li style={{ marginBottom: '4px' }}>
+                     Tap the <strong>Share</strong> button <Share size={12} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> at the bottom of Safari.
+                   </li>
+                   <li>
+                     Scroll down and tap <strong>Add to Home Screen</strong> <PlusSquare size={12} style={{ display: 'inline', verticalAlign: 'text-bottom' }} />.
+                   </li>
+                 </ol>
+               </div>
+             </div>
             
             <button 
               onClick={() => setShowIOSInstruction(false)}

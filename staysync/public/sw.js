@@ -28,6 +28,7 @@ self.addEventListener('fetch', (event) => {
   if (
     url.pathname.startsWith('/_next/') ||
     url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/__/') || // Firebase reserved auth/hosting namespace
     url.searchParams.has('_rsc') ||
     event.request.headers.get('RSC') === '1' ||
     event.request.headers.get('Next-Router-State-Tree') ||

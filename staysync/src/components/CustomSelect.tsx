@@ -6,6 +6,7 @@ interface Option {
   value: string;
   label: React.ReactNode;
   disabled?: boolean;
+  searchKey?: string;
 }
 
 interface CustomSelectProps {
@@ -143,14 +144,14 @@ export function CustomSelect({ value, onChange, options, placeholder = 'Select a
                 </div>
               )}
               {options
-                .filter(opt => !searchable || (opt.label?.toString() || '').toLowerCase().includes(searchQuery.toLowerCase()))
+                .filter(opt => !searchable || ((opt.searchKey || (typeof opt.label === 'string' ? opt.label : opt.value)).toString().toLowerCase().includes(searchQuery.toLowerCase())))
                 .length === 0 ? (
                 <div style={{ padding: '10px 14px', color: '#94A3B8', fontSize: '0.85rem', textAlign: 'center' }}>
                   No options available
                 </div>
               ) : (
                 options
-                .filter(opt => !searchable || (opt.label?.toString() || '').toLowerCase().includes(searchQuery.toLowerCase()))
+                .filter(opt => !searchable || ((opt.searchKey || (typeof opt.label === 'string' ? opt.label : opt.value)).toString().toLowerCase().includes(searchQuery.toLowerCase())))
                 .map((opt) => (
                   <div
                     key={opt.value}

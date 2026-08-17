@@ -356,19 +356,25 @@ export default function MyHostelsPage() {
     if (storeProperties && storeProperties.length > 0) {
       const enriched = storeProperties.map((prop: any, idx: number) => {
         const rooms = prop.rooms || [];
-        const totalRooms = rooms.length || (idx === 0 ? 12 : 12);
+        const totalRooms = rooms.length || 0;
         let occupiedBeds = 0;
         let totalBeds = 0;
+        let filledRooms = 0;
+        
         rooms.forEach((r: any) => {
-          totalBeds += (r.total_beds || r.beds || 2);
-          occupiedBeds += (r.tenants?.length || 0);
+          const cap = (r.total_beds || r.beds || 2);
+          const occ = (r.tenants?.length || 0);
+          totalBeds += cap;
+          occupiedBeds += occ;
+          if (occ > 0) filledRooms++;
         });
-        const occupancyRate = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : (idx === 0 ? 13 : 0);
+        
         return {
           ...prop,
-          total_rooms: totalRooms,
-          occupancy_rate: occupancyRate,
-          pending_dues: 0
+          calculatedRoomsCount: totalRooms,
+          calculatedFilledRoomsCount: filledRooms,
+          calculatedTotalCapacity: totalBeds,
+          calculatedTenantCount: occupiedBeds,
         };
       });
       setProperties(enriched);
@@ -727,9 +733,25 @@ export default function MyHostelsPage() {
             const roomsCount = property.calculatedRoomsCount || 0;
             const tenantsCount = property.calculatedTenantCount || 0;
             const bedsCapacity = property.calculatedTotalCapacity || 0;
-            const collectedAmt = property.calculatedCollectedAmount || 0;
-            const expectedAmt = property.calculatedExpectedAmount || 0;
-            const pendingDues = property.calculatedPendingDues || 0;
+            
+            // Calculate financials dynamically from globalFinancials
+            let propCollected = 0;
+            let propPending = 0;
+            const pgIdStr = (property.pg_id || property.id || '').toString();
+            
+            globalFinancials.payments.forEach((p: any) => {
+              if (p.pg_id?.toString() === pgIdStr) {
+                if (p.status === 'paid' || p.status === 'PAID') {
+                  if (isDateMatch(p.created_at)) propCollected += Number(p.amount) || 0;
+                } else if (p.status === 'pending' || p.status === 'overdue' || p.status === 'PENDING') {
+                  propPending += Number(p.amount) || 0;
+                }
+              }
+            });
+            
+            const collectedAmt = propCollected;
+            const pendingDues = propPending;
+            const expectedAmt = propCollected + propPending;
 
             return (
               <motion.div

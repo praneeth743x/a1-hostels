@@ -98,6 +98,46 @@ export default function ReportsPage() {
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
 
+  const [siteName, setSiteName] = useState('A1 Hostels');
+  const [siteLogo, setSiteLogo] = useState('/himalaya_logo_premium.png');
+  const [logoBase64, setLogoBase64] = useState('');
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+    rpcCall('getLandingSettings').then((res) => {
+      if (res?.success && res?.data) {
+        if (res.data.siteName) setSiteName(res.data.siteName);
+        if (res.data.logoUrl) {
+          setSiteLogo(res.data.logoUrl);
+          fetch(res.data.logoUrl)
+            .then(r => r.blob())
+            .then(blob => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                setLogoBase64(reader.result as string);
+              };
+              reader.readAsDataURL(blob);
+            }).catch(() => {});
+        }
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!logoBase64) {
+      fetch('/himalaya_logo_premium.png')
+        .then(r => r.blob())
+        .then(blob => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setLogoBase64(reader.result as string);
+          };
+          reader.readAsDataURL(blob);
+        }).catch(() => {});
+    }
+  }, [logoBase64]);
+
   const [selectedTenantFilter, setSelectedTenantFilter] = useState('All');
   const [selectedCollectorFilter, setSelectedCollectorFilter] = useState('All');
   const [paymentsTenantFilter, setPaymentsTenantFilter] = useState('All');
@@ -189,8 +229,13 @@ export default function ReportsPage() {
 
     const headerLeft = document.createElement('div');
     headerLeft.innerHTML = `
-      <h1 style="margin:0; font-size: 24px; font-weight: bold;">Himalaya Hostel</h1>
-      <p style="margin: 4px 0 0 0; font-size: 12px; color: #cbd5e1;">Powered by Raliven Innovations</p>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <img src="${logoBase64 || siteLogo}" alt="Logo" style="width: 32px; height: 32px; object-fit: contain; border-radius: 6px;" />
+        <div>
+          <h1 style="margin:0; font-size: 24px; font-weight: bold;">${siteName}</h1>
+          <p style="margin: 4px 0 0 0; font-size: 12px; color: #cbd5e1;">Powered by Raliven Innovations</p>
+        </div>
+      </div>
     `;
 
     header.appendChild(headerLeft);
@@ -507,11 +552,32 @@ export default function ReportsPage() {
               return acc;
             }, {});
             
-            const headers = ['Room Number', 'Floor', 'Total Beds', 'Occupied Beds', 'Vacant Beds'];
-            const rows = prop.rooms.map((r: any) => {
+            const headers = ['Room Number', 'Floor', 'Sharing (Beds)', 'Occupied Beds', 'Vacant Beds', 'Sharing Price'];
+            
+            let pricing: any = {};
+            if (prop.theme_primary_color) {
+              try { pricing = JSON.parse(prop.theme_primary_color); } catch (e) {}
+            }
+
+            const sortedRooms = [...prop.rooms].sort((a: any, b: any) => {
+              const floorA = parseInt(String(a.floor || '0').replace(/[^0-9]/g, ''), 10) || 0;
+              const floorB = parseInt(String(b.floor || '0').replace(/[^0-9]/g, ''), 10) || 0;
+              if (floorA !== floorB) return floorA - floorB;
+              
+              const numA = parseInt(String(a.room_number || a.num || a.id || '').replace(/[^0-9]/g, ''), 10);
+              const numB = parseInt(String(b.room_number || b.num || b.id || '').replace(/[^0-9]/g, ''), 10);
+              if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+              
+              return String(a.room_number || '').localeCompare(String(b.room_number || ''), undefined, { numeric: true, sensitivity: 'base' });
+            });
+
+            const rows = sortedRooms.map((r: any) => {
               const occupied = tenantsByRoom[r.room_number] || 0;
-              const vacant = Math.max(0, parseInt(r.total_beds) - occupied);
-              return [r.room_number, r.floor, r.total_beds, occupied, vacant];
+              const totalBeds = r.total_beds || r.beds || 1;
+              const vacant = Math.max(0, parseInt(totalBeds) - occupied);
+              const roomPrice = pricing[totalBeds] || 'N/A';
+              
+              return [r.room_number || 'N/A', r.floor || 'N/A', totalBeds, occupied, vacant, roomPrice !== 'N/A' ? `₹${roomPrice}` : 'N/A'];
             });
             if (downloadFormat === 'csv') downloadCSV(`${filenamePrefix}.csv`, headers, rows);
             else {
@@ -563,6 +629,8 @@ export default function ReportsPage() {
       setIsGenerating(null);
     }
   };
+
+  if (!isMounted) return null;
 
   return (
     <ProtectedRoute permission={PERMISSIONS.VIEW_REPORTS}>

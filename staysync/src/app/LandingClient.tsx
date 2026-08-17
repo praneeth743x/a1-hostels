@@ -263,7 +263,6 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   };
 
-  // Fetch managed landing settings from Firestore with real-time polling sync
   const loadSettings = async () => {
     const res = await getLandingSettings();
     if (res.success && res.data) {
@@ -289,23 +288,39 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
     setIsSettingsLoaded(true);
   };
 
+  const loadHostels = async () => {
+    try {
+      const res = await getPublicHostels();
+      if (res.success && res.data && res.data.length > 0) {
+        setHostels(res.data);
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     if (!initialSettings) {
       loadSettings();
+    }
+    if (!initialHostels || initialHostels.length === 0) {
+      loadHostels();
     }
     // Smart polling when active + instant focus re-sync (eliminates CPU scroll stutter)
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && !document.hidden) {
         loadSettings();
+        loadHostels();
       }
     }, 30000);
-    const handleFocus = () => loadSettings();
+    const handleFocus = () => {
+      loadSettings();
+      loadHostels();
+    };
     window.addEventListener('focus', handleFocus);
     return () => {
       clearInterval(pollInterval);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [initialSettings]);
+  }, [initialSettings, initialHostels]);
 
   // Sort initial hostels by GPS asynchronously
   useEffect(() => {
@@ -676,10 +691,10 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
           ) : (
             <div className={styles.hostelGrid}>
               {hostels.map((hostel, i) => {
-                // Build image list: prefer uploaded images[], fall back to imageUrl
-                const imgList = (hostel.images && hostel.images.length > 0)
+                // Build image list: prefer uploaded images[], fall back to imageUrl, and remove empty strings
+                const imgList = ((hostel.images && hostel.images.length > 0)
                   ? hostel.images
-                  : hostel.imageUrl ? [hostel.imageUrl] : [];
+                  : hostel.imageUrl ? [hostel.imageUrl] : []).filter((img: string) => img && typeof img === 'string' && img.trim() !== '');
                 const curIdx = hostelCarouselIdx[hostel.id] ?? 0;
 
                 const prevImg = () => setHostelCarouselIdx(prev => ({ ...prev, [hostel.id]: (curIdx - 1 + imgList.length) % imgList.length }));
@@ -705,7 +720,7 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
                         // Let click navigate to details page instead of toggling drawer
                       }}
                     >
-                      <AnimatePresence mode="wait" initial={false}>
+                      <AnimatePresence mode="popLayout" initial={false}>
                         {imgList.length > 0 ? (
                           <motion.img
                             key={curIdx}
@@ -722,10 +737,10 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
                               if (info.offset.x < -50) nextImg();
                               else if (info.offset.x > 50) prevImg();
                             }}
-                            style={{ cursor: 'grab', userSelect: 'none' }}
+                            style={{ cursor: 'grab', userSelect: 'none', position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
                           />
                         ) : (
-                          <motion.div key="placeholder" className={styles.hostelCardImgPlaceholder}>
+                          <motion.div key="placeholder" className={styles.hostelCardImgPlaceholder} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
                             <span style={{ fontSize: '3rem' }}>🏠</span>
                             <span style={{ fontSize: '0.75rem', color: '#92400e', marginTop: '8px', fontWeight: 600 }}>Add images from PG Owner portal</span>
                           </motion.div>

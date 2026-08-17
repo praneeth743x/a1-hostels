@@ -8,6 +8,7 @@ const withPWA = withPWAInit({
   cacheOnFrontEndNav: true,
   workboxOptions: {
     disableDevLogs: true,
+    navigateFallbackDenylist: [/^\/__/],
   }
 });
 

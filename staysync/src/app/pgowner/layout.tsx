@@ -26,12 +26,20 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
 
   const { properties, selectedProperty, switchHostel, refreshProperties, authStatus, currentUser, userProfile, refreshUserProfile } = useHostel();
   const [isMounted, setIsMounted] = useState(false);
-
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
+  const [siteName, setSiteName] = useState('A1 Hostels');
+  const [siteLogo, setSiteLogo] = useState('/himalaya_logo_premium.png');
+
   useEffect(() => {
     setIsMounted(true);
+    rpcCall('getLandingSettings').then((res) => {
+      if (res?.success && res?.data) {
+        if (res.data.siteName) setSiteName(res.data.siteName);
+        if (res.data.logoUrl) setSiteLogo(res.data.logoUrl);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -550,9 +558,11 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
           {/* Close button only on mobile */}
           <button 
             className={`${drawerStyles.drawerCloseBtn} mobile-only-close`} 
-            onPointerDown={() => setIsMobileDrawerOpen(false)}
-            onTouchStart={() => setIsMobileDrawerOpen(false)}
-            onClick={() => setIsMobileDrawerOpen(false)}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsMobileDrawerOpen(false);
+            }}
           >
             <X size={16} />
           </button>
@@ -830,7 +840,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
       }}>
         <img
           suppressHydrationWarning
-          src={selectedProperty?.logoUrl || (typeof window !== 'undefined' ? localStorage.getItem('cachedLogoUrl') : null) || '/himalaya_logo.png'}
+          src={selectedProperty?.logoUrl || (typeof window !== 'undefined' ? localStorage.getItem('cachedLogoUrl') : null) || siteLogo}
           alt="Logo"
           style={{
             width: '64px',
@@ -1194,9 +1204,11 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                 <Menu 
                   size={22} 
                   style={{ cursor: 'pointer', color: '#ffffff', touchAction: 'manipulation' }} 
-                  onPointerDown={() => setIsMobileDrawerOpen(true)}
-                  onTouchStart={() => setIsMobileDrawerOpen(true)}
-                  onClick={() => setIsMobileDrawerOpen(true)} 
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsMobileDrawerOpen(true);
+                  }}
                 />
                 {isMounted && notifications.some(n => n.type === 'complaint' && !readNotifIds.has(n.id)) && (
                   <motion.div
@@ -1224,9 +1236,9 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
               </div>
               <div className={styles.mobileHeaderTitleContainer} suppressHydrationWarning>
                 <h1 className={styles.mobileHeaderTitle} suppressHydrationWarning>{pageTitle}</h1>
-                {isMounted && properties.length > 0 && selectedProperty?.name ? (
+                {isMounted && properties.length > 0 ? (
                   <span className={styles.mobileHeaderSubtitle}>
-                    {selectedProperty.name} {userProfile?.role === 'team_member' ? '• TEAM MEMBER' : ''}
+                    {siteName} {userProfile?.role === 'team_member' ? '• TEAM MEMBER' : ''}
                   </span>
                 ) : isMounted && properties.length === 0 ? (
                   <span className={styles.mobileHeaderSubtitle}>

@@ -20,7 +20,8 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone || document.referrer.includes('android-app://');
+      const isCapacitor = (window as any).Capacitor || (window.parent && (window.parent as any).Capacitor) || navigator.userAgent.includes('Capacitor');
+      const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone || document.referrer.includes('android-app://') || isCapacitor;
       setIsStandalonePwa(standalone);
     }
   }, []);
@@ -192,15 +193,11 @@ export default function LoginPage() {
 
     try {
       const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
       
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
       const isCapacitor = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
-      
-      if (isCapacitor || (isMobile && isStandalone)) {
-        await signInWithRedirect(auth, provider);
-        return;
-      }
       
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
@@ -454,6 +451,19 @@ export default function LoginPage() {
             
             <div style={{ marginTop: '14px' }}>
               <InstallPWAButton />
+            </div>
+
+            <div className={styles.nativeDownloadRow}>
+              <a href="/a1-hostels.apk" download className={styles.nativeDownloadBtn}>
+                🤖 Android App
+              </a>
+              <button 
+                onClick={() => alert("iOS Users: Please tap the 'Download Web App' button above, then select 'Add to Home Screen' from your Safari share menu to install A1 Hostels as an app.")} 
+                type="button" 
+                className={styles.nativeDownloadBtn}
+              >
+                🍏 iOS App
+              </button>
             </div>
 
             <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '0.75rem', color: '#94a3b8' }}>

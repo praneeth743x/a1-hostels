@@ -93,7 +93,7 @@ export default function TenantDirectory() {
 
   const { selectedPgId: contextPgId } = useHostel();
   const activePgId = searchParams.get('pgId') || (filterHostel !== 'all' ? filterHostel : contextPgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('activePgId') : null));
-  const { data: hostelData } = useHostelData(activePgId);
+  const { data: hostelData, isLoading } = useHostelData(activePgId);
 
   const roomsMap = React.useMemo(() => {
     const map: Record<string, string> = {};
@@ -159,6 +159,10 @@ export default function TenantDirectory() {
         const statusLabel = isVacated ? 'Vacated' : (isPaused ? 'Paused' : (isNotice ? 'Notice Period' : 'Active'));
         const resolvedRoom = t.rooms?.room_number || t.room_number || (t.room_id ? roomsMap[t.room_id] : null) || (t.room ? roomsMap[t.room] : null) || t.room || 'N/A';
 
+        if (isVacated || isPaused) {
+          paymentState = 'paused';
+        }
+
         return {
           id: t.tenant_id || t.id,
           name: t.full_name || t.name,
@@ -168,7 +172,13 @@ export default function TenantDirectory() {
           phone: t.mobile || t.phone,
           status: statusLabel,
           paymentState,
-          daysDiff
+          daysDiff,
+          face_picture: t.face_picture,
+          facePicture: t.facePicture,
+          documents: t.documents,
+          avatar: t.avatar,
+          photo_url: t.photo_url,
+          photoUrl: t.photoUrl
         };
       });
     }
@@ -221,28 +231,28 @@ export default function TenantDirectory() {
 
 
   useEffect(() => {
-    if (selectedPg && selectedRoom && properties.length > 0) {
-      const p = properties.find((prop: any) => prop.pg_id === selectedPg);
-      if (p) {
-        const r = p.rooms.find((room: any) => room.room_id === selectedRoom);
-        if (r && p.theme_primary_color) {
-          try {
-            const pricing = JSON.parse(p.theme_primary_color);
-            const fee = pricing[r.total_beds];
-            if (fee) {
-              setRentAmount(parseInt(fee));
-            }
-          } catch (e) {
-            console.error("Failed to parse pricing", e);
+    if (activePgId && selectedRoom && hostelData) {
+      const r = hostelData.rooms?.find((room: any) => room.room_id === selectedRoom || room.id === selectedRoom);
+      const prop = hostelData.property;
+      if (r && prop?.theme_primary_color) {
+        try {
+          const pricing = JSON.parse(prop.theme_primary_color);
+          const fee = pricing[r.total_beds || r.beds || 1];
+          if (fee) {
+            setRentAmount(parseInt(fee));
           }
+        } catch (e) {
+          console.error("Failed to parse pricing", e);
         }
       }
     }
-  }, [selectedRoom, selectedPg, properties]);
+  }, [selectedRoom, activePgId, hostelData]);
 
   const handleAddTenant = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ownerId || !selectedPg || !selectedRoom) {
+    const currentOwnerId = ownerId || auth.currentUser?.uid;
+    const currentPgId = activePgId;
+    if (!currentOwnerId || !currentPgId || !selectedRoom) {
       alert("Please select a Hostel and Room.");
       return;
     }
@@ -281,13 +291,13 @@ export default function TenantDirectory() {
     };
 
     try {
-      if (documents.facePicture) documentUrls.facePicture = await uploadFile(documents.facePicture, `tenants/${ownerId}/${Date.now()}_face.jpg`);
-      if (documents.govtFront) documentUrls.govtFront = await uploadFile(documents.govtFront, `tenants/${ownerId}/${Date.now()}_govF.jpg`);
-      if (documents.govtBack) documentUrls.govtBack = await uploadFile(documents.govtBack, `tenants/${ownerId}/${Date.now()}_govB.jpg`);
-      if (documents.collegeFront) documentUrls.collegeFront = await uploadFile(documents.collegeFront, `tenants/${ownerId}/${Date.now()}_colF.jpg`);
-      if (documents.collegeBack) documentUrls.collegeBack = await uploadFile(documents.collegeBack, `tenants/${ownerId}/${Date.now()}_colB.jpg`);
-      if (documents.empFront) documentUrls.empFront = await uploadFile(documents.empFront, `tenants/${ownerId}/${Date.now()}_empF.jpg`);
-      if (documents.empBack) documentUrls.empBack = await uploadFile(documents.empBack, `tenants/${ownerId}/${Date.now()}_empB.jpg`);
+      if (documents.facePicture) documentUrls.facePicture = await uploadFile(documents.facePicture, `tenants/${currentOwnerId}/${Date.now()}_face.jpg`);
+      if (documents.govtFront) documentUrls.govtFront = await uploadFile(documents.govtFront, `tenants/${currentOwnerId}/${Date.now()}_govF.jpg`);
+      if (documents.govtBack) documentUrls.govtBack = await uploadFile(documents.govtBack, `tenants/${currentOwnerId}/${Date.now()}_govB.jpg`);
+      if (documents.collegeFront) documentUrls.collegeFront = await uploadFile(documents.collegeFront, `tenants/${currentOwnerId}/${Date.now()}_colF.jpg`);
+      if (documents.collegeBack) documentUrls.collegeBack = await uploadFile(documents.collegeBack, `tenants/${currentOwnerId}/${Date.now()}_colB.jpg`);
+      if (documents.empFront) documentUrls.empFront = await uploadFile(documents.empFront, `tenants/${currentOwnerId}/${Date.now()}_empF.jpg`);
+      if (documents.empBack) documentUrls.empBack = await uploadFile(documents.empBack, `tenants/${currentOwnerId}/${Date.now()}_empB.jpg`);
     } catch (error: any) {
       console.error("Upload error", error);
       alert("Failed to upload some documents: " + error.message + ". The tenant will be saved without documents.");
@@ -296,8 +306,8 @@ export default function TenantDirectory() {
     
     setUploadProgress('Saving tenant...');
     const res = await addTenant({ 
-      ownerId, 
-      pgId: selectedPg, 
+      ownerId: currentOwnerId, 
+      pgId: currentPgId, 
       roomId: selectedRoom, 
       fullName, 
       phone, 
@@ -313,10 +323,10 @@ export default function TenantDirectory() {
     });
     
     if (res.success && res.data) {
-      const selectedHostelName = properties.find(p => p.pg_id === selectedPg)?.name || '';
-      const selectedRoomName = properties.find(p => p.pg_id === selectedPg)?.rooms.find((r:any) => r.room_id === selectedRoom)?.room_number || '';
+      const selectedHostelName = hostelData?.property?.name || hostelData?.property?.pg_name || '';
+      const selectedRoomName = hostelData?.rooms?.find((r:any) => r.room_id === selectedRoom || r.id === selectedRoom)?.room_number || '';
       
-      notifyHostelDataChanged(selectedPg);
+      notifyHostelDataChanged(currentPgId);
       
       if (returnUrl) {
         router.push(returnUrl);
@@ -340,7 +350,28 @@ export default function TenantDirectory() {
     }
   };
 
-  const currentRooms = properties.find(p => p.pg_id === selectedPg)?.rooms || [];
+  const currentRooms = React.useMemo(() => {
+    const rooms = [...(hostelData?.rooms || [])];
+    return rooms.sort((a: any, b: any) => {
+      // 1. Sort by floor number
+      const floorA = parseInt(String(a.floor || '0').replace(/[^0-9]/g, ''), 10) || 0;
+      const floorB = parseInt(String(b.floor || '0').replace(/[^0-9]/g, ''), 10) || 0;
+      
+      if (floorA !== floorB) {
+        return floorA - floorB;
+      }
+      
+      // 2. Sort by room number
+      const numA = parseInt(String(a.room_number || a.num || a.id || '').replace(/[^0-9]/g, ''), 10);
+      const numB = parseInt(String(b.room_number || b.num || b.id || '').replace(/[^0-9]/g, ''), 10);
+      
+      if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+        return numA - numB;
+      }
+      
+      return String(a.room_number || '').localeCompare(String(b.room_number || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [hostelData?.rooms]);
 
   const filteredTenants = React.useMemo(() => {
     return displayTenantsList.filter((t: any) => {
@@ -654,19 +685,21 @@ export default function TenantDirectory() {
                       <div style={{ zIndex: 49 }}>
                         <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Allocate Room</label>
                         <CustomSelect 
+                          searchable
                           value={selectedRoom}
                           onChange={setSelectedRoom}
                           options={currentRooms.map((r: any) => {
-                            const selectedHostelName = properties.find(p => p.pg_id === selectedPg)?.name;
-                            const occupiedCount = tenants.filter(t => t.status === 'Active' && t.room === r.room_number && t.hostel === selectedHostelName).length;
-                            const totalBeds = r.total_beds || 1;
+                            const tenantsList = hostelData?.tenants || [];
+                            const occupiedCount = tenantsList.filter((t: any) => (t.status === 'Active' || t.is_active !== false) && (t.room === r.room_number || t.room_id === r.room_id || t.room_id === r.id)).length;
+                            const totalBeds = r.total_beds || r.beds || 1;
                             
                             return { 
-                              value: r.room_id, 
+                              value: r.room_id || r.id, 
                               disabled: occupiedCount >= totalBeds,
+                              searchKey: String(r.room_number || r.num || ''),
                               label: (
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingRight: '8px' }}>
-                                  <span style={{ fontWeight: 600 }}>{r.room_number} {occupiedCount >= totalBeds ? '(Full)' : ''}</span>
+                                  <span style={{ fontWeight: 600 }}>{r.floor ? `${r.floor} - ` : ''}Room {r.room_number} {occupiedCount >= totalBeds ? '(Full)' : ''}</span>
                                   <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                                     {Array.from({ length: totalBeds }).map((_, i) => (
                                       <BedDouble 

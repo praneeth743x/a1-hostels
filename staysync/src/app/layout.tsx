@@ -42,6 +42,24 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                var pathname = window.location.pathname;
+                if (pathname === '/' || pathname === '') {
+                  var isCapacitor = window.Capacitor || (window.parent && window.parent.Capacitor) || navigator.userAgent.includes('Capacitor');
+                  var isPWA = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+                  if (isCapacitor || isPWA) {
+                    window.location.replace('/login');
+                  }
+                }
+              })();
+            `
+          }}
+        />
+      </head>
       <body suppressHydrationWarning data-build="2026-08-14-CLEAN_DEPLOY">
         <FaviconUpdater />
         <ConfirmProvider>
@@ -60,7 +78,8 @@ export default function RootLayout({
               }
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                  const isCapacitor = typeof window !== 'undefined' && (window.Capacitor || (window.parent && window.parent.Capacitor) || navigator.userAgent.includes('Capacitor'));
+                  if (isCapacitor || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
                     navigator.serviceWorker.getRegistrations().then(function(registrations) {
                       for (let reg of registrations) {
                         reg.unregister();

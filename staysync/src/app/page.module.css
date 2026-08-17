@@ -2055,7 +2055,7 @@
   width: 100%;
   height: 180px;
   overflow: hidden;
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  background: #f1f5f9; /* Neutral slate-100 skeleton background instead of yellow */
 }
 
 .hostelCardImg {

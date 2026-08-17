@@ -143,13 +143,14 @@ const processDuesData = (rawPendingData: any[], rawTenantsData: any[], rawPaidDa
     const tid = t.id || t.tenant_id;
     const paymentInfo = getTenantPaymentStatus(t, rawPendingData || [], rawPaidData || []);
     if (paymentInfo.isVirtual && (paymentInfo.status === 'OVERDUE' || paymentInfo.status === 'CRITICAL' || paymentInfo.status === 'DUE_TODAY')) {
-      const rentAmount = Number(t.monthly_rent || t.rent || 0);
+      const baseRent = Number(t.rent_amount || t.monthly_rent || t.rent || 0);
+      const rentAmount = paymentInfo.virtualRentRemaining !== undefined ? paymentInfo.virtualRentRemaining : baseRent;
       allPendingDocs.push({
         payment_id: `virtual-rent-${tid}`,
         pg_id: t.pg_id,
         tenant_id: tid,
         amount: rentAmount,
-        original_amount: rentAmount,
+        original_amount: baseRent,
           status: 'pending',
           type: 'monthly_rent',
           month: paymentInfo.virtualMonth,

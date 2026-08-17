@@ -111,6 +111,11 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
   const [addPaymentNotes, setAddPaymentNotes] = useState('');
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [selectedDueId, setSelectedDueId] = useState<string | null>(null);
+  const [showAddChargeModal, setShowAddChargeModal] = useState(false);
+  const [chargeAmount, setChargeAmount] = useState('');
+  const [chargeDescription, setChargeDescription] = useState('');
+  const [isSubmittingCharge, setIsSubmittingCharge] = useState(false);
 
   const handleRecordPaymentSubmit = async () => {
     if (!addPaymentAmount || Number(addPaymentAmount) <= 0) {
@@ -124,20 +129,22 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
     const amount = Number(addPaymentAmount);
 
     try {
-      const res = await rpcCall('recordTenantPayment', resolvedParams.id, {
-        amount,
-        category: addPaymentCategory,
-        paymentMethod: addPaymentMethod,
-        month: addPaymentMonth,
-        notes: addPaymentNotes,
-        collectedByUid: collectorUid,
-        collectedByName: collectorName
-      });
+      const res = await rpcCall('collectFIFOPayment', 
+        resolvedParams.id, 
+        amount, 
+        addPaymentMethod, 
+        tenant.pg_id, 
+        selectedDueId ? [selectedDueId] : undefined, 
+        collectorUid, 
+        userProfile?.role || 'Owner', 
+        0
+      );
 
       if (res?.success) {
         setShowAddPaymentModal(false);
         setAddPaymentAmount('');
         setAddPaymentNotes('');
+        setSelectedDueId(null);
         toast.success(`₹${amount.toLocaleString('en-IN')} payment recorded successfully!`);
         loadPaymentsAndLogs();
         notifyHostelDataChanged();
@@ -148,6 +155,38 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
       toast.error("Payment recording failed. Please try again.");
     } finally {
       setIsSubmittingPayment(false);
+    }
+  };
+
+  const handleAddChargeSubmit = async () => {
+    if (!chargeAmount || Number(chargeAmount) <= 0) {
+      toast.error("Please enter a valid amount.");
+      return;
+    }
+    if (!chargeDescription.trim()) {
+      toast.error("Please enter a description for the charge.");
+      return;
+    }
+    
+    setIsSubmittingCharge(true);
+    const amount = Number(chargeAmount);
+    
+    try {
+      const res = await rpcCall('addTenantOneTimeCharge', tenant.pg_id, resolvedParams.id, amount, chargeDescription);
+      
+      if (res?.success) {
+        setShowAddChargeModal(false);
+        setChargeAmount('');
+        setChargeDescription('');
+        toast.success(`₹${amount.toLocaleString('en-IN')} charge added successfully!`);
+        loadPaymentsAndLogs();
+      } else {
+        toast.error("Failed to add charge: " + (res?.error || 'Unknown error'));
+      }
+    } catch (err: any) {
+      toast.error("Adding charge failed. Please try again.");
+    } finally {
+      setIsSubmittingCharge(false);
     }
   };
 
@@ -421,7 +460,40 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
 
   let rentStatus = 'Pending';
   const isVacated = tenant?.is_active === false || tenant?.status === 'vacated' || tenant?.status === 'VACATED';
-  const presentDueAmount = tenantDues.filter((d: any) => d.status === 'pending').reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+
+  const allPendingDues = useMemo(() => {
+    const pending = [...tenantDues].filter((d: any) => d.status === 'pending');
+    
+    if (tenant) {
+      const depositVal = Number(tenant.security_deposit ?? tenant.deposit ?? tenant.advance ?? 0);
+      if (depositVal > 0 && tenant.security_deposit_paid !== true) {
+        const totalPaidDeposit = (paymentHistory || [])
+          .filter((pd: any) => pd.type === 'security_deposit' || pd.type === 'security-deposit' || pd.type === 'deposit')
+          .reduce((acc: number, pd: any) => acc + (Number(pd.amount_paid || pd.amount || 0)), 0);
+        
+        const hasPendingDepositInDues = pending.some((d: any) => d.type === 'security_deposit' || d.type === 'security-deposit' || d.type === 'deposit');
+        
+        if (!hasPendingDepositInDues) {
+          const remainingDeposit = Math.max(0, depositVal - totalPaidDeposit);
+          if (remainingDeposit > 0) {
+            pending.push({
+              payment_id: `virtual-deposit-${tenant.id || tenant.pg_id}`,
+              amount: remainingDeposit,
+              original_amount: depositVal,
+              paid_amount: 0,
+              status: 'pending',
+              type: 'security_deposit',
+              created_at: tenant.move_in_date || tenant.created_at || Date.now(),
+              is_virtual: true
+            });
+          }
+        }
+      }
+    }
+    return pending;
+  }, [tenant, tenantDues, paymentHistory]);
+
+  const presentDueAmount = allPendingDues.reduce((sum: number, p: any) => sum + Math.max(0, Number(p.amount || 0) - Number(p.paid_amount || 0)), 0);
 
   if (isVacated || presentDueAmount === 0) {
     rentStatus = 'Paid';
@@ -1092,22 +1164,21 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
           })()}
 
           {(() => {
-            const pendingPayments = tenantDues.filter((d: any) => d.status === 'pending');
+            const pendingPayments = allPendingDues;
             
             // Present Due Amount
-            const presentDueVal = pendingPayments.reduce((sum: number, p: any) => {
-              const total = Number(p.amount || 0);
-              const paid = Number(p.paid_amount || 0);
-              return sum + Math.max(0, total - paid);
-            }, 0);
+            const presentDueVal = presentDueAmount;
 
             // Overdue Days Calculation
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
+            const isPaused = tenant?.status?.toUpperCase() === 'PAUSED';
+            const isVacated = tenant?.status?.toUpperCase() === 'VACATED' || tenant?.is_active === false;
+
             let maxOverdueDays = 0;
 
-            if (presentDueVal > 0) {
+            if (presentDueVal > 0 && !isPaused && !isVacated) {
               const today = new Date();
               today.setHours(0,0,0,0);
               
@@ -1134,9 +1205,9 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
 
             // Next Due Date Calculation
             let nextDueDateStr = 'N/A';
-            if (tenant?.status === 'PAUSED') {
+            if (isPaused) {
               nextDueDateStr = 'Paused';
-            } else if (tenant?.is_active === false) {
+            } else if (isVacated) {
               nextDueDateStr = 'Vacated';
             } else {
               const moveIn = tenant?.move_in_date ? new Date(tenant.move_in_date) : new Date();
@@ -1670,13 +1741,12 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
                   type="button"
                   onClick={() => {
                     if (isLockedForDeletion) return;
-                    setAddPaymentAmount(String(tenant?.rent_amount ?? tenant?.monthly_rent ?? tenant?.fee ?? tenant?.room?.rent ?? ''));
-                    setShowAddPaymentModal(true);
+                    setShowAddChargeModal(true);
                   }} 
                   className={styles.tdPrimaryButton} 
-                  style={{ padding: '8px 16px', fontSize: '0.85rem', width: 'auto', display: 'flex', alignItems: 'center', gap: '6px', cursor: isLockedForDeletion ? 'not-allowed' : 'pointer', opacity: isLockedForDeletion ? 0.5 : 1 }}
+                  style={{ padding: '8px 16px', fontSize: '0.85rem', width: 'auto', display: 'flex', alignItems: 'center', gap: '6px', cursor: isLockedForDeletion ? 'not-allowed' : 'pointer', opacity: isLockedForDeletion ? 0.5 : 1, backgroundColor: '#dc2626' }}
                 >
-                  <Plus size={16} /> Add Payment
+                  <Plus size={16} /> Add Charge
                 </button>
               </div>
               
@@ -1686,7 +1756,7 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {/* Pending Dues Section */}
                   {(() => {
-                    const pendingList = (paymentHistory || []).filter((p: any) => p.status === 'pending' || p.status === 'PENDING');
+                    const pendingList = allPendingDues;
                     if (pendingList.length === 0) return null;
 
                     return (
@@ -1719,6 +1789,7 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
                                       if (p.type === 'security_deposit' || p.type === 'security-deposit') setAddPaymentCategory('security-deposit');
                                       else setAddPaymentCategory('rent');
                                       if (p.month) setAddPaymentMonth(p.month);
+                                      setSelectedDueId(p.payment_id || p.id);
                                       setShowAddPaymentModal(true);
                                     }}
                                     style={{ padding: '6px 12px', borderRadius: '8px', background: '#dc2626', color: '#fff', border: 'none', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer' }}
@@ -2147,6 +2218,84 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
         )}
       </AnimatePresence>
 
+      {/* Add Charge Modal */}
+      <AnimatePresence>
+        {showAddChargeModal && (
+          <div 
+            onClick={() => setShowAddChargeModal(false)}
+            style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 9999,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%', maxWidth: '400px', backgroundColor: '#ffffff', borderRadius: '16px',
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)', overflow: 'hidden'
+              }}
+            >
+              <div style={{ padding: '20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>Add Pending Charge</h3>
+                  <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#64748b' }}>Add a new pending fee to {tenant?.full_name}</p>
+                </div>
+                <button onClick={() => setShowAddChargeModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', color: '#64748b', cursor: 'pointer' }}>
+                  &times;
+                </button>
+              </div>
+
+              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>Charge Amount (₹)*</label>
+                  <input 
+                    type="number"
+                    placeholder="e.g. 1500"
+                    value={chargeAmount}
+                    onChange={(e) => setChargeAmount(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}
+                  />
+                </div>
+                
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>Charge Description*</label>
+                  <input 
+                    type="text"
+                    placeholder="e.g. Electricity Bill, Cleaning Fee"
+                    value={chargeDescription}
+                    onChange={(e) => setChargeDescription(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#0f172a' }}
+                  />
+                </div>
+              </div>
+              
+              <div style={{ padding: '16px 20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button 
+                  type="button"
+                  onClick={() => setShowAddChargeModal(false)}
+                  style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button"
+                  onClick={handleAddChargeSubmit}
+                  disabled={isSubmittingCharge}
+                  style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#dc2626', color: '#fff', fontSize: '0.85rem', fontWeight: 600, cursor: isSubmittingCharge ? 'not-allowed' : 'pointer', opacity: isSubmittingCharge ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  {isSubmittingCharge ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                  Add Charge
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Add Payment Modal */}
       <AnimatePresence>
         {showAddPaymentModal && (
@@ -2173,14 +2322,14 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
                   <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>Record Payment</h3>
                   <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#64748b' }}>Record a fee payment for {tenant?.full_name}</p>
                 </div>
-                <button onClick={() => setShowAddPaymentModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', color: '#64748b', cursor: 'pointer' }}>
+                <button onClick={() => { setShowAddPaymentModal(false); setSelectedDueId(null); }} style={{ background: 'none', border: 'none', fontSize: '1.2rem', color: '#64748b', cursor: 'pointer' }}>
                   &times;
                 </button>
               </div>
 
               <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {(() => {
-                  const pending = (paymentHistory || []).filter((p: any) => p.status === 'pending' || p.status === 'PENDING');
+                  const pending = (tenantDues || []).filter((p: any) => p.status === 'pending' || p.status === 'PENDING');
                   if (pending.length === 0) return null;
                   return (
                     <div style={{ padding: '12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px' }}>
@@ -2198,6 +2347,7 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
                                 setAddPaymentAmount(String(dueAmt));
                                 setAddPaymentCategory(p.type as any || 'rent');
                                 if (p.month) setAddPaymentMonth(p.month);
+                                setSelectedDueId(p.payment_id || p.id);
                               }}
                               style={{
                                 padding: '6px 12px', background: '#ffffff', border: '1px solid #fcd34d', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, color: '#92400e', cursor: 'pointer', transition: 'all 0.2s',

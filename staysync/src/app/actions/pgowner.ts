@@ -269,6 +269,85 @@ export async function getHostelDetailsForEdit(pgId: string) {
   }
 }
 
+export async function getGlobalFinancials(ownerId: string) {
+  try {
+    if (!ownerId) return { success: false, error: 'ownerId is required' };
+    
+    // Get all properties for this owner
+    const propsSnap = await adminDb.collection('properties')
+      .where('owner_id', '==', ownerId)
+      .where('is_active', '!=', false)
+      .get();
+      
+    if (propsSnap.empty) return { success: true, data: { payments: [], expenses: [] } };
+    
+    const pgIds = propsSnap.docs
+      .filter(doc => doc.data().status !== 'DELETED')
+      .map(doc => doc.data().pg_id)
+      .filter(id => id);
+      
+    if (pgIds.length === 0) return { success: true, data: { payments: [], expenses: [] } };
+
+    // Fetch payments
+    let payments: any[] = [];
+    if (pgIds.length <= 10) {
+      const pSnap = await adminDb.collection('payments').where('pg_id', 'in', pgIds).get();
+      payments = pSnap.docs.map(doc => doc.data());
+    } else {
+      for (const id of pgIds) {
+        const pSnap = await adminDb.collection('payments').where('pg_id', '==', id).get();
+        payments.push(...pSnap.docs.map(d => d.data()));
+      }
+    }
+
+    // Fetch expenses
+    let expenses: any[] = [];
+    if (pgIds.length <= 10) {
+      const eSnap = await adminDb.collection('expenses').where('pg_id', 'in', pgIds).get();
+      expenses = eSnap.docs.map(doc => doc.data());
+    } else {
+      for (const id of pgIds) {
+        const eSnap = await adminDb.collection('expenses').where('pg_id', '==', id).get();
+        expenses.push(...eSnap.docs.map(d => d.data()));
+      }
+    }
+
+    return { success: true, data: { payments, expenses } };
+  } catch (err: any) {
+    return { success: false, error: err.message, data: { payments: [], expenses: [] } };
+  }
+}
+
+export async function updateHostelMedia(pgId: string, data: { images: string[], facilities: string[] }) {
+  try {
+    if (!pgId) return { success: false, error: 'Property ID is required' };
+    
+    const propsRef = adminDb.collection('properties');
+    const q = await propsRef.where('pg_id', '==', pgId).limit(1).get();
+    
+    let docRef;
+    if (q.empty) {
+      docRef = propsRef.doc(pgId);
+      const docSnap = await docRef.get();
+      if (!docSnap.exists) {
+        return { success: false, error: 'Property not found' };
+      }
+    } else {
+      docRef = q.docs[0].ref;
+    }
+    
+    await docRef.update({
+      images: data.images || [],
+      facilities: data.facilities || [],
+      updated_at: new Date().toISOString()
+    });
+    
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 export async function updateHostelPropertyFull(
   pgId: string,
   data: {
@@ -1184,32 +1263,6 @@ export async function addTenantConstantFee(tenantId: string, extraFee: number) {
 
 export async function addTenantOneTimeCharge(pgId: string, tenantId: string, amount: number, description: string) {
   try {
-    const pendingSnap = await adminDb.collection('payments')
-      .where('tenant_id', '==', tenantId)
-      .where('status', '==', 'pending')
-      .get();
-
-    if (!pendingSnap.empty) {
-      // Find the most recent pending due in memory (since we can't orderBy if we don't have an index sometimes)
-      const docs = pendingSnap.docs.sort((a, b) => {
-        const da = new Date(a.data().created_at || 0).getTime();
-        const db = new Date(b.data().created_at || 0).getTime();
-        return db - da;
-      });
-      
-      const existingDoc = docs[0];
-      const existingData = existingDoc.data() as any;
-      const newAmount = (existingData.amount || 0) + amount;
-      const oldDesc = existingData.description ? existingData.description + ' & ' : '';
-      
-      await existingDoc.ref.update({
-        amount: newAmount,
-        description: oldDesc + description
-      });
-      return { success: true };
-    }
-
-    // Fallback if no pending dues exist
     const paymentRef = adminDb.collection('payments').doc();
     await paymentRef.set({
       payment_id: paymentRef.id,
@@ -1335,6 +1388,7 @@ export async function collectFIFOPayment(
       .where('status', '==', 'pending')
       .get();
       
+    const paidDocRefs: any[] = [];
     if (!pendingSnap.empty) {
       let pendingPayments = pendingSnap.docs.map(doc => doc.data());
       
@@ -1359,6 +1413,7 @@ export async function collectFIFOPayment(
             room_number: payment.room_number || snapshotRoomNum,
             pg_name: payment.pg_name || snapshotPgName
           });
+          paidDocRefs.push(paymentRef);
         }
       } else {
         // Iterate and apply payment FIFO
@@ -1379,6 +1434,7 @@ export async function collectFIFOPayment(
               room_number: payment.room_number || snapshotRoomNum,
               pg_name: payment.pg_name || snapshotPgName
             });
+            paidDocRefs.push(paymentRef);
             remainingToCollect -= amountDue;
           } else {
             // Partially clear this charge
@@ -1406,6 +1462,7 @@ export async function collectFIFOPayment(
               room_number: payment.room_number || snapshotRoomNum,
               pg_name: payment.pg_name || snapshotPgName
             });
+            paidDocRefs.push(receiptRef);
 
             remainingToCollect = 0;
           }
@@ -1470,6 +1527,42 @@ export async function collectFIFOPayment(
         room_number: snapshotRoomNum,
         pg_name: snapshotPgName
       });
+      paidDocRefs.push(advanceRef);
+    }
+
+    // After processing, compute the total remaining pending for this tenant
+    // and stamp it on all payment docs we just modified/created, so the History
+    // page has an accurate pending_balance via real-time listener immediately.
+    const remainingPendingSnap = await adminDb.collection('payments')
+      .where('tenant_id', '==', tenantId)
+      .where('status', '==', 'pending')
+      .get();
+    const totalRemainingPending = remainingPendingSnap.docs.reduce((sum, d) => sum + (Number(d.data().amount) || 0), 0);
+
+    // Also check if there's virtual rent due (tenant has no pending docs but rent is overdue)
+    let virtualPending = 0;
+    if (totalRemainingPending === 0 && tenantData) {
+      const { getTenantPaymentStatus } = require('@/lib/paymentStatus');
+      const paidForVirtual = await adminDb.collection('payments')
+        .where('tenant_id', '==', tenantId)
+        .where('status', '==', 'paid')
+        .get();
+      const paidPayments = paidForVirtual.docs.map(d => d.data());
+      const statusInfo = getTenantPaymentStatus(tenantData, [], paidPayments, new Date());
+      if (['OVERDUE', 'CRITICAL', 'DUE_TODAY'].includes(statusInfo.status)) {
+        virtualPending = statusInfo.virtualRentRemaining !== undefined ? statusInfo.virtualRentRemaining : (Number(tenantData.rent_amount) || 0);
+      }
+    }
+
+    const finalPending = totalRemainingPending + virtualPending;
+
+    // Atomically update all the newly paid/modified documents with the computed pending_balance
+    if (paidDocRefs.length > 0) {
+      const batchUpdate = adminDb.batch();
+      for (const ref of paidDocRefs) {
+        batchUpdate.update(ref, { pending_balance: finalPending });
+      }
+      await batchUpdate.commit();
     }
 
     revalidatePath('/pgowner/dues');
@@ -2025,7 +2118,7 @@ export async function getTenantDues(tenantId: string) {
               payment_id: `due_${tenantId}`,
               tenant_id: tenantId,
               pg_id: t.pg_id || '',
-              amount: t.rent_amount || 0,
+              amount: statusInfo.virtualRentRemaining !== undefined ? statusInfo.virtualRentRemaining : (t.rent_amount || 0),
               month: statusInfo.virtualMonth || currentMonthName,
               status: 'pending',
               due_date: statusInfo.dueDate ? statusInfo.dueDate.toISOString() : new Date().toISOString(),
@@ -2072,5 +2165,64 @@ export async function getTenantActivityLogs(tenantId: string) {
     return { success: true, data: logs };
   } catch (err: any) {
     return { success: true, data: [] };
+  }
+}
+
+export async function getExpensesList(ownerId: string, pgId: string) {
+  try {
+    const expensesSnap = await adminDb.collection('expenses').where('pg_id', '==', pgId).get();
+    const expenses = expensesSnap.docs.map(d => ({ 
+      id: d.id, 
+      expense_id: d.id, 
+      ...d.data(),
+      created_at: d.data().created_at || new Date().toISOString()
+    }));
+    expenses.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return { success: true, data: expenses };
+  } catch (e: any) {
+    return { success: false, error: e.message || "Failed to fetch expenses list." };
+  }
+}
+
+export async function addExpense(expenseData: {
+  pg_id: string;
+  category: string;
+  date: string;
+  amount: number;
+  recorded_by: string;
+  notes?: string;
+  expense_id?: string;
+}) {
+  try {
+    const { pg_id, category, date, amount, recorded_by, notes = '', expense_id } = expenseData;
+    
+    const record = {
+      pg_id,
+      category,
+      date,
+      amount: Number(amount),
+      recorded_by,
+      notes,
+      created_at: new Date().toISOString()
+    };
+
+    let docRef;
+    if (expense_id) {
+      docRef = adminDb.collection('expenses').doc(expense_id);
+      await docRef.set(record);
+    } else {
+      docRef = await adminDb.collection('expenses').add(record);
+    }
+
+    return { 
+      success: true, 
+      data: { 
+        id: docRef.id, 
+        expense_id: docRef.id, 
+        ...record 
+      } 
+    };
+  } catch (e: any) {
+    return { success: false, error: e.message || "Failed to record expense." };
   }
 }

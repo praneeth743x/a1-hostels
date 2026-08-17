@@ -29,6 +29,7 @@ interface FilterState {
 }
 
 import { useHostel } from '@/context/HostelContext';
+import { getTenantPaymentStatus } from '@/lib/paymentStatus';
 import { useHostelData, notifyHostelDataChanged } from '@/hooks/useHostelData';
 import { getAppState } from '@/lib/appStateStore';
 
@@ -133,6 +134,12 @@ function HistoryPageContent() {
   const payments = useMemo<any[]>(() => {
     if (!rawPayments || rawPayments.length === 0) return [];
 
+    const parseAmount = (val: any) => {
+      if (!val) return 0;
+      if (typeof val === 'number') return val;
+      return Number(val.toString().replace(/,/g, '')) || 0;
+    };
+
     const tenantsMap: Record<string, any> = {};
     (storeTenants || []).forEach((t: any) => {
       const tid = t.tenant_id || t.id;
@@ -145,23 +152,66 @@ function HistoryPageContent() {
       if (rid) roomsMap[rid] = r;
     });
 
+    // Build duesMap: for each tenant, compute total outstanding balance
+    const duesMap: Record<string, number> = {};
+    const storeDues = effectiveHostelData?.dues || [];
+    const allStorePayments = effectiveHostelData?.payments || [];
+
+    // Method 1: Use getTenantPaymentStatus for tenants we know about
+    (storeTenants || []).forEach((t: any) => {
+      const statusInfo = getTenantPaymentStatus(t, storeDues, allStorePayments, new Date());
+      let totalDue = parseAmount(statusInfo.pendingAmount);
+      if (['OVERDUE', 'CRITICAL', 'DUE_TODAY'].includes(statusInfo.status)) {
+        totalDue += parseAmount(statusInfo.virtualRentRemaining !== undefined ? statusInfo.virtualRentRemaining : t.rent_amount);
+      }
+      
+      // Also check explicit store dues as fallback
+      const explicitDues = storeDues.filter((d: any) => (d.tenant_id === t.tenant_id || d.tenant_id === t.id) && (d.status === 'pending' || d.status === 'overdue'))
+                                    .reduce((sum: number, d: any) => sum + parseAmount(d.amount), 0);
+      
+      if (explicitDues > totalDue) {
+        totalDue = explicitDues;
+      }
+
+      const tid = t.tenant_id || t.id;
+      if (tid) duesMap[tid] = totalDue;
+    });
+
+    // Method 2: For any tenant_id found in payments but NOT in storeTenants,
+    // compute their pending directly from storeDues
+    const allPaymentTenantIds = new Set(rawPayments.map((p: any) => p.tenant_id || p.tenantId).filter(Boolean));
+    allPaymentTenantIds.forEach(tid => {
+      if (duesMap[tid] !== undefined) return; // already computed above
+      const explicitDues = storeDues.filter((d: any) => d.tenant_id === tid && (d.status === 'pending' || d.status === 'overdue'))
+                                    .reduce((sum: number, d: any) => sum + parseAmount(d.amount), 0);
+      duesMap[tid] = explicitDues;
+    });
+
     const enriched = rawPayments.map((p: any) => {
-      const tenant = tenantsMap[p.tenant_id] || tenantsMap[p.tenantId] || {};
+      const tenantId = p.tenant_id || p.tenantId;
+      const tenant = tenantsMap[tenantId] || {};
       const room = roomsMap[p.room_id] || roomsMap[tenant.room_id] || (typeof tenant.rooms === 'object' ? tenant.rooms : {}) || {};
+
+      // Use duesMap if available, otherwise fall back to payment's own pending_balance field
+      const computedPending = duesMap[tenantId];
+      const pendingTotal = computedPending !== undefined && computedPending > 0
+        ? computedPending
+        : parseAmount(p.pending_balance);
 
       return {
         ...p,
         tenant_name: p.tenant_name || tenant.full_name || tenant.name || 'Tenant',
         room_number: p.room_number || room.room_number || tenant.room_number || tenant.room || 'N/A',
         payment_date: p.payment_date || p.created_at || p.date || new Date().toISOString(),
-        facePicture: p.facePicture || tenant.face_picture || tenant.facePicture || tenant.documents?.photo || tenant.documents?.facePicture || tenant.documents?.photo_url || tenant.avatar || tenant.photo_url || tenant.photoUrl || null
+        facePicture: p.facePicture || tenant.face_picture || tenant.facePicture || tenant.documents?.photo || tenant.documents?.facePicture || tenant.documents?.photo_url || tenant.avatar || tenant.photo_url || tenant.photoUrl || null,
+        current_pending_total: pendingTotal
       };
     });
 
     return enriched.sort((a: any, b: any) => 
       new Date(b.payment_date || b.created_at || 0).getTime() - new Date(a.payment_date || a.created_at || 0).getTime()
     );
-  }, [rawPayments, storeTenants, storeRooms]);
+  }, [rawPayments, storeTenants, storeRooms, effectiveHostelData]);
 
   const baseFilteredPayments = useMemo(() => {
     return payments.filter((p: any) => {
@@ -277,7 +327,7 @@ function HistoryPageContent() {
       return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) + ', ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     };
 
-    const pendingFee = payment.pending_balance ? Number(payment.pending_balance) : 0;
+    const pendingFee = payment.current_pending_total !== undefined ? payment.current_pending_total : (payment.pending_balance ? Number(payment.pending_balance) : 0);
     const amountPaid = Number(payment.amount_paid || payment.amount);
     
     // Generate QR code data
@@ -868,7 +918,7 @@ function HistoryPageContent() {
           </div>
         ) : filteredPayments.length > 0 ? (
           filteredPayments.map((payment: any) => {
-            const pendingBal = Number(payment.pending_balance || 0);
+            const pendingBal = payment.current_pending_total !== undefined ? payment.current_pending_total : Number(payment.pending_balance || 0);
             const isClear = pendingBal <= 0;
             const isExpanded = expandedCardId === payment.payment_id;
 
@@ -962,7 +1012,7 @@ function HistoryPageContent() {
                           {isClear ? '⚪ Pending Fees:' : '🔴 Pending Fees Remaining:'}
                         </span>
                         <span style={{ color: isClear ? '#475569' : '#b91c1c', fontWeight: 700 }}>
-                          {payment.pending_fee_summary || (isClear ? 'None (Fully Cleared)' : `Remaining Balance (₹${pendingBal.toLocaleString('en-IN')})`)}
+                          {isClear ? 'None (Fully Cleared)' : `Remaining Balance (₹${pendingBal.toLocaleString('en-IN')})`}
                         </span>
                       </div>
                     </div>

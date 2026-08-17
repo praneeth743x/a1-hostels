@@ -1,4 +1,4 @@
-package com.staysync.app;
+package com.a1hostels.app;
 
 import com.getcapacitor.BridgeActivity;
 

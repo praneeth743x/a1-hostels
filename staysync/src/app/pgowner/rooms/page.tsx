@@ -61,6 +61,8 @@ export default function RoomsManager() {
   // Filter state
   const [activeFilter, setActiveFilter] = useState<string>(savedState.filter || 'All');
   const [localFilters, setLocalFilters] = useState<string>(savedState.filter || 'All');
+  const [activeSharingFilter, setActiveSharingFilter] = useState<string>(savedState.sharingFilter || 'All');
+  const [localSharingFilter, setLocalSharingFilter] = useState<string>(savedState.sharingFilter || 'All');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -72,14 +74,14 @@ export default function RoomsManager() {
 
   // Auto-expand all floors when a filter or search query is active so matching rooms list out immediately
   useEffect(() => {
-    if (activeFilter !== 'All' || searchQuery) {
+    if (activeFilter !== 'All' || activeSharingFilter !== 'All' || searchQuery) {
       const allOpen: Record<string, boolean> = {};
       floors.forEach(f => {
         allOpen[f.floor] = true;
       });
       setOpenFloors(prev => ({ ...prev, ...allOpen }));
     }
-  }, [activeFilter, searchQuery, floors]);
+  }, [activeFilter, activeSharingFilter, searchQuery, floors]);
 
   useEffect(() => {
     perfLogger.logNavigationStart('/pgowner/rooms');
@@ -91,8 +93,8 @@ export default function RoomsManager() {
   }, []);
 
   useEffect(() => {
-    setPageState('rooms', { filter: activeFilter });
-  }, [activeFilter, setPageState]);
+    setPageState('rooms', { filter: activeFilter, sharingFilter: activeSharingFilter });
+  }, [activeFilter, activeSharingFilter, setPageState]);
 
   // Modal state
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
@@ -552,7 +554,7 @@ export default function RoomsManager() {
             >
               <div className={styles.modalHeader}>
                 <h2>Filters</h2>
-                <button className={styles.resetBtn} onClick={() => { setLocalFilters('All'); setActiveFilter('All'); setIsFilterOpen(false); }}>Reset</button>
+                <button className={styles.resetBtn} onClick={() => { setLocalFilters('All'); setActiveFilter('All'); setLocalSharingFilter('All'); setActiveSharingFilter('All'); setIsFilterOpen(false); }}>Reset</button>
               </div>
               <div className={styles.modalBody}>
                 <div className={styles.filterSection}>
@@ -569,6 +571,21 @@ export default function RoomsManager() {
                     ))}
                   </div>
                 </div>
+
+                <div className={styles.filterSection} style={{ marginTop: '20px' }}>
+                  <h3>Room Sharing</h3>
+                  <div className={styles.optionsGrid}>
+                    {['All', '1', '2', '3', '4', '5', '6'].map(sharing => (
+                      <button 
+                        key={`share_${sharing}`}
+                        className={`${styles.filterOptionBtn} ${localSharingFilter === sharing ? styles.selected : ''}`}
+                        onClick={() => setLocalSharingFilter(sharing)}
+                      >
+                        {sharing === 'All' ? 'All' : `${sharing} Sharing`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
               <div className={styles.modalFooter}>
                 <button className={styles.cancelBtn} onClick={() => setIsFilterOpen(false)}>Cancel</button>
@@ -576,6 +593,7 @@ export default function RoomsManager() {
                   className={styles.applyBtn} 
                   onClick={() => {
                     setActiveFilter(localFilters);
+                    setActiveSharingFilter(localSharingFilter);
                     setIsFilterOpen(false);
                   }}
                 >
@@ -587,14 +605,21 @@ export default function RoomsManager() {
         )}
       </AnimatePresence>
 
-      {activeFilter !== 'All' && (
+      {(activeFilter !== 'All' || activeSharingFilter !== 'All') && (
         <div className={styles.activeFiltersRow}>
           <div className={styles.activeFiltersScroll}>
-            <div className={styles.activeFilterChip}>
-              {activeFilter} <button onClick={() => setActiveFilter('All')}><X size={12}/></button>
-            </div>
+            {activeFilter !== 'All' && (
+              <div className={styles.activeFilterChip}>
+                {activeFilter} <button onClick={() => setActiveFilter('All')}><X size={12}/></button>
+              </div>
+            )}
+            {activeSharingFilter !== 'All' && (
+              <div className={styles.activeFilterChip}>
+                {activeSharingFilter} Sharing <button onClick={() => setActiveSharingFilter('All')}><X size={12}/></button>
+              </div>
+            )}
           </div>
-          <button className={styles.clearAllFilters} onClick={() => setActiveFilter('All')}>
+          <button className={styles.clearAllFilters} onClick={() => { setActiveFilter('All'); setActiveSharingFilter('All'); }}>
             Clear
           </button>
         </div>
@@ -619,6 +644,8 @@ export default function RoomsManager() {
             if (activeFilter === 'Partial' && r.status !== 'partial') return false;
             if (activeFilter === 'Full' && r.status !== 'occupied') return false;
             if (activeFilter === 'Extra Fee' && (!r.extraFee || r.extraFee <= 0)) return false;
+
+            if (activeSharingFilter !== 'All' && String(r.beds) !== activeSharingFilter) return false;
 
             return true;
           });

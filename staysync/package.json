@@ -5,15 +5,24 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "pwa:build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cap:sync": "next build && npx cap sync",
+    "android:dev": "npm run cap:sync && npx cap open android",
+    "android:build": "npm run cap:sync && cd android && cmd /c \"set JAVA_HOME=C:\\Program Files\\Android\\Android Studio\\jbr&& .\\gradlew.bat assembleDebug\"",
+    "android:release": "npm run cap:sync && cd android && cmd /c \"set JAVA_HOME=C:\\Program Files\\Android\\Android Studio\\jbr&& .\\gradlew.bat bundleRelease\"",
+    "ios:dev": "npm run cap:sync && npx cap open ios",
+    "ios:sync": "npm run cap:sync"
   },
   "engines": {
     "node": "20"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
+    "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.4.2",
+    "@capacitor/ios": "^8.5.0",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@types/nodemailer": "^8.0.1",
     "axios": "^1.18.1",

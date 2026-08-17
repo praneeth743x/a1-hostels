@@ -107,6 +107,31 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   }, []);
 
+  // Capacitor Android Back Button Handling
+  useEffect(() => {
+    const isCap = typeof window !== 'undefined' && ((window as any).Capacitor || navigator.userAgent.includes('Capacitor'));
+    if (isCap) {
+      let backButtonListener: any = null;
+      import('@capacitor/app').then(({ App }) => {
+        App.addListener('backButton', (data) => {
+          if (data.canGoBack) {
+            window.history.back();
+          } else {
+            App.exitApp();
+          }
+        }).then(l => {
+          backButtonListener = l;
+        });
+      }).catch(console.error);
+
+      return () => {
+        if (backButtonListener) {
+          backButtonListener.remove();
+        }
+      };
+    }
+  }, []);
+
   // Subpage UI State Persistence
   const [pageStates, setPageStates] = useState<Record<string, { search?: string; filter?: any; scrollY?: number }>>({});
   const setPageState = useCallback((pageKey: string, state: { search?: string; filter?: any; scrollY?: number }) => {
