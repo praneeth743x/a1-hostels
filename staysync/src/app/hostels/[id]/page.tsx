@@ -125,7 +125,7 @@ export default function HostelDetailPage() {
           <ArrowLeft size={18} />
           <span>Discover Hostels</span>
         </button>
-        <div className={styles.brandTitle}>Himalaya Hostels</div>
+        <div className={styles.brandTitle}>A1 Hostels</div>
       </header>
 
       <main className={styles.mainContent}>
@@ -302,8 +302,8 @@ export default function HostelDetailPage() {
       {/* Footer */}
       <footer className={styles.pageFooter}>
         <div className={styles.footerInner}>
-          <div>Himalaya Hostels Premium Student &amp; Professional Hostels</div>
-          <p>© 2026 Himalaya Hostels Platform. High Class Hospitality Guaranteed.</p>
+          <div>A1 Hostels Premium Student &amp; Professional Hostels</div>
+          <p>© 2026 A1 Hostels Platform. High Class Hospitality Guaranteed.</p>
         </div>
       </footer>
     </div>

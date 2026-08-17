@@ -45,7 +45,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
     dateTimeStr,
     tenantName: paymentData?.tenant_name || tenantData?.full_name || tenantData?.name || 'Tenant',
     roomNumber: String(paymentData?.room_number || tenantData?.room_number || 'N/A'),
-    hostelName: paymentData?.pg_name || hostelData?.name || 'Himalaya Hostels',
+    hostelName: paymentData?.pg_name || hostelData?.name || 'A1 Hostels',
     paymentMethod: paymentData?.payment_method || paymentData?.method || 'UPI',
     pendingFee: Number(paymentData?.remaining_due || paymentData?.pending_balance || 0),
     amountPaid: Number(paymentData?.amount_paid || paymentData?.amount || 0),

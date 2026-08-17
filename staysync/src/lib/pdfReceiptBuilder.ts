@@ -65,7 +65,7 @@ export async function createRealReceiptPDFBuffer(params: PDFReceiptParams): Prom
     color: rgb(1, 1, 1)
   });
 
-  page.drawText(params.hostelName || 'Himalaya Hostels', {
+  page.drawText(params.hostelName || 'A1 Hostels', {
     x: cardX + 76,
     y: curY - 16,
     size: 18,

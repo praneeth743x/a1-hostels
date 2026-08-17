@@ -146,6 +146,32 @@ export default function MobileTenantDashboard() {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [modalStatus, setModalStatus] = useState<{ type: 'success' | 'error' | null; msg: string }>({ type: null, msg: '' });
   const [isSubmittingPassword, setIsSubmittingPassword] = useState<boolean>(false);
+  const [isSendingReset, setIsSendingReset] = useState<boolean>(false);
+
+  const handleSendResetLink = async () => {
+    setModalStatus({ type: null, msg: '' });
+    const targetEmail = dashboardData?.tenant?.email || auth.currentUser?.email;
+    if (!targetEmail) {
+      setModalStatus({ type: 'error', msg: 'No registered email address found for this account.' });
+      return;
+    }
+
+    setIsSendingReset(true);
+    try {
+      const { sendPasswordResetAction } = await import('@/app/actions/tenant');
+      const res = await sendPasswordResetAction(targetEmail, window.location.origin);
+      if (res.success) {
+        setModalStatus({ type: 'success', msg: res.message || `Password reset link sent to ${targetEmail}! Check your inbox.` });
+      } else {
+        setModalStatus({ type: 'error', msg: res.error || 'Failed to send password reset email.' });
+      }
+    } catch (err: any) {
+      console.warn("sendPasswordResetAction error:", err);
+      setModalStatus({ type: 'error', msg: 'Failed to send reset email.' });
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
 
   const handleVerifyGoogle = async () => {
     setIsVerifyingGoogle(true);
@@ -535,14 +561,89 @@ function TenantSkeletonLoader() {
             </motion.div>
           </div>
         )}
+
+        {isPasswordModalOpen && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)' }}>
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} style={{ background: 'white', padding: '24px', borderRadius: '12px', width: '90%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#0f172a', fontWeight: 700 }}>Reset Password</h3>
+                <button onClick={() => setIsPasswordModalOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={20} /></button>
+              </div>
+
+              {modalStatus.msg && (
+                <div style={{ padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.875rem', background: modalStatus.type === 'error' ? '#fef2f2' : '#f0fdf4', color: modalStatus.type === 'error' ? '#b91c1c' : '#15803d' }}>
+                  {modalStatus.msg}
+                </div>
+              )}
+
+              {!isGoogleVerified ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <p style={{ margin: '0 0 16px 0', color: '#64748b', fontSize: '0.9rem', lineHeight: 1.5 }}>
+                    Account: <strong>{tenant.email || auth.currentUser?.email || 'Not Provided'}</strong><br/>
+                    Choose a method to reset your password.
+                  </p>
+                  <button
+                    onClick={handleVerifyGoogle}
+                    disabled={isVerifyingGoogle}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '12px', background: '#4F46E5', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {isVerifyingGoogle ? 'Verifying...' : 'Verify with Google Account'}
+                  </button>
+                  
+                  <div style={{ textAlign: 'center', margin: '8px 0', color: '#94a3b8', fontSize: '0.85rem' }}>OR</div>
+                  
+                  <button
+                    onClick={handleSendResetLink}
+                    disabled={isSendingReset}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '12px', background: 'transparent', color: '#4F46E5', border: '1px solid #4F46E5', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {isSendingReset ? 'Sending...' : 'Send Reset Link to Email'}
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleUpdatePasswordInApp} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.875rem', fontWeight: 500, color: '#334155' }}>New Password</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showPassword ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={6} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} placeholder="Min 6 characters" />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.875rem', fontWeight: 500, color: '#334155' }}>Confirm Password</label>
+                    <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required minLength={6} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} placeholder="Must match new password" />
+                  </div>
+                  <button type="submit" disabled={isSubmittingPassword} style={{ width: '100%', padding: '12px', background: '#4F46E5', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', marginTop: '8px' }}>
+                    {isSubmittingPassword ? 'Updating...' : 'Update Password'}
+                  </button>
+                </form>
+              )}
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
 
     <div className={styles.appContainer}>
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
 
       <AnimatePresence mode="wait">
+        {loading && (
+          <motion.div
+            key="global-loading-skeleton"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2 }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+          >
+            <TenantSkeletonLoader />
+          </motion.div>
+        )}
+
         {/* VIEW 1: OVERVIEW DASHBOARD */}
-        {activeTab === 'Dashboard' && (
+        {!loading && activeTab === 'Dashboard' && (
           <motion.div 
             key="dashboard-view"
             initial={{ opacity: 0, y: 6 }}
@@ -551,10 +652,6 @@ function TenantSkeletonLoader() {
             transition={{ duration: 0.2 }}
             style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
           >
-            {loading ? (
-              <TenantSkeletonLoader />
-            ) : (
-              <>
             {/* KPI GRID (2x2) */}
             <div className={styles.mobileKpiGrid}>
               <div className={styles.mobileKpiCard}>
@@ -732,13 +829,11 @@ function TenantSkeletonLoader() {
                 )}
               </div>
             </div>
-          </>
-        )}
-      </motion.div>
+          </motion.div>
         )}
 
         {/* VIEW 2: PAYMENTS TAB */}
-        {activeTab === 'Payments' && (
+        {!loading && activeTab === 'Payments' && (
           <motion.div 
             key="payments-view"
             initial={{ opacity: 0, y: 6 }}
@@ -815,7 +910,7 @@ function TenantSkeletonLoader() {
         )}
 
         {/* VIEW 3: NOTICES TAB (Now Chat) */}
-        {activeTab === 'Notices' && (
+        {!loading && activeTab === 'Notices' && (
           <motion.div 
             key="notices-view"
             initial={{ opacity: 0, y: 6 }}
@@ -993,7 +1088,7 @@ function TenantSkeletonLoader() {
         )}
 
         {/* VIEW 4: COMPLAINTS TAB */}
-        {activeTab === 'Complaints' && (
+        {!loading && activeTab === 'Complaints' && (
           <motion.div 
             key="complaints-view"
             initial={{ opacity: 0, y: 6 }}
@@ -1289,7 +1384,7 @@ function TenantSkeletonLoader() {
                   <img src={tenant.face_picture} alt={tenant.full_name} className={styles.profileAvatarImg} />
                 ) : (
                   <div className={styles.profileAvatarFallback}>
-                    {tenant.full_name?.charAt(0).toUpperCase() || 'P'}
+                    {tenant.full_name?.charAt(0).toUpperCase() || 'T'}
                   </div>
                 )}
                 <div className={styles.profileVerifiedBadge}>
@@ -1298,9 +1393,9 @@ function TenantSkeletonLoader() {
               </div>
 
               <div className={styles.profileInfoRight}>
-                <h2 className={styles.profileName}>{tenant.full_name || 'Praneeth'}</h2>
+                <h2 className={styles.profileName}>{tenant.full_name || 'Tenant Name'}</h2>
                 <div className={styles.profileRoom}>
-                  {tenant.room_number ? `Room ${tenant.room_number}` : tenant.room?.room_number ? `Room ${tenant.room.room_number}` : 'Room 201'}
+                  {tenant.room_number ? `Room ${tenant.room_number}` : tenant.room?.room_number ? `Room ${tenant.room.room_number}` : 'Room Info'}
                 </div>
                 
                 <div className={styles.profileBadgeRow}>
@@ -1311,7 +1406,7 @@ function TenantSkeletonLoader() {
 
                 <div className={styles.profileHostelName}>
                   <Building size={14} />
-                  <span>{tenant.pg_name || 'Himalaya Hostel'}</span>
+                  <span>{tenant.pg_name || 'A1 Hostels'}</span>
                 </div>
               </div>
             </div>
@@ -1326,7 +1421,7 @@ function TenantSkeletonLoader() {
                   </div>
                   <div>
                     <div className={styles.profileInfoLabel}>Phone</div>
-                    <div className={styles.profileInfoValue}>{tenant.mobile || '9398699432'}</div>
+                    <div className={styles.profileInfoValue}>{tenant.mobile || 'Not Provided'}</div>
                   </div>
                 </div>
                 <ChevronRight size={16} color="#94A3B8" />
@@ -1340,7 +1435,7 @@ function TenantSkeletonLoader() {
                   </div>
                   <div>
                     <div className={styles.profileInfoLabel}>Email</div>
-                    <div className={styles.profileInfoValue}>{tenant.email || 'praneeth743x@gmail.com'}</div>
+                    <div className={styles.profileInfoValue}>{tenant.email || 'Not Provided'}</div>
                   </div>
                 </div>
                 <ChevronRight size={16} color="#94A3B8" />
@@ -1354,7 +1449,7 @@ function TenantSkeletonLoader() {
                   </div>
                   <div>
                     <div className={styles.profileInfoLabel}>Address</div>
-                    <div className={styles.profileInfoValue}>Hyderabad, Telangana, India</div>
+                    <div className={styles.profileInfoValue}>{tenant.address || 'Not Provided'}</div>
                   </div>
                 </div>
                 <ChevronRight size={16} color="#94A3B8" />
@@ -1369,7 +1464,7 @@ function TenantSkeletonLoader() {
                   <div>
                     <div className={styles.profileInfoLabel}>Check-in Date</div>
                     <div className={styles.profileInfoValue}>
-                      {tenant.move_in_date ? new Date(tenant.move_in_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '30 Jul 2026'}
+                      {tenant.move_in_date ? new Date(tenant.move_in_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not Provided'}
                     </div>
                   </div>
                 </div>
@@ -1380,20 +1475,20 @@ function TenantSkeletonLoader() {
             {/* 3. Quick Actions Section */}
             <div className={styles.quickActionsSection}>
               <h3 className={styles.quickActionsTitle}>Quick Actions</h3>
-              <div className={styles.quickActionsGrid}>
-                {/* Reset Password */}
-                <div className={styles.quickActionCard} onClick={() => setIsPasswordModalOpen(true)} role="button" tabIndex={0}>
-                  <div className={styles.quickActionLeft}>
-                    <div className={styles.quickActionIconBox}>
-                      <KeyRound size={18} />
-                    </div>
-                    <div>
-                      <div className={styles.quickActionName}>Reset Password</div>
-                      <div className={styles.quickActionSubtext}>Verify with Google to update</div>
-                    </div>
+              <div 
+                className={styles.quickActionItem} 
+                onClick={() => setIsPasswordModalOpen(true)}
+              >
+                <div className={styles.quickActionLeft}>
+                  <div className={styles.quickActionIconBox} style={{ color: '#4F46E5', background: '#EEF2FF' }}>
+                    <KeyRound size={18} />
                   </div>
-                  <ChevronRight size={16} color="#94A3B8" />
+                  <div>
+                    <div className={styles.quickActionLabel}>Reset Password</div>
+                    <div className={styles.quickActionSub}>Update your login credentials</div>
+                  </div>
                 </div>
+                <ChevronRight size={16} color="#94A3B8" />
               </div>
             </div>
 

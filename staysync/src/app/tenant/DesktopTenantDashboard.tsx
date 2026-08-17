@@ -4,13 +4,14 @@ import {
   Wallet, ShieldCheck, ArrowRight, AlertTriangle, 
   LogOut, Building,
   Search, HelpCircle, Download, CheckCircle2, QrCode,
-  ChevronDown, ChevronRight, Lock, Calendar, MessageSquare, MessageCircle, Send,
+  ChevronDown, ChevronRight, Lock, Calendar, MessageSquare, MessageCircle, Send, KeyRound, X,
   FileText, FileX, Zap, Droplet, Sparkles, Wifi, Utensils, Plus, Loader2, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { getTenantComplaints, submitComplaint, addTenantComplaintReply, clearTenantChat } from '@/app/actions/complaints';
+import { sendPasswordResetAction } from '@/app/actions/tenant';
 import styles from './DesktopTenantDashboard.module.css';
 
 interface DesktopTenantDashboardProps {
@@ -64,6 +65,10 @@ export default function DesktopTenantDashboard({
   // Chat Box State
   const [selectedChatThreadId, setSelectedChatThreadId] = useState<string | null>(null);
   const [chatReplyInput, setChatReplyInput] = useState('');
+  const [complaintReplyInput, setComplaintReplyInput] = useState('');
+  
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [resetModalStatus, setResetModalStatus] = useState<{ type: 'success' | 'error' | null; msg: string }>({ type: null, msg: '' });
   const [sendingChatReply, setSendingChatReply] = useState(false);
   const [isAttachMenuOpen, setIsAttachMenuOpen] = useState(false);
   const [localChatClearedAt, setLocalChatClearedAt] = useState<string | null>(null);
@@ -295,7 +300,7 @@ export default function DesktopTenantDashboard({
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       const invNum = `INV-${inv.month ? inv.month.toUpperCase() : '01'}`;
-      const desc = (inv.type || 'Rent Payment').toLowerCase();
+      const desc = (inv.description || inv.type || 'Rent Payment').toLowerCase();
       if (!invNum.toLowerCase().includes(term) && !desc.includes(term)) return false;
     }
     return true;
@@ -323,6 +328,28 @@ export default function DesktopTenantDashboard({
       sessionStorage.clear();
       sessionStorage.setItem('loggedOut', 'true');
       window.location.href = '/';
+    }
+  };
+
+  const handleSendResetLink = async () => {
+    setResetModalStatus({ type: null, msg: '' });
+    const targetEmail = tenant?.email || auth.currentUser?.email;
+    if (!targetEmail) {
+      setResetModalStatus({ type: 'error', msg: 'No email address found for this account.' });
+      return;
+    }
+    
+    setResetModalStatus({ type: 'success', msg: 'Generating secure reset link...' });
+    try {
+      const appUrl = window.location.origin;
+      const res = await sendPasswordResetAction(targetEmail, appUrl);
+      if (res.success) {
+        setResetModalStatus({ type: 'success', msg: '✅ Reset link sent! Check your inbox.' });
+      } else {
+        setResetModalStatus({ type: 'error', msg: res.error || 'Failed to send reset link.' });
+      }
+    } catch (err: any) {
+      setResetModalStatus({ type: 'error', msg: 'An unexpected error occurred.' });
     }
   };
 
@@ -454,7 +481,7 @@ export default function DesktopTenantDashboard({
                   <tr key={due.id}>
                     <td className={styles.fontMedium}>{dueDateStr}</td>
                     <td><span className={styles.invoiceBadge}>INV-{due.month ? due.month.toUpperCase() : 'RENT'}-01</span></td>
-                    <td>Rent Payment</td>
+                    <td><span style={{textTransform: 'capitalize'}}>{due.description || due.type || 'Rent Payment'}</span></td>
                     <td><span className={`${styles.statusChip} ${styles.chipDanger}`}>Overdue by {overdueDays} day(s)</span></td>
                     <td className={styles.fontMedium}>₹{Number(due.amount).toLocaleString('en-IN')}</td>
                     <td className={styles.textRight}>
@@ -484,7 +511,7 @@ export default function DesktopTenantDashboard({
                   <tr key={payment.id || index}>
                     <td className={styles.fontMedium}>{dueDateStr}</td>
                     <td><span className={styles.invoiceBadge}>INV-{payment.month ? payment.month.toUpperCase() : 'PAID'}-{index + 1}</span></td>
-                    <td>Rent Payment</td>
+                    <td><span style={{textTransform: 'capitalize'}}>{payment.description || payment.type || 'Rent Payment'}</span></td>
                     <td>
                       <span className={`${styles.statusChip} ${styles.chipSuccess}`}>Paid</span>
                       {paidLateDays > 0 && (
@@ -1423,6 +1450,9 @@ export default function DesktopTenantDashboard({
                 </div>
 
                 <div style={{ marginTop: '32px', display: 'flex', gap: '12px' }}>
+                  <button className={styles.btnOutline} onClick={() => setIsPasswordModalOpen(true)} style={{ color: 'var(--primary)', borderColor: 'var(--primary)' }}>
+                    <KeyRound size={16} /> Reset Password
+                  </button>
                   <button className={styles.btnOutline} onClick={handleLogout}>
                     <LogOut size={16} /> Sign Out of Account
                   </button>
@@ -1460,6 +1490,82 @@ export default function DesktopTenantDashboard({
         </div>
       </div>
     </div>
+
+    <AnimatePresence>
+      {isPasswordModalOpen && (
+        <div className={styles.modalOverlay} onClick={() => setIsPasswordModalOpen(false)}>
+          <motion.div 
+            className={styles.modalContent}
+            style={{ maxWidth: '400px', width: '90%' }}
+            initial={{ scale: 0.9, opacity: 0, y: 15 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 15 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <KeyRound size={20} color="var(--primary)" />
+                Reset Password
+              </h3>
+              <button 
+                onClick={() => setIsPasswordModalOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} color="var(--text-secondary)" />
+              </button>
+            </div>
+
+            <div className={styles.modalBody}>
+              <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                Account: <strong>{tenant?.email || auth.currentUser?.email || 'N/A'}</strong>
+              </p>
+
+              {resetModalStatus.msg && (
+                <div style={{
+                  padding: '12px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '0.85rem',
+                  fontWeight: 500,
+                  marginBottom: '16px',
+                  background: resetModalStatus.type === 'success' ? '#ECFDF5' : '#FEF2F2',
+                  color: resetModalStatus.type === 'success' ? '#065F46' : '#991B1B',
+                  border: `1px solid ${resetModalStatus.type === 'success' ? '#A7F3D0' : '#FECACA'}`
+                }}>
+                  {resetModalStatus.msg}
+                </div>
+              )}
+
+              <p style={{ margin: '0 0 20px 0', fontSize: '0.9rem', color: 'var(--text-tertiary)' }}>
+                Choose a method to reset your password. The email link will expire in exactly 1 minute.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button 
+                  className={styles.btnPrimary} 
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={() => {
+                    const email = tenant?.email || auth.currentUser?.email;
+                    if(email) window.open(`https://accounts.google.com/signin/recovery?Email=${encodeURIComponent(email)}`, '_blank');
+                  }}
+                >
+                  Verify with Google Account
+                </button>
+                
+                <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-tertiary)', margin: '4px 0', fontWeight: 600 }}>OR</div>
+                
+                <button 
+                  className={styles.btnOutline} 
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={handleSendResetLink}
+                >
+                  Send Reset Link to Email
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
     </>
   );
 }

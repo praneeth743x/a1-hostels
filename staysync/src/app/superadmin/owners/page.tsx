@@ -56,7 +56,7 @@ export default function PGOwnersPage() {
   // Landing Settings State
   const [showLandingModal, setShowLandingModal] = useState(false);
   const [landingLogoUrl, setLandingLogoUrl] = useState('/himalaya_logo.png');
-  const [landingSiteName, setLandingSiteName] = useState('Himalaya Hostels');
+  const [landingSiteName, setLandingSiteName] = useState('A1 Hostels');
   const [selectedTransition, setSelectedTransition] = useState('gradient_depixelate');
   const [slideDurationSeconds, setSlideDurationSeconds] = useState(1);
   const [headerOutlineColor, setHeaderOutlineColor] = useState('rgba(217, 119, 6, 0.3)');

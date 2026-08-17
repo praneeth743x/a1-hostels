@@ -9,8 +9,10 @@ import * as complaintsActions from '@/app/actions/complaints';
 import * as tenantActions from '@/app/actions/tenant';
 import * as whatsappActions from '@/app/actions/whatsappActions';
 import * as privacyActions from '@/app/actions/privacy';
+import * as profileActions from '@/app/actions/profile';
 
 const allActions: Record<string, any> = {
+  ...profileActions,
   ...pgownerActions,
   ...authActions,
   ...superadminActions,

@@ -613,7 +613,7 @@ function HistoryPageContent() {
                 <div class="brand">
                   <img src="/himalaya_logo_premium.png" alt="Logo" style="width: 34px; height: 34px; object-fit: contain; border-radius: 6px; margin-right: 12px;" />
                   <div>
-                    <div class="brand-name">${payment.pg_name || 'Himalaya Hostels'}</div>
+                    <div class="brand-name">${payment.pg_name || 'A1 Hostels'}</div>
                     <div class="brand-sub">Smart PG Management</div>
                   </div>
                 </div>

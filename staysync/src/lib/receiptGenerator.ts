@@ -318,7 +318,7 @@ export function generateReceiptHTML(data: ReceiptData): string {
         <div class="brand">
           <img src="/himalaya_logo_premium.png" alt="Logo" style="width: 34px; height: 34px; object-fit: contain; border-radius: 6px; margin-right: 12px;" />
           <div>
-            <div class="brand-name">${hostelName || 'Himalaya Hostels'}</div>
+            <div class="brand-name">${hostelName || 'A1 Hostels'}</div>
             <div class="brand-sub">Smart PG Management</div>
           </div>
         </div>

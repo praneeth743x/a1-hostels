@@ -1,7 +1,7 @@
 "use server";
 
 import { adminDb, adminAuth } from '@/lib/firebase-admin';
-import { sendDeletionConfirmationEmail } from '@/lib/email';
+import { sendDeletionConfirmationEmail, sendPasswordResetHTMLMail } from '@/lib/email';
 import { revalidatePath } from 'next/cache';
 import crypto from 'crypto';
 
@@ -96,27 +96,110 @@ export async function getTenantDashboardData(email: string) {
 
 export async function sendPasswordResetAction(email: string, appUrl: string) {
   try {
-    const actionCodeSettings = {
-      url: `${appUrl}/reset-password`,
-      handleCodeInApp: true,
-    };
-    let directAppResetLink = `${appUrl}/reset-password`;
-    try {
-      const rawLink = await adminAuth.generatePasswordResetLink(email, actionCodeSettings);
-      console.log('[RESET-LINK-GENERATED] Raw link:', rawLink);
-      const urlObj = new URL(rawLink);
-      const oobCode = urlObj.searchParams.get('oobCode');
-      if (oobCode) {
-        directAppResetLink = `${appUrl}/reset-password?oobCode=${oobCode}`;
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 60000).toISOString(); // 1 minute expiration
+
+    await adminDb.collection('password_resets').doc(token).set({
+      email,
+      expiresAt,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    });
+
+    const directAppResetLink = `${appUrl}/reset-password?token=${token}`;
+
+    let userName = 'User';
+    const tenantDocs = await adminDb.collection('tenants').where('email', '==', email).limit(1).get();
+    if (!tenantDocs.empty) {
+      const data = tenantDocs.docs[0].data();
+      userName = data.full_name || data.name || 'Tenant';
+    } else {
+      const profileDocs = await adminDb.collection('user_profiles').where('email', '==', email).limit(1).get();
+      if (!profileDocs.empty) {
+        const data = profileDocs.docs[0].data();
+        userName = data.full_name || data.name || 'Admin';
       }
-    } catch (adminErr: any) {
-      console.warn("adminAuth.generatePasswordResetLink fallback:", adminErr?.message);
     }
 
-    return { success: true, resetLink: directAppResetLink };
+    const emailSent = await sendPasswordResetHTMLMail(email, userName, directAppResetLink);
+    if (emailSent) {
+      return { success: true, message: 'Reset link sent successfully to your email!' };
+    } else {
+      return { success: false, error: 'Link generated, but failed to send email. Please contact support.' };
+    }
+
   } catch (err: any) {
     console.error("Error in sendPasswordResetAction:", err);
-    return { success: true, resetLink: `${appUrl}/reset-password` };
+    return { success: false, error: 'Failed to initiate password reset.' };
+  }
+}
+
+export async function verifyCustomResetToken(token: string) {
+  try {
+    const docRef = adminDb.collection('password_resets').doc(token);
+    const docSnap = await docRef.get();
+    
+    if (!docSnap.exists) {
+      return { success: false, error: 'Invalid or expired reset link.' };
+    }
+    
+    const data = docSnap.data();
+    if (data?.status !== 'pending') {
+      return { success: false, error: 'This reset link has already been used.' };
+    }
+    
+    const now = new Date();
+    const expiresAt = new Date(data?.expiresAt || 0);
+    
+    if (now > expiresAt) {
+      return { success: false, error: 'This password reset link has expired (1 minute limit).' };
+    }
+    
+    return { success: true, email: data.email };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function executeCustomPasswordReset(token: string, newPassword: string) {
+  try {
+    const docRef = adminDb.collection('password_resets').doc(token);
+    const docSnap = await docRef.get();
+    
+    if (!docSnap.exists) {
+      return { success: false, error: 'Invalid or expired reset link.' };
+    }
+    
+    const data = docSnap.data();
+    if (data?.status !== 'pending') {
+      return { success: false, error: 'This reset link has already been used.' };
+    }
+    
+    const now = new Date();
+    const expiresAt = new Date(data?.expiresAt || 0);
+    
+    if (now > expiresAt) {
+      return { success: false, error: 'This password reset link has expired (1 minute limit).' };
+    }
+    
+    if (newPassword.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters long.' };
+    }
+    
+    const email = data.email;
+    const userRecord = await adminAuth.getUserByEmail(email);
+    
+    await adminAuth.updateUser(userRecord.uid, { password: newPassword });
+    
+    await docRef.update({
+      status: 'completed',
+      completedAt: now.toISOString()
+    });
+    
+    return { success: true };
+  } catch (err: any) {
+    console.error("Custom password reset error:", err);
+    return { success: false, error: err.message || 'Failed to reset password.' };
   }
 }
 
@@ -164,7 +247,7 @@ export async function deleteTenantPermanently(tenantId: string) {
   try {
     let tenantName = 'Tenant';
     let roomNum = 'N/A';
-    let pgName = 'Himalaya Hostels';
+    let pgName = 'A1 Hostels';
 
     const tenantDoc = await adminDb.collection('tenants').doc(tenantId).get();
     if (tenantDoc.exists) {
@@ -180,7 +263,7 @@ export async function deleteTenantPermanently(tenantId: string) {
         }
       }
 
-      if ((!pgName || pgName === 'Himalaya Hostels') && tenantData.pg_id) {
+      if ((!pgName || pgName === 'A1 Hostels') && tenantData.pg_id) {
         const propDoc = await adminDb.collection('properties').doc(tenantData.pg_id).get();
         if (propDoc.exists) {
           pgName = propDoc.data()?.name || pgName;

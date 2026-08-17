@@ -12,7 +12,7 @@ export async function GET(req: Request) {
     paymentDate: '04 August 2026, 01:37 AM',
     category: 'Rent Payment',
     receiptId: 'SS-ZIYXO5UH',
-    hostelName: 'Himalaya stayin',
+    hostelName: 'A1 Hostels',
     pendingFee: 8465,
     roomNumber: '103'
   });

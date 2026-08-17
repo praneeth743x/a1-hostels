@@ -256,7 +256,7 @@ export async function updateComplaintStatus(complaintId: string, status: string,
 
       if (phone) {
         const statusLabel = status === 'resolved' ? 'RESOLVED ✅' : status === 'in-progress' ? 'IN PROGRESS ⏳' : 'PENDING 🕒';
-        const msg = `🔧 *Complaint Update - ${cData.pg_name || 'Himalaya Hostels'}*\n\nHi ${cData.tenant_name || 'Resident'},\nYour complaint regarding *${cData.category || 'Maintenance'}* ("${cData.description || 'Issue'}") has been updated to *${statusLabel}*.\n\nThank you for your patience!`;
+        const msg = `🔧 *Complaint Update - ${cData.pg_name || 'A1 Hostels'}*\n\nHi ${cData.tenant_name || 'Resident'},\nYour complaint regarding *${cData.category || 'Maintenance'}* ("${cData.description || 'Issue'}") has been updated to *${statusLabel}*.\n\nThank you for your patience!`;
         
         whatsappRes = await sendWhatsAppTextMessage(phone, msg, {
           tenantId: cData.tenant_id,

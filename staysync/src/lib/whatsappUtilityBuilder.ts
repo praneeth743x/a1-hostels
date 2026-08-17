@@ -47,7 +47,7 @@ export function validateUtilityMessage(content: string): void {
  */
 export function buildRentReminderUtilityMessage(params: RentReminderParams): string {
   const {
-    hostelName = 'Himalaya Hostels',
+    hostelName = 'A1 Hostels',
     tenantName,
     amount,
     dueMonth,
@@ -100,7 +100,7 @@ export function buildTenantWelcomeUtilityMessage(params: {
   paymentLink?: string;
 }): string {
   const {
-    hostelName = 'Himalaya Hostels',
+    hostelName = 'A1 Hostels',
     tenantName,
     roomNumber = 'N/A',
     moveInDate,
@@ -141,7 +141,7 @@ For support, please contact the hostel desk.`;
  */
 export function buildRentDueTodayUtilityMessage(params: RentReminderParams): string {
   const {
-    hostelName = 'Himalaya Hostels',
+    hostelName = 'A1 Hostels',
     tenantName,
     amount,
     dueMonth,
@@ -179,7 +179,7 @@ Ignore if already paid. For queries, contact management.`;
  */
 export function buildRentDueTomorrowUtilityMessage(params: RentReminderParams): string {
   const {
-    hostelName = 'Himalaya Hostels',
+    hostelName = 'A1 Hostels',
     tenantName,
     amount,
     dueMonth,
@@ -217,7 +217,7 @@ Ignore if already paid. For queries, contact management.`;
  */
 export function buildRentOverdueUtilityMessage(params: RentReminderParams & { overdueDays: number }): string {
   const {
-    hostelName = 'Himalaya Hostels',
+    hostelName = 'A1 Hostels',
     tenantName,
     amount,
     dueMonth,
@@ -264,7 +264,7 @@ export function buildFeeReceiptUtilityMessage(params: {
   receiptLink?: string;
 }): string {
   const {
-    hostelName = 'Himalaya Hostels',
+    hostelName = 'A1 Hostels',
     tenantName,
     amountPaid,
     paymentMethod = 'UPI',

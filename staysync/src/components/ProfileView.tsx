@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { User, Phone, Shield, Building, CreditCard, MapPin, Users, Camera, Edit2, Monitor, LogOut, Loader2, ChevronLeft, Home, Building2, ClipboardList, History, LifeBuoy, Wallet, Mail, Activity, KeyRound, Lock, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { User, Phone, Shield, Building, CreditCard, MapPin, Users, Camera, Edit2, Monitor, LogOut, Loader2, ChevronLeft, Home, Building2, ClipboardList, History, LifeBuoy, Wallet, Mail, Activity, KeyRound, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, updatePassword, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, collection, onSnapshot } from 'firebase/firestore';
@@ -28,7 +28,6 @@ export function ProfileView() {
   const [isSaving, setIsSaving] = useState(false);
   const [cachedRole, setCachedRole] = useState('PG Owner');
 
-  // Password reset state
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
@@ -36,6 +35,37 @@ export function ProfileView() {
   const [isResetSubmitting, setIsResetSubmitting] = useState(false);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
   const [resetStatus, setResetStatus] = useState<{ type: 'success' | 'error' | null; msg: string }>({ type: null, msg: '' });
+  const [isGoogleVerified, setIsGoogleVerified] = useState(false);
+  const [isVerifyingGoogle, setIsVerifyingGoogle] = useState(false);
+
+  const handleVerifyGoogle = async () => {
+    setIsVerifyingGoogle(true);
+    setResetStatus({ type: null, msg: '' });
+    try {
+      const { GoogleAuthProvider, signInWithPopup, reauthenticateWithPopup } = await import('firebase/auth');
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      
+      if (auth.currentUser) {
+        try {
+          await reauthenticateWithPopup(auth.currentUser, provider);
+        } catch (reauthErr) {
+          console.warn("reauth failed, falling back to popup", reauthErr);
+          await signInWithPopup(auth, provider);
+        }
+      } else {
+        await signInWithPopup(auth, provider);
+      }
+      
+      setIsGoogleVerified(true);
+      setResetStatus({ type: 'success', msg: 'Google identity verified! Set your new password below.' });
+    } catch (err: any) {
+      console.error("Google verification error:", err);
+      setResetStatus({ type: 'error', msg: err?.message || 'Google authentication failed.' });
+    } finally {
+      setIsVerifyingGoogle(false);
+    }
+  };
 
   const router = useRouter();
 
@@ -239,10 +269,15 @@ export function ProfileView() {
 
     setIsSendingResetEmail(true);
     try {
-      await sendPasswordResetEmail(auth, targetEmail);
-      setResetStatus({ type: 'success', msg: `Password reset link sent to ${targetEmail}! Check your inbox.` });
+      const { sendPasswordResetAction } = await import('@/app/actions/tenant');
+      const res = await sendPasswordResetAction(targetEmail, window.location.origin);
+      if (res.success) {
+        setResetStatus({ type: 'success', msg: res.message || `Password reset link sent to ${targetEmail}! Check your inbox.` });
+      } else {
+        setResetStatus({ type: 'error', msg: res.error || 'Failed to send password reset email.' });
+      }
     } catch (err: any) {
-      console.warn("sendPasswordResetEmail error:", err);
+      console.warn("sendPasswordResetAction error:", err);
       setResetStatus({ type: 'error', msg: err?.message || 'Failed to send password reset email.' });
     } finally {
       setIsSendingResetEmail(false);
@@ -423,27 +458,14 @@ export function ProfileView() {
 
           <button 
             type="button"
-            onClick={handleSendResetEmail}
-            disabled={isSendingResetEmail}
+            onClick={() => setIsResetModalOpen(true)}
             className={styles.editBtn}
             style={{ background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, padding: '10px 18px', borderRadius: '12px', cursor: 'pointer' }}
           >
-            {isSendingResetEmail ? <Loader2 className="animate-spin" size={16} /> : <Mail size={16} />}
-            Send Reset Email Link
+            <KeyRound size={16} />
+            Reset Password
           </button>
         </div>
-
-        {resetStatus.type === 'success' && (
-          <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', color: '#047857', padding: '12px 16px', borderRadius: '12px', marginTop: '14px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.86rem', fontWeight: 600 }}>
-            <CheckCircle2 size={16} /> {resetStatus.msg}
-          </div>
-        )}
-
-        {resetStatus.type === 'error' && (
-          <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', padding: '12px 16px', borderRadius: '12px', marginTop: '14px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.86rem', fontWeight: 600 }}>
-            <AlertCircle size={16} /> {resetStatus.msg}
-          </div>
-        )}
       </motion.div>
 
       {/* TEAM MEMBER PERMISSIONS & HOSTELS CARD */}
@@ -593,6 +615,71 @@ export function ProfileView() {
             </div>
           )}
         </motion.div>
+
+        {/* UNIFIED RESET PASSWORD MODAL */}
+        <AnimatePresence>
+          {isResetModalOpen && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)' }}>
+              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} style={{ background: 'white', padding: '24px', borderRadius: '12px', width: '90%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#0f172a', fontWeight: 700 }}>Reset Password</h3>
+                  <button onClick={() => { setIsResetModalOpen(false); setResetStatus({type: null, msg: ''}); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={20} /></button>
+                </div>
+
+                {resetStatus.msg && (
+                  <div style={{ padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.875rem', background: resetStatus.type === 'error' ? '#fef2f2' : '#f0fdf4', color: resetStatus.type === 'error' ? '#b91c1c' : '#15803d' }}>
+                    {resetStatus.msg}
+                  </div>
+                )}
+
+                {!isGoogleVerified ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <p style={{ margin: '0 0 16px 0', color: '#64748b', fontSize: '0.9rem', lineHeight: 1.5 }}>
+                      Account: <strong>{profile?.email || auth.currentUser?.email || 'Not Provided'}</strong><br/>
+                      Choose a method to reset your password.
+                    </p>
+                    <button
+                      onClick={handleVerifyGoogle}
+                      disabled={isVerifyingGoogle}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '12px', background: '#4F46E5', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      {isVerifyingGoogle ? 'Verifying...' : 'Verify with Google Account'}
+                    </button>
+                    
+                    <div style={{ textAlign: 'center', margin: '8px 0', color: '#94a3b8', fontSize: '0.85rem' }}>OR</div>
+                    
+                    <button
+                      onClick={handleSendResetEmail}
+                      disabled={isSendingResetEmail}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '12px', background: 'transparent', color: '#4F46E5', border: '1px solid #4F46E5', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      {isSendingResetEmail ? 'Sending...' : 'Send Reset Link to Email'}
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleDirectPasswordReset} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.875rem', fontWeight: 500, color: '#334155' }}>New Password</label>
+                      <div style={{ position: 'relative' }}>
+                        <input type={showPassword ? 'text' : 'password'} value={newPasswordInput} onChange={e => setNewPasswordInput(e.target.value)} required minLength={6} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} placeholder="Min 6 characters" />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.875rem', fontWeight: 500, color: '#334155' }}>Confirm Password</label>
+                      <input type={showPassword ? 'text' : 'password'} value={confirmPasswordInput} onChange={e => setConfirmPasswordInput(e.target.value)} required minLength={6} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} placeholder="Must match new password" />
+                    </div>
+                    <button type="submit" disabled={isResetSubmitting} style={{ width: '100%', padding: '12px', background: '#4F46E5', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', marginTop: '8px' }}>
+                      {isResetSubmitting ? 'Updating...' : 'Update Password'}
+                    </button>
+                  </form>
+                )}
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
     </div>
   );
 }

@@ -368,7 +368,7 @@ const getCachedLandingSettings = unstable_cache(
       success: true,
       data: {
         logoUrl: '/himalaya_logo.png',
-        siteName: 'Himalaya Hostels',
+        siteName: 'A1 Hostels',
         selectedTransition: 'gradient_depixelate',
         slideDurationSeconds: 1,
         slides: [

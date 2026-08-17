@@ -483,7 +483,7 @@ export async function createTaskAction(params: {
       progress: 0,
       due_date: params.dueDate,
       pg_id: params.pgId,
-      pg_name: params.pgName || 'Himalaya Hostels',
+      pg_name: params.pgName || 'A1 Hostels',
       assigned_to_id: params.assignedToId,
       assigned_to_name: params.assignedToName,
       assigned_by_id: params.ownerId,

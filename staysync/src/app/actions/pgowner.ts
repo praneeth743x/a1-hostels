@@ -86,7 +86,7 @@ export async function getInitialAppData(ownerId: string, selectedPgId: string | 
         const roomObj = roomsMap[t.room_id] || roomsMap[t.room] || null;
         return {
           ...t,
-          pg_name: currentProp?.name || 'Himalaya Hostels',
+          pg_name: currentProp?.name || 'A1 Hostels',
           room_number: roomObj?.room_number || t.room_number || t.room || 'N/A',
           rooms: roomObj ? { room_number: roomObj.room_number, floor: roomObj.floor } : (t.rooms || { room_number: t.room_number || t.room || 'N/A' })
         };
@@ -1317,14 +1317,14 @@ export async function collectFIFOPayment(
 
     let snapshotTenantName = tenantData?.full_name || tenantData?.name || 'Tenant';
     let snapshotRoomNum = tenantData?.room_number || tenantData?.room || 'N/A';
-    let snapshotPgName = tenantData?.pg_name || tenantData?.hostel || 'Himalaya Hostels';
+    let snapshotPgName = tenantData?.pg_name || tenantData?.hostel || 'A1 Hostels';
 
     if ((!snapshotRoomNum || snapshotRoomNum === 'N/A') && tenantData?.room_id) {
       const rDoc = await adminDb.collection('rooms').doc(tenantData.room_id).get();
       if (rDoc.exists) snapshotRoomNum = rDoc.data()?.room_number || snapshotRoomNum;
     }
 
-    if ((!snapshotPgName || snapshotPgName === 'Himalaya Hostels') && (pgId || tenantData?.pg_id)) {
+    if ((!snapshotPgName || snapshotPgName === 'A1 Hostels') && (pgId || tenantData?.pg_id)) {
       const pDoc = await adminDb.collection('properties').doc(pgId || tenantData?.pg_id).get();
       if (pDoc.exists) snapshotPgName = pDoc.data()?.name || snapshotPgName;
     }
@@ -1647,7 +1647,7 @@ export async function getPaymentHistory(uid: string, activePgId: string | null =
         ...p,
         tenant_name: p.tenant_name || tenant.full_name || tenant.name || 'Tenant',
         room_number: p.room_number || room.room_number || tenant.room_number || tenant.room || 'N/A',
-        pg_name: p.pg_name || property.name || tenant.pg_name || 'Himalaya Hostels'
+        pg_name: p.pg_name || property.name || tenant.pg_name || 'A1 Hostels'
       };
     });
 

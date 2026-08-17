@@ -131,7 +131,7 @@ export default function ExploreClient({ initialHostels }: { initialHostels: any[
               />
             </div>
             <div className={globalStyles.brandTitleColumn}>
-              <span className={globalStyles.brandTitleText}>HIMALAYA HOSTELS</span>
+              <span className={globalStyles.brandTitleText}>A1 HOSTELS</span>
               <span className={globalStyles.brandSubtitleText}>EXPLORE HOSTELS</span>
             </div>
           </Link>

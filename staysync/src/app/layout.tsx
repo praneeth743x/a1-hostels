@@ -15,7 +15,7 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'Himalaya Hostels | Premium Pg Hostels',
+  title: 'A1 Hostels | Premium Pg Hostels',
   description: 'Premium PG hostel living experience with modern amenities and 24/7 digital support.',
   manifest: '/manifest.json',
   icons: {
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Himalaya Hostels',
+    title: 'A1 Hostels',
   },
   formatDetection: {
     telephone: false,

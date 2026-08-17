@@ -464,10 +464,10 @@ export async function sendTenantWelcomeNotification(params: {
   let hostelName = params.hostelName;
   let rawMoveInDate = params.moveInDate;
 
-  if (params.tenantId && (!roomNumber || roomNumber === 'N/A' || !hostelName || hostelName === 'Himalaya Hostels' || !rawMoveInDate)) {
+  if (params.tenantId && (!roomNumber || roomNumber === 'N/A' || !hostelName || hostelName === 'A1 Hostels' || !rawMoveInDate)) {
     const res = await resolveTenantRoomAndPendingDues(params.tenantId);
     if (!roomNumber || roomNumber === 'N/A') roomNumber = res.roomNumber;
-    if (!hostelName || hostelName === 'Himalaya Hostels') hostelName = res.hostelName;
+    if (!hostelName || hostelName === 'A1 Hostels') hostelName = res.hostelName;
     if (!rawMoveInDate && res.moveInDate) rawMoveInDate = res.moveInDate;
   }
 
@@ -486,7 +486,7 @@ export async function sendTenantWelcomeNotification(params: {
 
   const parametersList = [
     params.tenantName || 'Tenant',
-    hostelName || 'Himalaya stayin',
+    hostelName || 'A1 Hostels',
     String(roomNumber || 'N/A'),
     formattedCheckInDate
   ];
@@ -524,7 +524,7 @@ export async function resolveTenantRoomAndPendingDues(
 ): Promise<{ roomNumber: string; pendingDues: number; hostelName: string; moveInDate?: string }> {
   let roomNumber = 'N/A';
   let pendingDues = 0;
-  let hostelName = 'Himalaya stayin';
+  let hostelName = 'A1 Hostels';
   let moveInDate: string | undefined = undefined;
 
   if (!tenantId && !providedTenantData) {
@@ -634,11 +634,11 @@ export async function sendFeeReceiptNotification(params: {
   if (params.tenantId || !roomNumber || roomNumber === 'N/A' || pendingFee === undefined || !hostelName) {
     const resolved = await resolveTenantRoomAndPendingDues(params.tenantId);
     if (!roomNumber || roomNumber === 'N/A') roomNumber = resolved.roomNumber;
-    if (!hostelName || hostelName === 'Himalaya stayin') hostelName = resolved.hostelName;
+    if (!hostelName || hostelName === 'A1 Hostels') hostelName = resolved.hostelName;
     if (pendingFee === undefined) pendingFee = resolved.pendingDues;
   }
 
-  hostelName = hostelName || 'Himalaya stayin';
+  hostelName = hostelName || 'A1 Hostels';
   roomNumber = roomNumber || 'N/A';
   pendingFee = pendingFee ?? 0;
 
@@ -736,7 +736,7 @@ export async function sendRentReminderWithLink(
   roomRent: number,
   dueMonth: string,
   invoiceId: string,
-  hostelName: string = 'Himalaya stayin',
+  hostelName: string = 'A1 Hostels',
   statusType: 'STANDARD' | 'DUE_TODAY' | 'DUE_TOMORROW' | 'OVERDUE' = 'STANDARD',
   overdueDays: number = 0,
   extraParams?: { tenantId?: string; triggeredBy?: string; roomNumber?: string; dueDateStr?: string }
@@ -746,10 +746,10 @@ export async function sendRentReminderWithLink(
 
   let roomNumber = extraParams?.roomNumber;
   let finalHostelName = hostelName;
-  if (extraParams?.tenantId && (!roomNumber || roomNumber === 'N/A' || !finalHostelName || finalHostelName === 'Himalaya Hostels')) {
+  if (extraParams?.tenantId && (!roomNumber || roomNumber === 'N/A' || !finalHostelName || finalHostelName === 'A1 Hostels')) {
     const res = await resolveTenantRoomAndPendingDues(extraParams.tenantId);
     if (!roomNumber || roomNumber === 'N/A') roomNumber = res.roomNumber;
-    if (!finalHostelName || finalHostelName === 'Himalaya Hostels') finalHostelName = res.hostelName;
+    if (!finalHostelName || finalHostelName === 'A1 Hostels') finalHostelName = res.hostelName;
   }
   if (!roomNumber) roomNumber = '101';
 

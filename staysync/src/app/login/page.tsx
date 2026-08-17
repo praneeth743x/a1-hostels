@@ -53,7 +53,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [siteName, setSiteName] = useState('Himalaya Hostels');
+  const [siteName, setSiteName] = useState('A1 Hostels');
   const [logoUrl, setLogoUrl] = useState('');
 
   useEffect(() => {
@@ -320,7 +320,13 @@ export default function LoginPage() {
       if (!exists) {
         throw new Error("This email is not registered.");
       }
-      await sendPasswordResetEmail(auth, targetEmail);
+      
+      const { sendPasswordResetAction } = await import('@/app/actions/tenant');
+      const res = await sendPasswordResetAction(targetEmail, window.location.origin);
+      if (!res.success) {
+        throw new Error(res.error || "Failed to send password reset email.");
+      }
+      
       setForgotPasswordMsg(`Password reset email sent to ${maskEmail(targetEmail)}! Please check your inbox.`);
     } catch (err: any) {
       setForgotPasswordMsg(err.message || "Failed to send reset email.");

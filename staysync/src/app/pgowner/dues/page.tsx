@@ -518,7 +518,7 @@ function DuesPageContent() {
         overdueDays,
         due.room_number || 'N/A',
         due.dueDateStr || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-        due.pg_name || 'Himalaya Hostels'
+        due.pg_name || 'A1 Hostels'
       );
 
       if (res.success) {
@@ -580,7 +580,7 @@ function DuesPageContent() {
           overdueDays,
           due.room_number || 'N/A',
           due.dueDateStr || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-          due.pg_name || 'Himalaya Hostels'
+          due.pg_name || 'A1 Hostels'
         );
         if (res.success) successCount++;
         else failCount++;

@@ -53,7 +53,7 @@ export async function sendRentReminderAction(
   overdueDays: number = 0,
   roomNumber: string = '101',
   dueDateStr: string = '1 Aug, 2026',
-  hostelName: string = 'Himalaya stayin'
+  hostelName: string = 'A1 Hostels'
 ): Promise<{ success: boolean; error?: any; data?: any }> {
   try {
     const res = await sendRentReminderMeta(
@@ -96,7 +96,7 @@ export async function sendBulkRentRemindersAction(
         item.roomRent,
         item.dueMonth,
         item.invoiceId,
-        'Himalaya Hostels',
+        'A1 Hostels',
         item.statusType || 'STANDARD',
         item.overdueDays || 0
       );

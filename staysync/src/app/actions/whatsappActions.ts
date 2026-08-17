@@ -35,7 +35,7 @@ export async function sendManualTenantNotificationAction(params: {
     const roomNumber = tenant.room_number || tenant.roomNumber || (tenant.room?.room_number) || 'N/A';
     const moveInDate = tenant.move_in_date || tenant.joiningDate || tenant.moveInDate || tenant.created_at || new Date().toISOString().split('T')[0];
     const securityDeposit = Number(tenant.security_deposit || tenant.securityDeposit || 0);
-    const hostelName = tenant.pg_name || tenant.hostelName || 'Himalaya stayin';
+    const hostelName = tenant.pg_name || tenant.hostelName || 'A1 Hostels';
 
     if (!phone) {
       return { success: false, error: 'Tenant has no valid phone number recorded' };
@@ -66,7 +66,7 @@ export async function sendManualTenantNotificationAction(params: {
           rentAmount,
           new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
           tenant.invoiceId || `INV-${Date.now().toString().slice(-6)}`,
-          tenant.hostelName || 'Himalaya Hostels',
+          tenant.hostelName || 'A1 Hostels',
           'DUE_TODAY',
           0,
           { tenantId: params.tenantId, triggeredBy: 'manual_due_reminder_btn' }
@@ -80,7 +80,7 @@ export async function sendManualTenantNotificationAction(params: {
           rentAmount,
           new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
           tenant.invoiceId || `INV-${Date.now().toString().slice(-6)}`,
-          tenant.hostelName || 'Himalaya Hostels',
+          tenant.hostelName || 'A1 Hostels',
           'OVERDUE',
           3,
           { tenantId: params.tenantId, triggeredBy: 'manual_overdue_reminder_btn' }
@@ -95,7 +95,7 @@ export async function sendManualTenantNotificationAction(params: {
           paymentMethod: 'UPI',
           paymentDate: new Date().toLocaleDateString(),
           receiptId: `REC-${Date.now().toString().slice(-6)}`,
-          hostelName: tenant.hostelName || 'Himalaya Hostels',
+          hostelName: tenant.hostelName || 'A1 Hostels',
           roomNumber,
           tenantId: params.tenantId,
           triggeredBy: 'manual_payment_confirmation_btn'

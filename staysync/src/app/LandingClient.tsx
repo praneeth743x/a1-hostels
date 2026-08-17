@@ -237,7 +237,7 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
   };
 
   const [logoUrl, setLogoUrl] = useState(initialSettings?.logoUrl || '/himalaya_logo_premium.png');
-  const [siteName, setSiteName] = useState(initialSettings?.siteName || 'Himalaya Hostels');
+  const [siteName, setSiteName] = useState(initialSettings?.siteName || 'A1 Hostels');
   const [selectedTransition, setSelectedTransition] = useState(initialSettings?.selectedTransition || 'gradient_depixelate');
   const [slideDurationSeconds, setSlideDurationSeconds] = useState(initialSettings?.slideDurationSeconds ?? 1);
   const [headerOutlineColor, setHeaderOutlineColor] = useState(initialSettings?.headerOutlineColor || 'rgba(217, 119, 6, 0.3)');
@@ -434,7 +434,7 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
               />
             </div>
             <div className={styles.brandTitleColumn}>
-              <span className={styles.brandTitleText}>{siteName || 'HIMALAYA HOSTELS'}</span>
+              <span className={styles.brandTitleText}>{siteName || 'A1 HOSTELS'}</span>
               <span className={styles.brandSubtitleText}>SINCE 2018 • PREMIUM PG & HOSTEL LIVING</span>
             </div>
           </div>
@@ -617,7 +617,7 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
           </h1>
 
           <p className={styles.contextText}>
-            Redefining luxury, safety, and comfort in PG & hostel living at Himalaya Hostels. Experience curated living spaces equipped with automated room management, high-speed fiber internet, hygienic dining, and 24/7 digital resident support.
+            Redefining luxury, safety, and comfort in PG & hostel living at A1 Hostels. Experience curated living spaces equipped with automated room management, high-speed fiber internet, hygienic dining, and 24/7 digital resident support.
           </p>
 
           <div className={styles.contextCtaRow}>

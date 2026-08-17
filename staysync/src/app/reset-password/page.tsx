@@ -10,7 +10,7 @@ import { verifyPasswordResetCode, confirmPasswordReset } from 'firebase/auth';
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const oobCode = searchParams.get('oobCode');
+  const token = searchParams.get('token');
 
   const [email, setEmail] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState<string>('');
@@ -21,23 +21,28 @@ function ResetPasswordForm() {
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null; msg: string }>({ type: null, msg: '' });
 
   useEffect(() => {
-    if (!oobCode) {
-      setEmail('praneeth743x@gmail.com');
+    if (!token) {
+      setEmail('praneeth743x@gmail.com'); // fallback dummy email if no token
       setLoading(false);
       return;
     }
 
-    verifyPasswordResetCode(auth, oobCode)
-      .then((userEmail) => {
-        setEmail(userEmail);
+    import('@/app/actions/tenant').then(({ verifyCustomResetToken }) => {
+      verifyCustomResetToken(token).then((res) => {
+        if (res.success && res.email) {
+          setEmail(res.email);
+        } else {
+          setStatus({ type: 'error', msg: res.error || 'Invalid or expired link.' });
+          setEmail('praneeth743x@gmail.com');
+        }
         setLoading(false);
-      })
-      .catch((err) => {
-        console.warn("verifyPasswordResetCode error:", err?.code || err?.message);
+      }).catch((err) => {
+        setStatus({ type: 'error', msg: 'Failed to verify token.' });
         setEmail('praneeth743x@gmail.com');
         setLoading(false);
       });
-  }, [oobCode]);
+    });
+  }, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,18 +60,22 @@ function ResetPasswordForm() {
     setStatus({ type: null, msg: '' });
 
     try {
-      if (oobCode) {
-        try {
-          await confirmPasswordReset(auth, oobCode, newPassword);
+      if (token) {
+        const { executeCustomPasswordReset } = await import('@/app/actions/tenant');
+        const res = await executeCustomPasswordReset(token, newPassword);
+        
+        if (res.success) {
           setStatus({ type: 'success', msg: 'Your password has been reset successfully! 🎉' });
           setIsSubmitting(false);
           return;
-        } catch (clientErr: any) {
-          console.warn("confirmPasswordReset client error:", clientErr?.code || clientErr?.message);
+        } else {
+          setStatus({ type: 'error', msg: res.error || 'Failed to reset password.' });
+          setIsSubmitting(false);
+          return;
         }
       }
 
-      // Fallback to Server-Side Admin Auth update (bypasses operation-not-allowed)
+      // Fallback to Server-Side Admin Auth update if no token
       const { resetTenantPasswordAdmin } = await import('@/app/actions/tenant');
       const targetEmail = email || auth.currentUser?.email || 'praneeth743x@gmail.com';
       const res = await resetTenantPasswordAdmin(targetEmail, newPassword);
@@ -101,7 +110,7 @@ function ResetPasswordForm() {
           <Building size={22} />
         </div>
         <div>
-          <div style={{ fontWeight: 800, fontSize: '1.2rem', color: '#0F172A', lineHeight: 1.1 }}>Himalaya stayin</div>
+          <div style={{ fontWeight: 800, fontSize: '1.2rem', color: '#0F172A', lineHeight: 1.1 }}>A1 Hostels</div>
           <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600 }}>Tenant Portal</div>
         </div>
       </div>

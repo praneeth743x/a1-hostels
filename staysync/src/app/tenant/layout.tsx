@@ -19,7 +19,7 @@ export default function TenantLayout({
   children: React.ReactNode
 }) {
   const router = useRouter();
-  const [hostelName, setHostelName] = useState<string>('Himalaya stayin');
+  const [hostelName, setHostelName] = useState<string>('A1 Hostels');
   const [isNotifOpen, setIsNotifOpen] = useState<boolean>(false);
   const [unreadCount, setUnreadCount] = useState<number>(2);
   const isDesktop = useMediaQuery('(min-width: 1024px)');

@@ -382,7 +382,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     // 1. Send Payment Test Push Alert
     await triggerPWANotification(
       testId1,
-      `[Himalaya Stayin] Fee Collected: ₹5,000`,
+      `[A1 Hostels] Fee Collected: ₹5,000`,
       `Payment received from Rahul Sharma (Room 102)`,
       'payment',
       `${routePrefix}/history`
@@ -392,7 +392,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     setTimeout(async () => {
       await triggerPWANotification(
         testId2,
-        `[Himalaya Stayin] Tenant Complaint / Message`,
+        `[A1 Hostels] Tenant Complaint / Message`,
         `Rahul Sharma (Room 102): "Tap leaking in bathroom"`,
         'complaint',
         `${routePrefix}/complaints`
@@ -404,7 +404,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
       {
         id: testId1,
         type: 'payment',
-        title: '[Himalaya Stayin] Fee Collected: ₹5,000',
+        title: '[A1 Hostels] Fee Collected: ₹5,000',
         message: 'Payment received from Rahul Sharma (Room 102)',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         link: `${routePrefix}/history`,
@@ -414,7 +414,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
       {
         id: testId2,
         type: 'complaint',
-        title: '[Himalaya Stayin] Tenant Complaint / Message',
+        title: '[A1 Hostels] Tenant Complaint / Message',
         message: 'Rahul Sharma (Room 102): "Tap leaking in bathroom"',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         link: `${routePrefix}/complaints`,
