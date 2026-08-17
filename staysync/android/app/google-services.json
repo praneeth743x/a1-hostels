@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "601498292075",
+    "project_id": "a1-hostels",
+    "storage_bucket": "a1-hostels.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:601498292075:android:00911308feb5f0fa22462e",
+        "android_client_info": {
+          "package_name": "com.a1hostels.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "601498292075-nk9av1v4u208ctoqcnq927n6nbdr3rm3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDz9IGGAkee4O5fhwDWsuvIxoQHukqQMQI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "601498292075-nk9av1v4u208ctoqcnq927n6nbdr3rm3.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
