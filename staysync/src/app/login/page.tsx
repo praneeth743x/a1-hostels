@@ -201,20 +201,7 @@ export default function LoginPage() {
       
       let user;
       
-      if (isCapacitor) {
-        // Native Google Sign-In using Capacitor plugin
-        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-        const { signInWithCredential } = await import('firebase/auth');
-        
-        const nativeResult = await FirebaseAuthentication.signInWithGoogle();
-        const idToken = nativeResult.credential?.idToken;
-        
-        if (!idToken) throw new Error("Failed to retrieve Google credential token.");
-        
-        const credential = GoogleAuthProvider.credential(idToken);
-        const webResult = await signInWithCredential(auth, credential);
-        user = webResult.user;
-      } else if (isMobile || isStandalone || (navigator.userAgent || '').toLowerCase().includes('wv')) {
+      if (isMobile || isStandalone || (typeof navigator !== 'undefined' && (navigator.userAgent || '').toLowerCase().includes('wv')) || isCapacitor) {
         // Mobile/WebView environments: Use Redirect to avoid popup blockers and disallowed_useragent errors
         await signInWithRedirect(auth, provider);
         return; // Execution stops here as browser redirects
