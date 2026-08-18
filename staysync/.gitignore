@@ -44,3 +44,7 @@ next-env.d.ts
 public/a1-hostels.apk
 android/app/build/
 ios/App/build/
+
+# Firebase secrets
+google-services.json
+GoogleService-Info.plist
