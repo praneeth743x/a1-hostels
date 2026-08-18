@@ -272,15 +272,16 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
 
   const loadSettings = async () => {
     const res = await getLandingSettings();
-    if (res.success && res.data) {
-      if (res.data.logoUrl) setLogoUrl(res.data.logoUrl);
-      if (res.data.siteName) setSiteName(res.data.siteName);
-      if (res.data.selectedTransition) setSelectedTransition(res.data.selectedTransition);
-      if (res.data.slideDurationSeconds !== undefined) setSlideDurationSeconds(res.data.slideDurationSeconds);
-      if (res.data.headerOutlineColor) setHeaderOutlineColor(res.data.headerOutlineColor);
-      if (res.data.headerOutlineThickness !== undefined) setHeaderOutlineThickness(res.data.headerOutlineThickness);
-      if (res.data.slides && res.data.slides.length > 0) {
-        const nextSlides = res.data.slides;
+    const data = (res as any).data;
+    if (res.success && data) {
+      if (data.logoUrl) setLogoUrl(data.logoUrl);
+      if (data.siteName) setSiteName(data.siteName);
+      if (data.selectedTransition) setSelectedTransition(data.selectedTransition);
+      if (data.slideDurationSeconds !== undefined) setSlideDurationSeconds(data.slideDurationSeconds);
+      if (data.headerOutlineColor) setHeaderOutlineColor(data.headerOutlineColor);
+      if (data.headerOutlineThickness !== undefined) setHeaderOutlineThickness(data.headerOutlineThickness);
+      if (data.slides && data.slides.length > 0) {
+        const nextSlides = data.slides;
         const newSlidesJson = JSON.stringify(nextSlides);
         setSlides((prev) => {
           if (JSON.stringify(prev) === newSlidesJson) return prev;
@@ -298,8 +299,8 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
   const loadHostels = async () => {
     try {
       const res = await getPublicHostels();
-      if (res.success && res.data && res.data.length > 0) {
-        setHostels(res.data);
+      if (res.success && (res as any).data && (res as any).data.length > 0) {
+        setHostels((res as any).data as PublicHostel[]);
       }
     } catch (e) {}
   };

@@ -52,8 +52,8 @@ const WhatsappIcon = ({ size = 24, color = "currentColor", fill = "currentColor"
 
 
 const getSortPriority = (d: any) => {
-  const isPaused = d.tenantStatus === 'Paused' || d.tenantStatus === 'PAUSED' || d.isPaused;
-  const isVacated = d.tenantStatus === 'Vacated' || d.tenantStatus === 'VACATED' || d.is_active === false;
+  const isPaused = d.tenantStatus === 'Paused' || d.tenantStatus === 'PAUSED';
+  const isVacated = d.tenantStatus === 'Vacated' || d.tenantStatus === 'vacated' || d.tenantStatus === 'VACATED';
   
   const dueDays = d.dueDays ?? d.oldestDueDays ?? 0;
   
@@ -729,12 +729,10 @@ function DuesPageContent() {
 
   
 
-  const paidCount = activeTenants.filter(t => t.is_active !== false && !pendingDueTenantIds.has(t.tenant_id)).length;
-
+  
   
 
-  const dueCount = activeTenants.filter(t => t.is_active !== false && pendingDueTenantIds.has(t.tenant_id)).length;
-
+  
 
 
   const combinedList = [...dues];
@@ -1251,7 +1249,7 @@ function DuesPageContent() {
 
             {filteredList.map((due) => {
               const isPaused = due.tenantStatus === 'Paused' || due.tenantStatus === 'PAUSED';
-              const isVacated = due.tenantStatus === 'Vacated' || due.tenantStatus === 'VACATED' || due.is_active === false;
+              const isVacated = due.tenantStatus === 'Vacated' || due.tenantStatus === 'vacated' || due.tenantStatus === 'VACATED';
               const accentColor = isVacated ? '#94A3B8'
                                 : isPaused ? '#F59E0B'
                                 : due.isOverdue ? '#EF4444'

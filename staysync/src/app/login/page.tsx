@@ -356,35 +356,6 @@ export default function LoginPage() {
 
   return (
     <div className={styles.loginPageContainer}>
-      {/* Go to Home Page Button (Hidden in Mobile PWA Standalone Mode) */}
-      {!isStandalonePwa && (
-        <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 50 }}>
-          <button
-            type="button"
-            onClick={() => router.push('/')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 18px',
-              borderRadius: '24px',
-              background: 'rgba(255, 255, 255, 0.12)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
-              color: '#FFFFFF',
-              fontSize: '0.88rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <ArrowLeft size={18} />
-            <span>Go to Home Page</span>
-          </button>
-        </div>
-      )}
 
       <div className={styles.ambientBackground}>
         <div className={styles.glowPink}></div>

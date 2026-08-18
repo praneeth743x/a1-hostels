@@ -26,8 +26,8 @@ interface HostelContextType {
   authStatus: AuthStatus;
   
   // Keep-Alive UI State Preservation
-  pageStates: Record<string, { search?: string; filter?: any; scrollY?: number }>;
-  setPageState: (pageKey: string, state: { search?: string; filter?: any; scrollY?: number }) => void;
+  pageStates: Record<string, { search?: string; filter?: any; scrollY?: number; sharingFilter?: any }>;
+  setPageState: (pageKey: string, state: { search?: string; filter?: any; scrollY?: number; sharingFilter?: any }) => void;
   
   // RBAC helper methods
   hasPermission: (permissionKey: keyof TeamMemberPermissions) => boolean;
@@ -133,8 +133,8 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   // Subpage UI State Persistence
-  const [pageStates, setPageStates] = useState<Record<string, { search?: string; filter?: any; scrollY?: number }>>({});
-  const setPageState = useCallback((pageKey: string, state: { search?: string; filter?: any; scrollY?: number }) => {
+  const [pageStates, setPageStates] = useState<Record<string, { search?: string; filter?: any; scrollY?: number; sharingFilter?: any }>>({});
+  const setPageState = useCallback((pageKey: string, state: { search?: string; filter?: any; scrollY?: number; sharingFilter?: any }) => {
     setPageStates((prev) => ({
       ...prev,
       [pageKey]: { ...prev[pageKey], ...state }
