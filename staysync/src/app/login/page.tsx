@@ -471,30 +471,30 @@ export default function LoginPage() {
               </form>
             </div>
             
-            <div style={{ marginTop: '14px' }}>
-              <InstallPWAButton />
-            </div>
-
-            <div className={styles.nativeDownloadRow}>
-              <a href="/a1-hostels.apk" download className={styles.nativeDownloadBtn}>
-                🤖 Android App
-              </a>
-              <button 
-                onClick={() => alert("iOS Users: Please tap the 'Download Web App' button above, then select 'Add to Home Screen' from your Safari share menu to install A1 Hostels as an app.")} 
-                type="button" 
-                className={styles.nativeDownloadBtn}
-              >
-                🍏 iOS App
-              </button>
-            </div>
-
-            <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '0.75rem', color: '#94a3b8' }}>
-              <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#64748b', textDecoration: 'none', fontWeight: 600 }}>
-                Privacy Policy & Data Protection
-              </a>
-            </div>
-            
           </motion.div>
+          
+          <div style={{ marginTop: '14px', width: '100%', maxWidth: '360px', alignSelf: 'center' }}>
+            <InstallPWAButton />
+          </div>
+
+          <div className={styles.nativeDownloadRow} style={{ marginTop: '12px', width: '100%', maxWidth: '360px', alignSelf: 'center' }}>
+            <a href="/downloads/a1-hostels.apk" download className={styles.nativeDownloadBtn}>
+              🤖 Android App
+            </a>
+            <button 
+              onClick={() => alert("iOS Users: Please tap the 'Download Web App' button above, then select 'Add to Home Screen' from your Safari share menu to install A1 Hostels as an app.")} 
+              type="button" 
+              className={styles.nativeDownloadBtn}
+            >
+              🍏 iOS App
+            </button>
+          </div>
+
+          <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '0.75rem', color: '#94a3b8', width: '100%', maxWidth: '360px', alignSelf: 'center' }}>
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#64748b', textDecoration: 'none', fontWeight: 600 }}>
+              Privacy Policy & Data Protection
+            </a>
+          </div>
         </div>
       </div>
 
