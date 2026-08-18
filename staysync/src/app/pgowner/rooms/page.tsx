@@ -524,7 +524,7 @@ export default function RoomsManager() {
           <Search size={18} color="#94a3b8" />
           <input 
             type="text" 
-            placeholder="Search by room number..." 
+            placeholder="Search room, name, or phone..." 
             className={styles.searchInput}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

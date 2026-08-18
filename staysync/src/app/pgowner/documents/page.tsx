@@ -364,17 +364,12 @@ export default function DocumentsPage() {
 
       {/* ── BREADCRUMB BAR (MATCHING ATTACHED IMAGE 1) ── */}
       {openedFolder && (
-        <div className={styles.breadcrumbBar}>
-          <div className={styles.backLink} onClick={() => setOpenedFolder(null)}>
-            <ArrowLeft size={16} /> back to parent folder
-          </div>
-          <span style={{ color: '#94A3B8' }}>/</span>
-          <span style={{ color: '#0F172A', fontWeight: 800 }}>📁 {openedFolder.name}</span>
-          <span className={styles.statusTag} style={getFolderBadgeColor(openedFolder.status)}>
-            {openedFolder.status}
-          </span>
+        <div className={styles.modernFolderHeader}>
+          <div className={styles.folderHeaderTop}>
+            <button className={styles.backBtnModern} onClick={() => setOpenedFolder(null)}>
+              <ArrowLeft size={16} /> Back to Folders
+            </button>
 
-          <div style={{ marginLeft: 'auto' }}>
             <button
               onClick={() => downloadFolderAsZip(openedFolder)}
               disabled={downloadingZipId === openedFolder.id}
@@ -385,8 +380,18 @@ export default function DocumentsPage() {
               ) : (
                 <Archive size={14} />
               )}
-              Download Total Folder (ZIP)
+              Download ZIP
             </button>
+          </div>
+
+          <div className={styles.folderHeaderBottom}>
+            <h2 className={styles.folderTitleLarge}>
+              <Folder size={26} color="#D97706" fill="#D97706" />
+              {openedFolder.name}
+            </h2>
+            <span className={styles.statusTag} style={getFolderBadgeColor(openedFolder.status)}>
+              {openedFolder.status}
+            </span>
           </div>
         </div>
       )}
@@ -485,9 +490,9 @@ export default function DocumentsPage() {
         )
       ) : (
         /* LEVEL 2: INSIDE OPENED TENANT FOLDER FILES DIRECTORY TABLE */
-        <div className={styles.fileTableContainer}>
+        <div className={styles.modernFileGrid}>
           {openedFolder.docs.length === 0 ? (
-            <div className={styles.emptyFolderState}>
+            <div className={styles.emptyFolderState} style={{ gridColumn: '1 / -1' }}>
               <ShieldAlert size={48} color="#CBD5E1" style={{ margin: '0 auto 14px' }} />
               <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0F172A', margin: 0 }}>No Uploaded Documents</h3>
               <p style={{ fontSize: '0.85rem', color: '#64748B', marginTop: '6px' }}>
@@ -495,74 +500,55 @@ export default function DocumentsPage() {
               </p>
             </div>
           ) : (
-            <table className={styles.fileTable}>
-              <thead>
-                <tr>
-                  <th>Document File Name</th>
-                  <th>Format / Type</th>
-                  <th>File Size</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {openedFolder.docs.map((docItem) => {
-                  const isPdf = docItem.url.toLowerCase().includes('.pdf') || docItem.filename.toLowerCase().endsWith('.pdf');
-                  return (
-                    <tr key={docItem.id}>
-                      <td>
-                        <div className={styles.fileNameCell}>
-                          <div className={styles.iconBoxFile} style={{ background: isPdf ? '#FEE2E2' : '#EEF2FF', color: isPdf ? '#DC2626' : '#4F46E5' }}>
-                            {isPdf ? <FileText size={20} /> : <ImageIcon size={20} />}
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0F172A' }}>{docItem.title}</div>
-                            <div style={{ fontSize: '0.78rem', color: '#64748B' }}>{docItem.filename}</div>
-                          </div>
-                        </div>
-                      </td>
+            openedFolder.docs.map((docItem) => {
+              const isPdf = docItem.url.toLowerCase().includes('.pdf') || docItem.filename.toLowerCase().endsWith('.pdf');
+              return (
+                <div key={docItem.id} className={styles.modernFileCard}>
+                  <div className={styles.modernFileCardHeader}>
+                    <div className={`${styles.modernFileIconBox} ${isPdf ? styles.pdfType : styles.imageType}`}>
+                      {isPdf ? <FileText size={24} /> : <ImageIcon size={24} />}
+                    </div>
+                    <div className={styles.modernFileInfo}>
+                      <div className={styles.modernFileTitle} title={docItem.title}>{docItem.title}</div>
+                      <div className={styles.modernFileSubtitle} title={docItem.filename}>{docItem.filename}</div>
+                    </div>
+                  </div>
 
-                      <td>
-                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: isPdf ? '#DC2626' : '#4F46E5' }}>
-                          {isPdf ? 'PDF Document' : 'Image File (JPEG/PNG)'}
-                        </span>
-                      </td>
+                  <div className={styles.modernFileMeta}>
+                    <div className={`${styles.modernFileTypeBadge} ${isPdf ? styles.pdfBadge : styles.imageBadge}`}>
+                      {isPdf ? 'PDF Document' : 'Image (JPEG/PNG)'}
+                    </div>
 
-                      <td>
-                        <span style={{ fontSize: '0.82rem', color: '#64748B', fontWeight: 600 }}>
-                          {isPdf ? 'PDF' : 'Image'}
-                        </span>
-                      </td>
+                    <div className={styles.modernFileActions}>
+                      <button 
+                        className={styles.modernActionBtn}
+                        title="Preview Document"
+                        onClick={() => {
+                          if (!isPdf) {
+                            setPreviewImage({ url: docItem.url, title: docItem.title });
+                          } else {
+                            window.open(docItem.url, '_blank');
+                          }
+                        }}
+                      >
+                        <Eye size={16} />
+                      </button>
 
-                      <td style={{ textAlign: 'right' }}>
-                        <button 
-                          className={styles.tableActionBtn}
-                          onClick={() => {
-                            if (!isPdf) {
-                              setPreviewImage({ url: docItem.url, title: docItem.title });
-                            } else {
-                              window.open(docItem.url, '_blank');
-                            }
-                          }}
-                        >
-                          <Eye size={14} /> Preview
-                        </button>
-
-                        <a 
-                          href={docItem.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          download={docItem.filename}
-                          className={styles.tableZipBtn}
-                          style={{ textDecoration: 'none' }}
-                        >
-                          <Download size={14} /> Save
-                        </a>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      <a 
+                        href={docItem.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        download={docItem.filename}
+                        className={`${styles.modernActionBtn} ${styles.primary}`}
+                        title="Download Document"
+                      >
+                        <Download size={16} />
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       )}

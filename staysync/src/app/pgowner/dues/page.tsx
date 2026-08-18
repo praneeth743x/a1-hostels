@@ -258,6 +258,11 @@ function DuesPageContent() {
   }, [storeDues, storeTenants, storePayments]);
 
   const showSkeleton = isHostelLoading && !effectiveHostelData && !!activePgId;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [paidPayments, setPaidPayments] = useState<any[]>([]);
   const [successModalData, setSuccessModalData] = useState<any>(null);
   const [ownerId, setOwnerId] = useState<string | null>(null);
@@ -855,12 +860,12 @@ function DuesPageContent() {
 
   const totalPendingFee = dues.reduce((sum, d) => sum + (d.amount || 0), 0);
 
+  if (!mounted || showSkeleton) {
+    return <SkeletonDuesPage />;
+  }
+
   return (
-
     <div className={styles.container}>
-
-
-
       <AnimatePresence>
 
         {isFilterOpen && (

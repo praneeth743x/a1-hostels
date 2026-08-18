@@ -423,10 +423,6 @@ export async function getProperties(ownerId: string) {
       .where('owner_id', '==', effectiveOwnerId)
       .get();
     
-    if (snapshot.empty) {
-      snapshot = await adminDb.collection('properties').get();
-    }
-    
     let data = snapshot.docs.map(doc => doc.data());
     data.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
@@ -442,10 +438,15 @@ export async function getProperties(ownerId: string) {
       const roomsSnap = await adminDb.collection('rooms').where('pg_id', '==', pgId).get();
       const roomsCount = roomsSnap.size;
       
-      // Calculate total capacity
+      // Calculate total capacity and filled rooms
       let totalCapacity = 0;
+      let filledRoomsCount = 0;
       roomsSnap.docs.forEach(d => {
-        totalCapacity += (d.data().total_beds || 0);
+        const rData = d.data();
+        totalCapacity += (rData.total_beds || 0);
+        if (rData.status === 'occupied' || rData.status === 'partial') {
+          filledRoomsCount++;
+        }
       });
       const occupancyRate = totalCapacity > 0 ? Math.round((tenantCount / totalCapacity) * 100) : 0;
       
@@ -461,7 +462,9 @@ export async function getProperties(ownerId: string) {
         calculatedTenantCount: tenantCount,
         calculatedRoomsCount: roomsCount,
         calculatedOccupancyRate: occupancyRate,
-        calculatedPendingDues: pendingDues
+        calculatedPendingDues: pendingDues,
+        calculatedTotalCapacity: totalCapacity,
+        calculatedFilledRoomsCount: filledRoomsCount
       };
     }
 
@@ -1385,34 +1388,82 @@ export async function collectFIFOPayment(
     // 1. Fetch all pending payments for the tenant
     const pendingSnap = await adminDb.collection('payments')
       .where('tenant_id', '==', tenantId)
-      .where('status', '==', 'pending')
+      .where('status', 'in', ['pending', 'overdue'])
       .get();
-      
     const paidDocRefs: any[] = [];
     if (!pendingSnap.empty) {
-      let pendingPayments = pendingSnap.docs.map(doc => doc.data());
+      let pendingPayments = pendingSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
       
+      // Inject virtual selected charges that aren't in the DB
       if (Array.isArray(selectedPaymentIds) && selectedPaymentIds.length > 0) {
+        if (selectedPaymentIds.includes(`virtual-deposit-${tenantId}`)) {
+           pendingPayments.push({
+             id: `virtual-deposit-${tenantId}`,
+             payment_id: `virtual-deposit-${tenantId}`,
+             tenant_id: tenantId,
+             amount: Number(tenantData?.security_deposit || tenantData?.securityDeposit || 0),
+             type: 'security_deposit',
+             description: 'Security Deposit',
+             is_virtual: true
+           });
+        }
+        if (selectedPaymentIds.includes(`virtual-rent-${tenantId}`)) {
+           pendingPayments.push({
+             id: `virtual-rent-${tenantId}`,
+             payment_id: `virtual-rent-${tenantId}`,
+             tenant_id: tenantId,
+             amount: Number(tenantData?.rent_amount || tenantData?.rent || 0),
+             type: 'monthly_rent',
+             description: 'Monthly Rent',
+             is_virtual: true
+           });
+        }
+
         const filtered = pendingPayments.filter(p => selectedPaymentIds.includes(p.payment_id || p.id));
         if (filtered.length > 0) pendingPayments = filtered;
       }
 
       // Sort them by oldest first based on created_at or due date logic
-      pendingPayments.sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+      pendingPayments.sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
 
       // If collecting 0 rupees (waived or 0 rupee entry): mark pending charges as paid with 0 amount_paid
       if (totalAmount === 0) {
         for (const payment of pendingPayments) {
-          const paymentRef = adminDb.collection('payments').doc(payment.payment_id || payment.id);
-          await paymentRef.update({
-            status: 'paid',
-            amount_paid: 0,
-            payment_method: method || 'Cash',
-            payment_date: new Date().toISOString(),
-            tenant_name: payment.tenant_name || snapshotTenantName,
-            room_number: payment.room_number || snapshotRoomNum,
-            pg_name: payment.pg_name || snapshotPgName
-          });
+          const isVirtual = payment.is_virtual || payment.id?.startsWith('virtual-');
+          const paymentRef = isVirtual ? adminDb.collection('payments').doc() : adminDb.collection('payments').doc(payment.payment_id || payment.id);
+          
+          if (isVirtual) {
+            await paymentRef.set({
+              payment_id: paymentRef.id,
+              tenant_id: tenantId,
+              pg_id: pgId || tenantData?.pg_id,
+              type: payment.type,
+              description: payment.description,
+              amount: payment.amount,
+              original_amount: payment.amount,
+              status: 'paid',
+              amount_paid: 0,
+              payment_method: method || 'Cash',
+              payment_date: new Date().toISOString(),
+              tenant_name: payment.tenant_name || snapshotTenantName,
+              room_number: payment.room_number || snapshotRoomNum,
+              pg_name: payment.pg_name || snapshotPgName,
+              created_at: new Date().toISOString()
+            });
+            if (payment.type === 'security_deposit') {
+              await adminDb.collection('tenants').doc(tenantId).update({ security_deposit_paid: true });
+            }
+          } else {
+            await paymentRef.update({
+              status: 'paid',
+              amount_paid: 0,
+              payment_method: method || 'Cash',
+              payment_date: new Date().toISOString(),
+              tenant_name: payment.tenant_name || snapshotTenantName,
+              room_number: payment.room_number || snapshotRoomNum,
+              pg_name: payment.pg_name || snapshotPgName
+            });
+          }
           paidDocRefs.push(paymentRef);
         }
       } else {
@@ -1420,43 +1471,91 @@ export async function collectFIFOPayment(
         for (const payment of pendingPayments) {
           if (remainingToCollect <= 0) break;
 
-          const paymentRef = adminDb.collection('payments').doc(payment.payment_id || payment.id);
+          const isVirtual = payment.is_virtual || payment.id?.startsWith('virtual-');
+          const paymentRef = isVirtual ? adminDb.collection('payments').doc() : adminDb.collection('payments').doc(payment.payment_id || payment.id);
           const amountDue = payment.amount || 0;
 
           if (remainingToCollect >= amountDue) {
             // Fully clear this charge
-            await paymentRef.update({
-              status: 'paid',
-              amount_paid: amountDue,
-              payment_method: method,
-              payment_date: new Date().toISOString(),
-              tenant_name: payment.tenant_name || snapshotTenantName,
-              room_number: payment.room_number || snapshotRoomNum,
-              pg_name: payment.pg_name || snapshotPgName
-            });
+            if (isVirtual) {
+              await paymentRef.set({
+                payment_id: paymentRef.id,
+                tenant_id: tenantId,
+                pg_id: pgId || tenantData?.pg_id,
+                type: payment.type,
+                description: payment.description,
+                amount: amountDue,
+                original_amount: amountDue,
+                status: 'paid',
+                amount_paid: amountDue,
+                payment_method: method || 'Cash',
+                payment_date: new Date().toISOString(),
+                tenant_name: payment.tenant_name || snapshotTenantName,
+                room_number: payment.room_number || snapshotRoomNum,
+                pg_name: payment.pg_name || snapshotPgName,
+                created_at: new Date().toISOString()
+              });
+              if (payment.type === 'security_deposit') {
+                await adminDb.collection('tenants').doc(tenantId).update({ security_deposit_paid: true });
+              }
+            } else {
+              await paymentRef.update({
+                status: 'paid',
+                amount_paid: amountDue,
+                payment_method: method || 'Cash',
+                payment_date: new Date().toISOString(),
+                tenant_name: payment.tenant_name || snapshotTenantName,
+                room_number: payment.room_number || snapshotRoomNum,
+                pg_name: payment.pg_name || snapshotPgName
+              });
+            }
             paidDocRefs.push(paymentRef);
             remainingToCollect -= amountDue;
           } else {
             // Partially clear this charge
-            const newRemaining = amountDue - remainingToCollect;
+            if (isVirtual) {
+              await paymentRef.set({
+                payment_id: paymentRef.id,
+                tenant_id: tenantId,
+                pg_id: pgId || tenantData?.pg_id,
+                type: payment.type,
+                description: payment.description,
+                amount: amountDue,
+                original_amount: amountDue,
+                status: 'paid',
+                amount_paid: remainingToCollect,
+                pending_balance: amountDue - remainingToCollect,
+                payment_method: method || 'Cash',
+                payment_date: new Date().toISOString(),
+                tenant_name: payment.tenant_name || snapshotTenantName,
+                room_number: payment.room_number || snapshotRoomNum,
+                pg_name: payment.pg_name || snapshotPgName,
+                created_at: new Date().toISOString()
+              });
+            } else {
+              await paymentRef.update({
+                status: 'paid',
+                amount_paid: remainingToCollect,
+                pending_balance: amountDue - remainingToCollect,
+                payment_method: method || 'Cash',
+                payment_date: new Date().toISOString(),
+                tenant_name: payment.tenant_name || snapshotTenantName,
+                room_number: payment.room_number || snapshotRoomNum,
+                pg_name: payment.pg_name || snapshotPgName
+              });
+            }
             
-            await paymentRef.update({
-              amount: newRemaining,
-              is_partially_paid: true
-            });
-
+            // Create a receipt doc for partial payment
             const receiptRef = adminDb.collection('payments').doc();
             await receiptRef.set({
               ...payment,
               payment_id: receiptRef.id,
-              amount: remainingToCollect,
-              amount_paid: remainingToCollect,
-              original_amount: amountDue,
-              pending_balance: newRemaining,
               status: 'paid',
-              payment_method: method,
+              amount_paid: remainingToCollect,
+              amount: remainingToCollect,
+              description: `Partial payment for ${payment.description || payment.type}`,
+              payment_method: method || 'Cash',
               payment_date: new Date().toISOString(),
-              is_partial: true,
               created_at: new Date().toISOString(),
               tenant_name: payment.tenant_name || snapshotTenantName,
               room_number: payment.room_number || snapshotRoomNum,
