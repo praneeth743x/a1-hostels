@@ -1238,7 +1238,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                 <h1 className={styles.mobileHeaderTitle} suppressHydrationWarning>{pageTitle}</h1>
                 {isMounted && properties.length > 0 ? (
                   <span className={styles.mobileHeaderSubtitle}>
-                    {siteName} {userProfile?.role === 'team_member' ? '• TEAM MEMBER' : ''}
+                    {selectedProperty?.name || siteName} {userProfile?.role === 'team_member' ? '• TEAM MEMBER' : ''}
                   </span>
                 ) : isMounted && properties.length === 0 ? (
                   <span className={styles.mobileHeaderSubtitle}>

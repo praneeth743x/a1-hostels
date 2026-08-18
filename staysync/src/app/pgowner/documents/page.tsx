@@ -115,7 +115,6 @@ export default function DocumentsPage() {
   const { properties: contextProps } = useHostel();
 
   const [loading, setLoading] = useState(true);
-  const [properties, setProperties] = useState<any[]>(contextProps || []);
   const [selectedHostel, setSelectedHostel] = useState<string>('all');
 
   const [tenants, setTenants] = useState<any[]>([]);
@@ -136,20 +135,16 @@ export default function DocumentsPage() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          // Fetch Properties
-          const propsRes = await getProperties(user.uid);
-          if (propsRes.success && propsRes.data) {
-            setProperties(propsRes.data);
-          }
+          // Fetch Team Members & Tenants in parallel to reduce load time
+          const [teamRes, tenantsRes] = await Promise.all([
+            getTeamMembersAction(user.uid).catch(e => ({ success: false, data: [] })),
+            getTenants(user.uid, 'all').catch(e => ({ success: false, data: [] }))
+          ]);
 
-          // Fetch Team Members
-          const teamRes = await getTeamMembersAction(user.uid);
           if (teamRes.success && teamRes.data) {
             setTeamMembers(teamRes.data);
           }
-
-          // Fetch ALL Tenants across ALL properties
-          const tenantsRes = await getTenants(user.uid, 'all');
+          
           if (tenantsRes.success && tenantsRes.data) {
             setTenants(tenantsRes.data);
           }
@@ -327,7 +322,7 @@ export default function DocumentsPage() {
             onChange={(e) => setSelectedHostel(e.target.value)}
           >
             <option value="all">🏢 All Hostels</option>
-            {properties.map(p => (
+            {contextProps && contextProps.map(p => (
               <option key={p.pg_id || p.id} value={p.pg_id || p.id}>{p.name}</option>
             ))}
           </select>

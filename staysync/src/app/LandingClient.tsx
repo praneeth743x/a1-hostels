@@ -209,7 +209,14 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
       const userRole = localStorage.getItem('userRole');
       const isExplicitLoggedOut = sessionStorage.getItem('loggedOut') === 'true';
 
-      if (!isExplicitLoggedOut && (isLoggedIn || isStandalone)) {
+      if (isStandalone) {
+        if (isLoggedIn && !isExplicitLoggedOut) {
+          const target = userRole === 'super_admin' ? '/superadmin/owners' : (userRole === 'team_member' || userRole === 'pg_owner') ? '/pgowner/dashboard' : userRole === 'tenant' ? '/tenant' : '/pgowner/dashboard';
+          router.replace(target);
+        } else {
+          router.replace('/login');
+        }
+      } else if (!isExplicitLoggedOut && isLoggedIn) {
         const target = userRole === 'super_admin' ? '/superadmin/owners' : (userRole === 'team_member' || userRole === 'pg_owner') ? '/pgowner/dashboard' : userRole === 'tenant' ? '/tenant' : '/pgowner/dashboard';
         router.replace(target);
       }

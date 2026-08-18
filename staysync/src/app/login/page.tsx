@@ -199,8 +199,26 @@ export default function LoginPage() {
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
       const isCapacitor = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
       
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      let user;
+      
+      if (isCapacitor) {
+        // Native Google Sign-In using Capacitor plugin
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        const { signInWithCredential } = await import('firebase/auth');
+        
+        const nativeResult = await FirebaseAuthentication.signInWithGoogle();
+        const idToken = nativeResult.credential?.idToken;
+        
+        if (!idToken) throw new Error("Failed to retrieve Google credential token.");
+        
+        const credential = GoogleAuthProvider.credential(idToken);
+        const webResult = await signInWithCredential(auth, credential);
+        user = webResult.user;
+      } else {
+        // Web-based Google Sign-In popup
+        const result = await signInWithPopup(auth, provider);
+        user = result.user;
+      }
 
       if (!user.email) throw new Error("Google account must have an email.");
 

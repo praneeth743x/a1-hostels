@@ -50,7 +50,7 @@ export default function RootLayout({
                 var pathname = window.location.pathname;
                 if (pathname === '/' || pathname === '') {
                   var isCapacitor = window.Capacitor || (window.parent && window.parent.Capacitor) || navigator.userAgent.includes('Capacitor');
-                  var isPWA = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+                  var isPWA = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches || navigator.standalone || document.referrer.includes('android-app://');
                   if (isCapacitor || isPWA) {
                     window.location.replace('/login');
                   }
