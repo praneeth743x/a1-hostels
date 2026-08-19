@@ -329,7 +329,7 @@ export default function DesktopTenantDashboard({
       localStorage.clear();
       sessionStorage.clear();
       sessionStorage.setItem('loggedOut', 'true');
-      window.location.href = '/';
+      window.location.href = '/login';
     }
   };
 

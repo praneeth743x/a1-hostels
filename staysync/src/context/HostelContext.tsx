@@ -5,11 +5,12 @@ import { getPersistedActiveHostel, savePersistedActiveHostel, clearPersistedActi
 import { rpcCall } from '@/lib/rpc';
 import { perfLogger } from '@/lib/perfLogger';
 import { auth, db } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, getRedirectResult, signOut } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { PERMISSIONS, ALL_PERMISSIONS_GRANTED, NO_PERMISSIONS, type TeamMemberPermissions, PermissionService } from '@/permissions';
 import { initAppStateStore, getAppState, setAppState } from '@/lib/appStateStore';
 import { startupTracer } from '@/lib/startupTracer';
+import { saveToCache } from '@/lib/cache';
 
 export type AuthStatus = 'BOOTING' | 'RESTORE_AUTH' | 'RESTORE_APP_STATE' | 'VALIDATE_SESSION' | 'READY' | 'UNAUTHENTICATED';
 
@@ -112,6 +113,65 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   }, []);
 
+  // Global Google Redirect Result Resolution
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      getRedirectResult(auth)
+        .then(async (result) => {
+          if (result && result.user) {
+            console.log('Processed Google redirect result successfully:', result.user.email);
+            const user = result.user;
+            if (!user.email) throw new Error("Google account must have an email.");
+
+            setAuthStatus('VALIDATE_SESSION');
+
+            const meta = await rpcCall('getLoginAuthMeta', user.uid, user.email);
+            if (!meta?.exists) {
+              await signOut(auth);
+              throw new Error("This email is not registered. Please ask your PG Owner to add you.");
+            }
+
+            if (!meta?.isInitialized) {
+              await rpcCall('markAccountInitialized', user.email).catch(() => {});
+            }
+
+            // Register device and resolve role
+            let deviceId = localStorage.getItem('deviceId');
+            if (!deviceId) {
+              deviceId = Math.random().toString(36).substring(2, 15);
+              localStorage.setItem('deviceId', deviceId);
+            }
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            const deviceName = isMobile ? 'Mobile App' : 'Web Browser';
+            await rpcCall('registerDevice', user.uid, deviceId, deviceName).catch(console.error);
+
+            const fetchedRole = await rpcCall('getResolvedRole', user.uid, user.email);
+            if (!fetchedRole || (typeof fetchedRole === 'object' && fetchedRole.error)) {
+              throw new Error((typeof fetchedRole === 'object' && fetchedRole.error) || "Role not found. Please contact support.");
+            }
+            const roleStr = typeof fetchedRole === 'string' ? fetchedRole : fetchedRole.role;
+
+            localStorage.setItem('isLoggedIn', 'true');
+            localStorage.setItem('userUid', user.uid);
+            localStorage.setItem('userRole', roleStr);
+            sessionStorage.removeItem('loggedOut');
+
+            const target = roleStr === 'super_admin' ? '/superadmin/owners' : roleStr === 'team_member' ? '/teammember/dashboard' : roleStr === 'pg_owner' ? '/pgowner/dashboard' : '/tenant';
+            window.location.href = target;
+          }
+        })
+        .catch((error) => {
+          console.error('Redirect result error in global context:', error);
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('redirect_login_error', error.message || 'Failed to sign in with Google.');
+            if (window.location.pathname !== '/login') {
+              window.location.href = '/login';
+            }
+          }
+        });
+    }
+  }, []);
+
   // Capacitor Android Back Button Handling
   useEffect(() => {
     const isCap = typeof window !== 'undefined' && ((window as any).Capacitor || navigator.userAgent.includes('Capacitor'));
@@ -207,6 +267,7 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setAppState('properties', res.data);
         if (typeof window !== 'undefined') {
           try { localStorage.setItem('cached_properties_list', JSON.stringify(res.data)); } catch (e) {}
+          saveToCache(`properties_${uid}`, res.data);
         }
 
         if (res.data.length === 0) {
@@ -333,6 +394,7 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setAppState('properties', res.data);
         if (typeof window !== 'undefined') {
           try { localStorage.setItem('cached_properties_list', JSON.stringify(res.data)); } catch (e) {}
+          saveToCache(`properties_${uid}`, res.data);
         }
         if (res.data.length === 0) {
           setSelectedPgId(null);
@@ -365,8 +427,11 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     perfLogger.trace('STARTUP STATE: BOOTING -> RESTORE_AUTH');
     let unsubProfileListener: (() => void) | null = null;
     let fallbackTimeout: NodeJS.Timeout | null = null;
+    let nullUserTimeout: NodeJS.Timeout | null = null;
+    let cancelled = false;
 
     fallbackTimeout = setTimeout(() => {
+      if (cancelled) return;
       setAuthStatus((prev) => {
         if (prev === 'BOOTING' || prev === 'RESTORE_AUTH') {
           console.warn('Auth initialization timed out. Forcing UNAUTHENTICATED state.');
@@ -379,8 +444,11 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }, 5000);
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+      if (cancelled) return;
+      if (fallbackTimeout) { clearTimeout(fallbackTimeout); fallbackTimeout = null; }
       if (user) {
+        // Cancel any pending null-user timeout
+        if (nullUserTimeout) { clearTimeout(nullUserTimeout); nullUserTimeout = null; }
         perfLogger.trace(`STARTUP STATE: RESTORE_AUTH -> READY (instant, background init queued)`);
         
         setCurrentUser(user);
@@ -415,16 +483,31 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         initializeAuth(user.uid);
       } else {
-        perfLogger.trace('STARTUP STATE: RESTORE_AUTH -> UNAUTHENTICATED');
-        setCurrentUser(null);
-        setUserProfile(null);
-        setAuthStatus('UNAUTHENTICATED');
-        if (unsubProfileListener) unsubProfileListener();
+        // No user from onAuthStateChanged.
+        // During mobile redirect sign-in, onAuthStateChanged fires null BEFORE 
+        // getRedirectResult resolves. Wait briefly to let the Global redirect handler
+        // process the result (it sets authStatus to VALIDATE_SESSION).
+        if (nullUserTimeout) clearTimeout(nullUserTimeout);
+        nullUserTimeout = setTimeout(() => {
+          if (cancelled) return;
+          // Only set UNAUTHENTICATED if no other handler has already changed the status
+          setAuthStatus((prev) => {
+            if (prev === 'VALIDATE_SESSION' || prev === 'READY') return prev;
+            perfLogger.trace('STARTUP STATE: RESTORE_AUTH -> UNAUTHENTICATED');
+            setCurrentUser(null);
+            setUserProfile(null);
+            return 'UNAUTHENTICATED';
+          });
+          if (unsubProfileListener) unsubProfileListener();
+        }, 1500);
       }
     });
 
     return () => {
+      cancelled = true;
       unsubscribe();
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+      if (nullUserTimeout) clearTimeout(nullUserTimeout);
       if (unsubProfileListener) unsubProfileListener();
     };
   }, [initializeAuth, refreshUserProfile]);

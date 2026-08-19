@@ -276,13 +276,12 @@ export async function getGlobalFinancials(ownerId: string) {
     // Get all properties for this owner
     const propsSnap = await adminDb.collection('properties')
       .where('owner_id', '==', ownerId)
-      .where('is_active', '!=', false)
       .get();
       
     if (propsSnap.empty) return { success: true, data: { payments: [], expenses: [] } };
     
     const pgIds = propsSnap.docs
-      .filter(doc => doc.data().status !== 'DELETED')
+      .filter(doc => doc.data().is_active !== false && doc.data().status !== 'DELETED')
       .map(doc => doc.data().pg_id)
       .filter(id => id);
       
@@ -430,24 +429,26 @@ export async function getProperties(ownerId: string) {
     for (let i = 0; i < data.length; i++) {
       const pgId = data[i].pg_id;
       
-      // Get tenants count
-      const tenantsSnap = await adminDb.collection('tenants').where('pg_id', '==', pgId).where('status', '==', 'active').get();
-      const tenantCount = tenantsSnap.size;
+      // Get all tenants for this pg_id to count active ones robustly
+      const tenantsSnap = await adminDb.collection('tenants').where('pg_id', '==', pgId).get();
+      const activeTenants = tenantsSnap.docs.filter(d => isTenantActiveForBusiness(d.data()));
+      const tenantCount = activeTenants.length;
       
       // Get rooms count
       const roomsSnap = await adminDb.collection('rooms').where('pg_id', '==', pgId).get();
       const roomsCount = roomsSnap.size;
       
-      // Calculate total capacity and filled rooms
+      // Calculate total capacity
       let totalCapacity = 0;
-      let filledRoomsCount = 0;
       roomsSnap.docs.forEach(d => {
         const rData = d.data();
-        totalCapacity += (rData.total_beds || 0);
-        if (rData.status === 'occupied' || rData.status === 'partial') {
-          filledRoomsCount++;
-        }
+        totalCapacity += (rData.total_beds || rData.beds || 2);
       });
+      
+      // Group active tenants by room_id in memory to calculate occupied rooms count
+      const occupiedRoomIds = new Set(activeTenants.map(d => d.data().room_id).filter(Boolean));
+      const filledRoomsCount = occupiedRoomIds.size;
+      
       const occupancyRate = totalCapacity > 0 ? Math.round((tenantCount / totalCapacity) * 100) : 0;
       
       // Get pending dues

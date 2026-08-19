@@ -37,8 +37,18 @@ export async function GET(req: Request) {
       }
     });
 
-    const results = [];
     const processedTenantsToday = new Set<string>();
+
+    const tenantDuesMap = new Map<string, number>();
+    paymentsSnap.docs.forEach(pdoc => {
+      const data = pdoc.data();
+      const tId = data.tenant_id || data.tenantId;
+      if (tId) {
+        tenantDuesMap.set(tId, (tenantDuesMap.get(tId) || 0) + Number(data.amount || 0));
+      }
+    });
+
+    const reminderPromises: Promise<{ tenantName: string; phone: string; statusType: string; success: boolean }>[] = [];
 
     for (const pDoc of paymentsSnap.docs) {
       const payment = pDoc.data();
@@ -100,33 +110,40 @@ export async function GET(req: Request) {
 
       processedTenantsToday.add(tenantUniqueId);
 
-      const roomInfo = await resolveTenantRoomAndPendingDues(tenantUniqueId, tenant);
-      const dueDateFormatted = targetDueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      const promise = (async () => {
+        const precalcDues = tenantDuesMap.get(tenantUniqueId) || 0;
+        const roomInfo = await resolveTenantRoomAndPendingDues(tenantUniqueId, tenant, precalcDues);
+        const dueDateFormatted = targetDueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
-      const res = await sendRentReminderWithLink(
-        phone,
-        tenant.full_name || tenant.name || 'Resident',
-        Number(payment.amount || tenant.rent_amount || 0),
-        currentMonth,
-        pDoc.id,
-        roomInfo.hostelName,
-        statusType,
-        overdueDays,
-        {
-          tenantId: tenantUniqueId,
-          triggeredBy: 'daily_8am_cron_reminders',
-          roomNumber: roomInfo.roomNumber,
-          dueDateStr: dueDateFormatted
-        }
-      );
+        const res = await sendRentReminderWithLink(
+          phone,
+          tenant.full_name || tenant.name || 'Resident',
+          Number(payment.amount || tenant.rent_amount || 0),
+          currentMonth,
+          pDoc.id,
+          roomInfo.hostelName,
+          statusType,
+          overdueDays,
+          {
+            tenantId: tenantUniqueId,
+            triggeredBy: 'daily_8am_cron_reminders',
+            roomNumber: roomInfo.roomNumber,
+            dueDateStr: dueDateFormatted
+          }
+        );
 
-      results.push({
-        tenantName: tenant.full_name || tenant.name,
-        phone,
-        statusType,
-        success: res.success
-      });
+        return {
+          tenantName: tenant.full_name || tenant.name || 'Resident',
+          phone,
+          statusType,
+          success: res.success
+        };
+      })();
+
+      reminderPromises.push(promise);
     }
+
+    const results = await Promise.all(reminderPromises);
 
     return NextResponse.json({
       success: true,

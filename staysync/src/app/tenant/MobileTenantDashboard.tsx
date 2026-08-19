@@ -263,7 +263,7 @@ export default function MobileTenantDashboard() {
       localStorage.clear();
       sessionStorage.clear();
       sessionStorage.setItem('loggedOut', 'true');
-      window.location.href = '/';
+      window.location.href = '/login';
     }
   };
 

@@ -518,9 +518,13 @@ export async function sendTenantWelcomeNotification(params: {
 /**
  * Helper to resolve actual Room Number, Hostel Name, and Post-Payment Pending Dues from Firestore.
  */
+const propertyCache = new Map<string, string>();
+const roomCache = new Map<string, string>();
+
 export async function resolveTenantRoomAndPendingDues(
   tenantId?: string,
-  providedTenantData?: any
+  providedTenantData?: any,
+  precalculatedDues?: number
 ): Promise<{ roomNumber: string; pendingDues: number; hostelName: string; moveInDate?: string }> {
   let roomNumber = 'N/A';
   let pendingDues = 0;
@@ -556,27 +560,40 @@ export async function resolveTenantRoomAndPendingDues(
         roomNumber = String(tData.room);
       } else if (tData.room_id || tData.roomId) {
         const roomId = tData.room_id || tData.roomId;
-        const roomSnap = await adminDb.collection('rooms').doc(roomId).get();
-        if (roomSnap.exists) {
-          roomNumber = String(roomSnap.data()?.room_number || 'N/A');
+        if (roomCache.has(roomId)) {
+          roomNumber = roomCache.get(roomId)!;
         } else {
-          const roomQ = await adminDb.collection('rooms').where('room_id', '==', roomId).limit(1).get();
-          if (!roomQ.empty) {
-            roomNumber = String(roomQ.docs[0].data()?.room_number || 'N/A');
+          const roomSnap = await adminDb.collection('rooms').doc(roomId).get();
+          if (roomSnap.exists) {
+            roomNumber = String(roomSnap.data()?.room_number || 'N/A');
+            roomCache.set(roomId, roomNumber);
+          } else {
+            const roomQ = await adminDb.collection('rooms').where('room_id', '==', roomId).limit(1).get();
+            if (!roomQ.empty) {
+              roomNumber = String(roomQ.docs[0].data()?.room_number || 'N/A');
+              roomCache.set(roomId, roomNumber);
+            }
           }
         }
       }
 
       // 2. Resolve hostel name
       if (tData.pg_id) {
-        const pgSnap = await adminDb.collection('properties').doc(tData.pg_id).get();
-        if (pgSnap.exists) {
-          hostelName = pgSnap.data()?.name || hostelName;
+        if (propertyCache.has(tData.pg_id)) {
+          hostelName = propertyCache.get(tData.pg_id)!;
+        } else {
+          const pgSnap = await adminDb.collection('properties').doc(tData.pg_id).get();
+          if (pgSnap.exists) {
+            hostelName = pgSnap.data()?.name || hostelName;
+            propertyCache.set(tData.pg_id, hostelName);
+          }
         }
       }
 
       // 3. Resolve pending dues for this tenant (only pending status)
-      if (actualTenantId) {
+      if (precalculatedDues !== undefined) {
+        pendingDues = precalculatedDues;
+      } else if (actualTenantId) {
         const pendingSnap1 = await adminDb.collection('payments')
           .where('tenant_id', '==', actualTenantId)
           .where('status', '==', 'pending')
@@ -746,10 +763,10 @@ export async function sendRentReminderWithLink(
 
   let roomNumber = extraParams?.roomNumber;
   let finalHostelName = hostelName;
-  if (extraParams?.tenantId && (!roomNumber || roomNumber === 'N/A' || !finalHostelName || finalHostelName === 'A1 Hostels')) {
+  if (extraParams?.tenantId && (!roomNumber || roomNumber === 'N/A' || !finalHostelName)) {
     const res = await resolveTenantRoomAndPendingDues(extraParams.tenantId);
     if (!roomNumber || roomNumber === 'N/A') roomNumber = res.roomNumber;
-    if (!finalHostelName || finalHostelName === 'A1 Hostels') finalHostelName = res.hostelName;
+    if (!finalHostelName) finalHostelName = res.hostelName;
   }
   if (!roomNumber) roomNumber = '101';
 

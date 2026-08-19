@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 import { LogIn, ShieldCheck, ChevronLeft, ChevronRight, Sparkles, ArrowUpRight, Menu, X, Home, PhoneCall, Bed, User } from 'lucide-react';
 import { getLandingSettings, getPublicHostels } from '@/app/actions/superadmin';
 import styles from './page.module.css';
+import { useHostel } from '@/context/HostelContext';
+import { SplashScreen } from '@/components/SplashScreen';
+import { getPlatform, PlatformType } from '@/lib/platform';
 
 interface Slide {
   id: string;
@@ -200,28 +203,67 @@ interface LandingClientProps {
 
 export default function LandingClient({ initialSettings, initialHostels }: LandingClientProps) {
   const router = useRouter();
+  const { isLoadingAuth, authStatus, currentUser } = useHostel();
+  const [platform, setPlatform] = useState<PlatformType>('WEB_BROWSER');
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+    setPlatform(getPlatform());
+  }, []);
 
   useEffect(() => {
     router.prefetch('/login');
     if (typeof window !== 'undefined') {
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone || document.referrer.includes('android-app://');
+      const isStandalone = platform !== 'WEB_BROWSER';
       const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
       const userRole = localStorage.getItem('userRole');
       const isExplicitLoggedOut = sessionStorage.getItem('loggedOut') === 'true';
 
       if (isStandalone) {
         if (isLoggedIn && !isExplicitLoggedOut) {
-          const target = userRole === 'super_admin' ? '/superadmin/owners' : (userRole === 'team_member' || userRole === 'pg_owner') ? '/pgowner/dashboard' : userRole === 'tenant' ? '/tenant' : '/pgowner/dashboard';
+          let target = '';
+          try {
+            const rawLastPage = localStorage.getItem('raliving_state_lastOpenedPage') || localStorage.getItem('lastOpenedPage');
+            if (rawLastPage) {
+              const cleaned = JSON.parse(rawLastPage);
+              if (cleaned && typeof cleaned === 'string' && cleaned.startsWith('/') && cleaned !== '/' && !cleaned.includes('/login') && !cleaned.includes('/unauthorized')) {
+                target = cleaned;
+              }
+            }
+          } catch (e) {}
+
+          if (!target) {
+            target = userRole === 'super_admin' ? '/superadmin/owners' : (userRole === 'team_member' || userRole === 'pg_owner') ? '/pgowner/dashboard' : userRole === 'tenant' ? '/tenant' : '/pgowner/dashboard';
+          }
           router.replace(target);
         } else {
           router.replace('/login');
         }
       } else if (!isExplicitLoggedOut && isLoggedIn) {
-        const target = userRole === 'super_admin' ? '/superadmin/owners' : (userRole === 'team_member' || userRole === 'pg_owner') ? '/pgowner/dashboard' : userRole === 'tenant' ? '/tenant' : '/pgowner/dashboard';
+        let target = '';
+        try {
+          const rawLastPage = localStorage.getItem('raliving_state_lastOpenedPage') || localStorage.getItem('lastOpenedPage');
+          if (rawLastPage) {
+            const cleaned = JSON.parse(rawLastPage);
+            if (cleaned && typeof cleaned === 'string' && cleaned.startsWith('/') && cleaned !== '/' && !cleaned.includes('/login') && !cleaned.includes('/unauthorized')) {
+              target = cleaned;
+            }
+          }
+        } catch (e) {}
+
+        if (!target) {
+          target = userRole === 'super_admin' ? '/superadmin/owners' : (userRole === 'team_member' || userRole === 'pg_owner') ? '/pgowner/dashboard' : userRole === 'tenant' ? '/tenant' : '/pgowner/dashboard';
+        }
         router.replace(target);
       }
     }
-  }, [router]);
+  }, [router, platform]);
+
+  // PWA/Android: Show splash instead of landing page while redirect processes
+  if (isMounted && platform !== 'WEB_BROWSER') {
+    return <SplashScreen />;
+  }
 
   // Mouse Parallax 3D Glass Tilt Effect
   const mouseX = useMotionValue(0);
@@ -384,24 +426,7 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
     return () => clearInterval(interval);
   }, [slides.length, slideDurationSeconds]);
 
-  // Auto-redirect if already logged in
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-      const isExplicitLoggedOut = sessionStorage.getItem('loggedOut') === 'true';
-      const cachedRole = localStorage.getItem('userRole');
-
-      if (isExplicitLoggedOut) {
-        sessionStorage.removeItem('loggedOut');
-        return;
-      }
-
-      if (isLoggedIn && cachedRole) {
-        const target = cachedRole === 'super_admin' ? '/superadmin/owners' : cachedRole === 'pg_owner' ? '/pgowner' : '/tenant';
-        router.replace(target);
-      }
-    }
-  }, [router]);
+  // Auto-redirect checks are now fully consolidated at bootstrap mount handler
 
   const handleNextSlide = () => {
     setCurrentSlideIndex((prev) => (prev + 1) % slides.length);
@@ -412,6 +437,14 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
   };
 
   const activeVariant = getTransitionVariants(selectedTransition);
+
+  const isLoggedIn = isMounted ? (localStorage.getItem('isLoggedIn') === 'true') : false;
+  const isExplicitLoggedOut = isMounted ? (sessionStorage.getItem('loggedOut') === 'true') : false;
+  const shouldShowLandingPage = isMounted && platform === 'WEB_BROWSER' && (!isLoggedIn || isExplicitLoggedOut);
+
+  if (!shouldShowLandingPage) {
+    return <SplashScreen />;
+  }
 
   return (
     <div 

@@ -54,6 +54,12 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
 
   const lastNavTimeRef = useRef<{ path: string; time: number }>({ path: '', time: 0 });
 
+  const handlePointerDown = useCallback((targetPath: string) => {
+    if (targetPath !== pathname && targetPath !== navigatingTo) {
+      setNavigatingTo(targetPath);
+    }
+  }, [pathname, navigatingTo]);
+
   const handleNavClick = useCallback((targetPath: string) => {
     const now = Date.now();
     if (lastNavTimeRef.current.path === targetPath && now - lastNavTimeRef.current.time < 250) {
@@ -67,12 +73,11 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     }
 
     navTracer.startNavigation(targetPath);
-    setIsMobileDrawerOpen(false);
     
-    // We REMOVED router.push(targetPath) here.
-    // The `<Link>` component natively handles the navigation.
-    // Having router.push() inside an onClick/onPointerDown handler on a <Link>
-    // causes a race condition that makes Next.js App Router fall back to a hard reload.
+    // Defer closing mobile drawer slightly (150ms) to allow Link click event to fire
+    setTimeout(() => {
+      setIsMobileDrawerOpen(false);
+    }, 150);
   }, [pathname, navigatingTo]);
 
   // Non-blocking idle route prefetching for instant native zero-latency transitions
@@ -368,10 +373,13 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
 
       // Real-time Firestore session listener on THIS device
       const deviceRef = doc(db, 'users', currentUser.uid, 'devices', deviceId);
+      let hasExisted = false;
       unbindDeviceDoc = onSnapshot(
         deviceRef, 
         (snapshot) => {
-          if (!snapshot.exists()) {
+          if (snapshot.exists()) {
+            hasExisted = true;
+          } else if (hasExisted) {
             console.warn('Session revoked from another device');
             clearUserCache();
             localStorage.clear();
@@ -433,9 +441,24 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
         }
       }
     } else if (authStatus === 'UNAUTHENTICATED') {
-      const hasLocalSession = typeof window !== 'undefined' && (!!localStorage.getItem('userUid') || localStorage.getItem('isLoggedIn') === 'true');
-      const isExplicitLoggedOut = typeof window !== 'undefined' && sessionStorage.getItem('loggedOut') === 'true';
-      if (!hasLocalSession || isExplicitLoggedOut) {
+      // Only redirect if localStorage doesn't indicate a recent login.
+      // After a fresh Google sign-in, the user navigates here and the HostelContext
+      // may briefly report UNAUTHENTICATED before onAuthStateChanged fires.
+      const hasRecentSession = localStorage.getItem('isLoggedIn') === 'true' && localStorage.getItem('userUid');
+      if (hasRecentSession) {
+        // Wait briefly for Firebase auth to settle before giving up
+        const authSettleTimeout = setTimeout(() => {
+          if (!currentUser) {
+            localStorage.removeItem('isLoggedIn');
+            localStorage.removeItem('userRole');
+            localStorage.removeItem('userUid');
+            router.replace('/login');
+          }
+        }, 3000);
+        return () => clearTimeout(authSettleTimeout);
+      } else {
+        localStorage.removeItem('isLoggedIn');
+        localStorage.removeItem('userRole');
         localStorage.removeItem('userUid');
         router.replace('/login');
       }
@@ -462,7 +485,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.error(e);
     }
-    window.location.href = '/';
+    window.location.href = '/login';
   };
 
   const handlePropertySwitch = (pgId: string) => {
@@ -663,6 +686,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                 prefetch={true}
                 onMouseEnter={() => routePrefetcher.prefetchSingle(router, item.path)}
                 onTouchStart={() => routePrefetcher.prefetchSingle(router, item.path)}
+                onPointerDown={() => handlePointerDown(item.path)}
                 className={drawerStyles.drawerMenuItem}
                 style={{ 
                   textDecoration: 'none',
@@ -1482,8 +1506,6 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                 Back to Dashboard
               </button>
             </div>
-          ) : (navigatingTo && navigatingTo !== pathname) ? (
-            <NavigationSkeleton path={navigatingTo} />
           ) : (
             children
           )}
@@ -1522,6 +1544,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                       href={item.href}
                       onMouseEnter={() => routePrefetcher.prefetchSingle(router, item.href)}
                       onTouchStart={() => routePrefetcher.prefetchSingle(router, item.href)}
+                      onPointerDown={() => handleNavClick(item.href)}
                       onClick={() => handleNavClick(item.href)}
                       className={`${styles.bottomNavItem} ${isMatch ? styles.active : ''}`}
                     >

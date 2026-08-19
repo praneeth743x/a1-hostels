@@ -55,6 +55,10 @@ export default function SuperAdminLayout({
       if (!user) {
         setIsSuperAdmin(false);
         setIsVerifying(false);
+        localStorage.removeItem('isLoggedIn');
+        localStorage.removeItem('userRole');
+        localStorage.removeItem('userUid');
+        router.replace('/login');
         return;
       }
 
@@ -140,7 +144,7 @@ export default function SuperAdminLayout({
       localStorage.clear();
       sessionStorage.clear();
       sessionStorage.setItem('loggedOut', 'true');
-      window.location.href = '/';
+      window.location.href = '/login';
     }
   };
 
@@ -187,6 +191,7 @@ export default function SuperAdminLayout({
               >
                 <Link 
                   href={item.path} 
+                  onPointerDown={() => handleNavClick(item.path)}
                   onClick={() => handleNavClick(item.path)}
                   onMouseEnter={() => router.prefetch(item.path)}
                   onTouchStart={() => router.prefetch(item.path)}
@@ -230,6 +235,7 @@ export default function SuperAdminLayout({
                 key={item.path}
                 href={item.path}
                 prefetch={true}
+                onPointerDown={() => handleNavClick(item.path)}
                 onClick={() => handleNavClick(item.path)}
                 className={`${styles.bottomNavItem} ${isMatch ? styles.active : ''}`}
               >

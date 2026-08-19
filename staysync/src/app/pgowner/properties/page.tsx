@@ -54,7 +54,16 @@ export default function MyHostelsPage() {
   const [searchTerm, setSearchTerm] = useState('');
 
   // Global KPI State
-  const [globalFinancials, setGlobalFinancials] = useState<{ payments: any[], expenses: any[] }>({ payments: [], expenses: [] });
+  const [globalFinancials, setGlobalFinancials] = useState<{ payments: any[], expenses: any[] }>(() => {
+    if (typeof window !== 'undefined') {
+      const uid = localStorage.getItem('userUid') || auth.currentUser?.uid;
+      if (uid) {
+        const cached = getFromCache(`financials_${uid}`);
+        if (cached) return cached;
+      }
+    }
+    return { payments: [], expenses: [] };
+  });
   const [isFinancialsLoading, setIsFinancialsLoading] = useState(false);
   const [filterType, setFilterType] = useState<'daily' | 'monthly' | 'yearly'>('monthly');
   const [filterValue, setFilterValue] = useState(() => {
@@ -67,14 +76,21 @@ export default function MyHostelsPage() {
       setIsFinancialsLoading(true);
       rpcCall('getGlobalFinancials', ownerId)
         .then((res: any) => {
-          if (res?.success) {
+          if (res?.success && res.data) {
             setGlobalFinancials(res.data);
+            saveToCache(`financials_${ownerId}`, res.data);
           }
         })
         .catch(console.error)
         .finally(() => setIsFinancialsLoading(false));
     }
   }, [ownerId]);
+
+  useEffect(() => {
+    if (ownerId) {
+      refreshProperties().catch(console.error);
+    }
+  }, [ownerId, refreshProperties]);
 
   const isDateMatch = (dateStr: string) => {
     if (!dateStr) return false;
@@ -115,7 +131,7 @@ export default function MyHostelsPage() {
     return { collected: coll, overdue: over, expensesAmount: exp };
   }, [globalFinancials, filterType, filterValue]);
 
-  const revenueAmount = collected + overdue;
+  const revenueAmount = collected; // Revenue = actually collected (paid) amounts only
   const profitAmount = revenueAmount - expensesAmount;
 
   // Add / Edit Hostel Modal State
@@ -355,6 +371,9 @@ export default function MyHostelsPage() {
   useEffect(() => {
     if (storeProperties && storeProperties.length > 0) {
       const enriched = storeProperties.map((prop: any, idx: number) => {
+        if (prop.calculatedRoomsCount !== undefined) {
+          return prop;
+        }
         const rooms = prop.rooms || [];
         const totalRooms = rooms.length || 0;
         let occupiedBeds = 0;
@@ -759,7 +778,9 @@ export default function MyHostelsPage() {
                 className={styles.hostelCard}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: idx * 0.05 }}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ duration: 0.2 }}
                 onClick={() => handleSelectHostel(property.pg_id)}
               >
                 {/* Hero Card Image */}

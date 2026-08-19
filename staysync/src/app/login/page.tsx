@@ -12,17 +12,34 @@ import { useHostel } from '@/context/HostelContext';
 import { SplashScreen } from '@/components/SplashScreen';
 import { isTrueColdLaunch, markSessionStarted } from '@/lib/launchDetector';
 import styles from './login.module.css';
+import { getPlatform, PlatformType } from '@/lib/platform';
+import AppLogin from '@/components/AppLogin';
 
 export default function LoginPage() {
   const router = useRouter();
 
   const [isStandalonePwa, setIsStandalonePwa] = useState(false);
+  const [platform, setPlatform] = useState<PlatformType>('WEB_BROWSER');
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+
+  useEffect(() => {
+    const p = getPlatform();
+    setPlatform(p);
+    setIsStandalonePwa(p !== 'WEB_BROWSER');
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const isCapacitor = (window as any).Capacitor || (window.parent && (window.parent as any).Capacitor) || navigator.userAgent.includes('Capacitor');
-      const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone || document.referrer.includes('android-app://') || isCapacitor;
-      setIsStandalonePwa(standalone);
+      const params = new URLSearchParams(window.location.search);
+      const errorParam = params.get('error');
+      if (errorParam === 'account_disabled') {
+        setError("Your account has been disabled. Please contact support.");
+      }
+      const redirectErr = sessionStorage.getItem('redirect_login_error');
+      if (redirectErr) {
+        setError(redirectErr);
+        sessionStorage.removeItem('redirect_login_error');
+      }
     }
   }, []);
 
@@ -89,40 +106,18 @@ export default function LoginPage() {
     }
   }, [router]);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      getRedirectResult(auth).then(async (result) => {
-        if (result && result.user) {
-          sessionStorage.removeItem('loggedOut');
-          setLoading(true);
-          const user = result.user;
-          if (!user.email) throw new Error("Google account must have an email.");
+  // Redirect result is handled globally by HostelContext.
+  // Login page only handles the auth status changes via the useEffect below.
 
-          const meta = await rpcCall('getLoginAuthMeta', user.uid, user.email);
-          if (!meta?.exists) {
-            await signOut(auth);
-            throw new Error("This email is not registered. Please ask your PG Owner to add you.");
-          }
-
-          if (!meta?.isInitialized) {
-            await rpcCall('markAccountInitialized', user.email).catch(() => {});
-          }
-
-          await routeUser(user.uid, user.email);
-        }
-      }).catch(e => {
-        console.error("Redirect login error:", e);
-        setError(e.message || "Failed to sign in with Google redirect.");
-        setLoading(false);
-      });
-    }
-  }, [router]);
+  const routingInProgressRef = useRef(false);
 
   useEffect(() => {
     if (authStatus === 'READY' && currentUser) {
       const isExplicitLoggedOut = typeof window !== 'undefined' && sessionStorage.getItem('loggedOut') === 'true';
 
       if (currentUser.email && (!isExplicitLoggedOut || loading)) {
+        // Skip if a sign-in handler (handleGoogleSignIn/handleEmailLogin) is already routing
+        if (routingInProgressRef.current) return;
         sessionStorage.removeItem('loggedOut');
         setRedirectFired(true);
         routeUser(currentUser.uid, currentUser.email);
@@ -134,7 +129,7 @@ export default function LoginPage() {
     }
   }, [currentUser, authStatus, router, loading]);
 
-  const routeUser = async (userId: string | undefined, userEmail: string) => {
+  const routeUser = async (userId: string | undefined, userEmail: string, forcedRole?: string) => {
     if (!userId) return;
 
     if (typeof window !== 'undefined') {
@@ -150,22 +145,27 @@ export default function LoginPage() {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     const deviceName = isMobile ? 'Mobile App' : 'Web Browser';
 
-    rpcCall('registerDevice', userId, deviceId, deviceName).catch((e) => console.error("Background device registration error:", e));
+    // Await device registration to ensure it exists in Firestore before page redirect
+    await rpcCall('registerDevice', userId, deviceId, deviceName).catch((e) => console.error("Device registration error:", e));
 
     try {
-      const fetchedRole = await rpcCall('getResolvedRole', userId, userEmail);
+      let roleStr = forcedRole;
+      if (!roleStr) {
+        const fetchedRole = await rpcCall('getResolvedRole', userId, userEmail);
 
-      if (!fetchedRole || (typeof fetchedRole === 'object' && fetchedRole.error)) {
-        throw new Error((typeof fetchedRole === 'object' && fetchedRole.error) || "Role not found. Please contact support.");
+        if (!fetchedRole || (typeof fetchedRole === 'object' && fetchedRole.error)) {
+          throw new Error((typeof fetchedRole === 'object' && fetchedRole.error) || "Role not found. Please contact support.");
+        }
+
+        roleStr = typeof fetchedRole === 'string' ? fetchedRole : fetchedRole.role;
       }
 
-      const roleStr = typeof fetchedRole === 'string' ? fetchedRole : fetchedRole.role;
-
+      const finalRole = roleStr || 'tenant';
       localStorage.setItem('isLoggedIn', 'true');
       localStorage.setItem('userUid', userId);
-      localStorage.setItem('userRole', roleStr);
+      localStorage.setItem('userRole', finalRole);
 
-      const target = roleStr === 'super_admin' ? '/superadmin/owners' : roleStr === 'team_member' ? '/teammember/dashboard' : roleStr === 'pg_owner' ? '/pgowner/dashboard' : '/tenant';
+      const target = finalRole === 'super_admin' ? '/superadmin/owners' : finalRole === 'team_member' ? '/teammember/dashboard' : finalRole === 'pg_owner' ? '/pgowner/dashboard' : '/tenant';
       
       try {
         router.replace(target);
@@ -181,10 +181,13 @@ export default function LoginPage() {
       console.error("Failed to fetch role:", e);
       setError(e.message || "Failed to resolve user role.");
       setLoading(false);
+      // Reset auth state on failure so we don't get stuck in splash screen loop
+      await signOut(auth).catch(() => {});
     }
   };
 
   const handleGoogleSignIn = async () => {
+    routingInProgressRef.current = true;
     setLoading(true);
     setError(null);
     if (typeof window !== 'undefined') {
@@ -240,23 +243,7 @@ export default function LoginPage() {
         await rpcCall('markAccountInitialized', user.email).catch(() => {});
       }
 
-      const roleStr = meta.role || 'tenant';
-      localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userUid', user.uid);
-      localStorage.setItem('userRole', roleStr);
-
-      const target = roleStr === 'super_admin' ? '/superadmin/owners' : roleStr === 'team_member' ? '/teammember/dashboard' : roleStr === 'pg_owner' ? '/pgowner/dashboard' : '/tenant';
-      
-      try {
-        router.replace(target);
-      } catch (e) {
-        window.location.href = target;
-      }
-      setTimeout(() => {
-        if (typeof window !== 'undefined' && window.location.pathname === '/login') {
-          window.location.href = target;
-        }
-      }, 300);
+      await routeUser(user.uid, user.email, meta.role);
 
     } catch (err: any) {
       if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
@@ -266,12 +253,14 @@ export default function LoginPage() {
         setError(err?.message || "Failed to sign in with Google.");
       }
     } finally {
+      routingInProgressRef.current = false;
       setLoading(false);
     }
   };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    routingInProgressRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -298,16 +287,11 @@ export default function LoginPage() {
         return;
       }
 
-      const roleStr = meta.role || 'tenant';
-      localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userUid', userCredential.user.uid);
-      localStorage.setItem('userRole', roleStr);
-
-      const target = roleStr === 'super_admin' ? '/superadmin/owners' : roleStr === 'team_member' ? '/teammember/dashboard' : roleStr === 'pg_owner' ? '/pgowner/dashboard' : '/tenant';
-      router.replace(target);
+      await routeUser(userCredential.user.uid, targetEmail, meta.role);
     } catch (err: any) {
       setError(err.message || "Invalid credentials.");
     } finally {
+      routingInProgressRef.current = false;
       setLoading(false);
     }
   };
@@ -358,169 +342,217 @@ export default function LoginPage() {
     return <SplashScreen />;
   }
 
+  if (platform === 'PWA' || platform === 'ANDROID_APP') {
+    return (
+      <AppLogin
+        email={email}
+        setEmail={setEmail}
+        password={password}
+        setPassword={setPassword}
+        loading={loading}
+        error={error}
+        onSubmit={handleEmailLogin}
+        onGoogleSignIn={handleGoogleSignIn}
+        logoUrl={logoUrl}
+        siteName={siteName}
+        showForgotPasswordModal={showForgotPasswordModal}
+        setShowForgotPasswordModal={setShowForgotPasswordModal}
+        forgotPasswordEmail={forgotPasswordEmail}
+        setForgotPasswordEmail={setForgotPasswordEmail}
+        forgotPasswordMsg={forgotPasswordMsg}
+        setForgotPasswordMsg={setForgotPasswordMsg}
+        forgotPasswordLoading={forgotPasswordLoading}
+        onForgotPasswordSubmit={handleForgotPassword}
+      />
+    );
+  }
+
   return (
     <div className={styles.loginPageContainer}>
-      {/* Go to Home Page Button (Hidden in Mobile PWA Standalone Mode and Android WebViews) */}
-      {!isStandalonePwa && !(typeof navigator !== 'undefined' && (navigator.userAgent || '').toLowerCase().includes('wv')) && (
-        <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 50 }}>
-          <button
-            type="button"
-            onClick={() => router.push('/')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 18px',
-              borderRadius: '24px',
-              background: 'rgba(255, 255, 255, 0.12)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
-              color: '#FFFFFF',
-              fontSize: '0.88rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <ArrowLeft size={18} />
-            <span>Go to Home Page</span>
-          </button>
+      {/* ==================== LEFT — Hero Panel (Desktop Only) ==================== */}
+      <div className={styles.heroPanel}>
+        <img 
+          src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80" 
+          alt="Premium Hostel" 
+          className={styles.heroImage}
+        />
+        <div className={styles.heroOverlay} />
+        <div className={styles.heroContent}>
+          <h1 className={styles.heroTitle}>Welcome Back</h1>
+          <p className={styles.heroSubtitle}>Manage your properties, track payments, and keep everything running smoothly — all in one place.</p>
+          <div className={styles.heroBadges}>
+            <div className={styles.heroBadge}>
+              <ShieldCheck size={16} className={styles.heroBadgeIcon} />
+              <span>Secure & Encrypted</span>
+            </div>
+            <div className={styles.heroBadge}>
+              <Search size={16} className={styles.heroBadgeIcon} />
+              <span>Real-time Tracking</span>
+            </div>
+          </div>
         </div>
-      )}
-
-      <div className={styles.ambientBackground}>
-        <div className={styles.glowPink}></div>
-        <div className={styles.glowBlue}></div>
-        <div className={styles.glowPurple}></div>
       </div>
 
-      <div className={`${styles.loginContent} ${styles.pwaModeContent}`}>
-        <div className={styles.rightSection} style={{ flex: 'none' }}>
-          <motion.div 
-            layoutId="auth-card" 
-            className={styles.loginCard}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ type: "spring", stiffness: 200, damping: 20 }}
+      {/* ==================== RIGHT — Form Panel ==================== */}
+      <div className={styles.formPanel}>
+        {/* Ambient glow (mobile) */}
+        <div className={styles.ambientBackground}>
+          <div className={styles.glowPink} />
+          <div className={styles.glowBlue} />
+          <div className={styles.glowPurple} />
+        </div>
+
+        {/* Back to Home (browser only) */}
+        {!isStandalonePwa && !(typeof navigator !== 'undefined' && (navigator.userAgent || '').toLowerCase().includes('wv')) && (
+          <button 
+            type="button" 
+            onClick={() => router.push('/')} 
+            className={`${styles.backToHome} ${styles.animateIn}`}
           >
-            <div className={styles.logoRow} style={{ justifyContent: 'center', marginBottom: '8px' }}>
-              {logoUrl ? (
-                <img src={logoUrl} alt="Logo" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
-              ) : (
-                <div className={styles.logoIcon} style={{ width: '24px', height: '24px' }}></div>
-              )}
-              <div className={`${styles.logoText} ${styles.textGradient}`} style={{ fontSize: '20px' }}>{siteName}</div>
-            </div>
+            <ArrowLeft size={16} />
+            <span>Back to Home</span>
+          </button>
+        )}
 
-            <h2 className={styles.loginHeading} style={{ textAlign: 'center' }}>Sign In to Portal</h2>
-            <p className={styles.loginSubtitle} style={{ textAlign: 'center' }}>Access your Tenant, Owner, or Super Admin account</p>
+        <div className={styles.formPanelInner}>
+          {/* Brand */}
+          <div className={`${styles.brand} ${styles.animateIn} ${styles.animateDelay1}`}>
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className={styles.brandLogo} />
+            ) : (
+              <div className={styles.brandLogoFallback}>
+                <ShieldCheck size={26} color="#ffffff" />
+              </div>
+            )}
+            <div className={styles.brandName}>{siteName}</div>
+          </div>
 
+          <div className={styles.loginCard}>
             {error && <div className={styles.errorBox}>{error}</div>}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+            {/* Google Sign In */}
+            <div className={`${styles.animateIn} ${styles.animateDelay3}`}>
               <button 
                 type="button" 
                 className={styles.googleBtn}
                 onClick={handleGoogleSignIn}
                 disabled={loading}
               >
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" style={{ width: '18px', height: '18px' }} />
-                <span>Continue with Google</span>
+                <img 
+                  src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" 
+                  alt="Google" 
+                  className={styles.googleIcon}
+                />
+                <span>{loading ? 'Signing in...' : 'Continue with Google'}</span>
               </button>
+            </div>
 
-              <div className={styles.divider}>
-                <span>OR SIGN IN DIRECTLY</span>
-              </div>
+            <div className={`${styles.divider} ${styles.animateIn} ${styles.animateDelay3}`}>
+              <span>or sign in with email</span>
+            </div>
 
-              <form onSubmit={handleEmailLogin} className={styles.formSection}>
+            {/* Email / Password Form */}
+            <form onSubmit={handleEmailLogin} className={`${styles.formSection} ${styles.animateIn} ${styles.animateDelay4}`}>
+              <div className={styles.inputGroup}>
+                <label className={styles.inputLabel} htmlFor="login-email">Email or Mobile</label>
                 <div className={styles.inputWrapper}>
                   <Mail className={styles.inputIcon} size={16} />
                   <input
+                    id="login-email"
                     type="text"
                     className={styles.loginInput}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Email Address or Mobile Number"
+                    placeholder="you@example.com"
                     required
                     disabled={loading}
+                    autoComplete="email"
                   />
                 </div>
-                
+              </div>
+              
+              <div className={styles.inputGroup}>
+                <label className={styles.inputLabel} htmlFor="login-password">Password</label>
                 <div className={styles.inputWrapper}>
                   <Lock className={styles.inputIcon} size={16} />
                   <input
+                    id="login-password"
                     type="password"
                     className={styles.loginInput}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Password"
+                    placeholder="Enter your password"
                     required
                     disabled={loading}
+                    autoComplete="current-password"
                   />
                 </div>
+              </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
-                  <button type="button" onClick={() => setShowForgotPassword(true)} className={styles.forgotLink}>Forgot Password?</button>
-                </div>
-                
-                <motion.button layoutId="primary-button" type="submit" className={styles.primaryButton} disabled={loading} style={{ marginTop: '12px' }}>
-                  {loading ? 'Signing in...' : 'Sign In'} <LogIn size={16} strokeWidth={2.5} />
-                </motion.button>
-              </form>
+              <div className={styles.forgotRow}>
+                <button type="button" onClick={() => setShowForgotPassword(true)} className={styles.forgotLink}>
+                  Forgot Password?
+                </button>
+              </div>
+              
+              <button type="submit" className={styles.primaryButton} disabled={loading}>
+                {loading ? 'Signing in...' : 'Sign In'} <LogIn size={18} strokeWidth={2.5} />
+              </button>
+            </form>
+          </div>
+
+          {/* Footer — Downloads & Privacy */}
+          <div className={`${styles.footerSection} ${styles.animateIn} ${styles.animateDelay5}`}>
+            <div className={styles.installBtnWrapper}>
+              <InstallPWAButton />
             </div>
-            
-          </motion.div>
-          
-          <div style={{ marginTop: '14px', width: '100%', maxWidth: '360px', alignSelf: 'center' }}>
-            <InstallPWAButton />
-          </div>
 
-          <div className={styles.nativeDownloadRow} style={{ marginTop: '12px', width: '100%', maxWidth: '360px', alignSelf: 'center' }}>
-            <a href="/downloads/a1-hostels.apk" download className={styles.nativeDownloadBtn}>
-              🤖 Android App
-            </a>
-            <button 
-              onClick={() => alert("iOS Users: Please tap the 'Download Web App' button above, then select 'Add to Home Screen' from your Safari share menu to install A1 Hostels as an app.")} 
-              type="button" 
-              className={styles.nativeDownloadBtn}
-            >
-              🍏 iOS App
-            </button>
-          </div>
+            <div className={styles.downloadRow}>
+              <a href="/downloads/a1-hostels.apk" download className={styles.downloadBtn}>
+                🤖 Android App
+              </a>
+              <button 
+                onClick={() => alert("iOS Users: Please tap 'Download Web App' above, then 'Add to Home Screen' from Safari.")} 
+                type="button" 
+                className={styles.downloadBtn}
+              >
+                🍏 iOS App
+              </button>
+            </div>
 
-          <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '0.75rem', color: '#94a3b8', width: '100%', maxWidth: '360px', alignSelf: 'center' }}>
-            <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#64748b', textDecoration: 'none', fontWeight: 600 }}>
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" className={styles.privacyLink}>
               Privacy Policy & Data Protection
             </a>
           </div>
         </div>
       </div>
 
-      {/* MODALS */}
+      {/* ==================== FORGOT PASSWORD MODAL ==================== */}
       <AnimatePresence>
-
         {showForgotPassword && (
-          <div className={styles.modalOverlay} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div className={styles.modalOverlay}>
             <motion.div 
-              className={styles.modalContent}
-              style={{ width: '90%', maxWidth: '400px', backgroundColor: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}
+              className={styles.modalCard}
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Reset Password</h3>
-                <button onClick={() => { setShowForgotPassword(false); setForgotPasswordMsg(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20}/></button>
+              <div className={styles.modalHeader}>
+                <h3 className={styles.modalTitle}>Reset Password</h3>
+                <button onClick={() => { setShowForgotPassword(false); setForgotPasswordMsg(null); }} className={styles.modalClose}>
+                  <X size={18} />
+                </button>
               </div>
-              <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '16px' }}>Enter your registered email address or mobile number to receive a password reset link.</p>
+              <p className={styles.modalDescription}>
+                Enter your registered email or mobile number and we'll send you a password reset link.
+              </p>
               
-              <form onSubmit={handleForgotPassword} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <form onSubmit={handleForgotPassword} className={styles.modalForm}>
                 <input 
                   type="text" 
                   placeholder="Email or Mobile Number" 
-                  className={styles.loginInput} 
+                  className={styles.modalInput} 
                   value={forgotPasswordEmail} 
                   onChange={e => setForgotPasswordEmail(e.target.value)}
                   required
@@ -531,7 +563,7 @@ export default function LoginPage() {
               </form>
 
               {forgotPasswordMsg && (
-                <div style={{ marginTop: '16px', padding: '12px', backgroundColor: forgotPasswordMsg.includes('sent') ? '#dcfce7' : '#fee2e2', color: forgotPasswordMsg.includes('sent') ? '#166534' : '#991b1b', borderRadius: '8px', fontSize: '0.9rem', fontWeight: 500 }}>
+                <div className={`${styles.modalAlert} ${forgotPasswordMsg.includes('sent') ? styles.modalAlertSuccess : styles.modalAlertError}`}>
                   {forgotPasswordMsg}
                 </div>
               )}
@@ -542,3 +574,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

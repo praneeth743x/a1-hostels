@@ -42,6 +42,12 @@ function BottomNavContent() {
             <motion.button
               key={item.id}
               whileTap={{ scale: 0.94 }}
+              onPointerDown={() => {
+                setOptimisticTab(item.id);
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('tenantTabChange', { detail: item.id }));
+                }
+              }}
               onClick={() => {
                 setOptimisticTab(item.id);
                 // Dispatch event for instant UI update across components

@@ -107,7 +107,7 @@ export function ProfileView() {
             if (!snapshot.exists()) {
               localStorage.clear();
               sessionStorage.clear();
-              auth.signOut().then(() => router.push('/'));
+              auth.signOut().then(() => router.push('/login'));
             }
           },
           (error) => {
@@ -187,7 +187,7 @@ export function ProfileView() {
       sessionStorage.clear();
       sessionStorage.setItem('loggedOut', 'true');
       await auth.signOut();
-      window.location.href = '/';
+      window.location.href = '/login';
     } else {
       // Signing out remote device
       await rpcCall('removeDevice', auth.currentUser.uid, deviceId);
@@ -204,7 +204,7 @@ export function ProfileView() {
     sessionStorage.clear();
     sessionStorage.setItem('loggedOut', 'true');
     await auth.signOut();
-    window.location.href = '/';
+    window.location.href = '/login';
   };
 
   const handleDirectPasswordReset = async (e: React.FormEvent) => {
