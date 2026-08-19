@@ -38,6 +38,20 @@ export default function MobileTenantDashboard() {
     setOptimisticTab(activeTabFromUrl);
   }, [activeTabFromUrl]);
 
+  useEffect(() => {
+    const handleTabChange = (e: any) => {
+      setOptimisticTab(e.detail);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('tenantTabChange', handleTabChange);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('tenantTabChange', handleTabChange);
+      }
+    };
+  }, []);
+
   const activeTab = optimisticTab;
   const router = useRouter();
 

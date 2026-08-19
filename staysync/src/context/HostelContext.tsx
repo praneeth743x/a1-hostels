@@ -24,6 +24,7 @@ interface HostelContextType {
   permissions: TeamMemberPermissions;
   assignedProperties: string[];
   authStatus: AuthStatus;
+  isLoadingAuth: boolean;
   
   // Keep-Alive UI State Preservation
   pageStates: Record<string, { search?: string; filter?: any; scrollY?: number; sharingFilter?: any }>;
@@ -52,6 +53,7 @@ const HostelContext = createContext<HostelContextType>({
   permissions: ALL_PERMISSIONS_GRANTED,
   assignedProperties: [],
   authStatus: 'BOOTING',
+  isLoadingAuth: true,
   pageStates: {},
   setPageState: () => {},
   hasPermission: () => true,
@@ -94,9 +96,12 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const cachedPgId = localStorage.getItem('activePgId') || getAppState('activePgId');
       if (cachedPgId) setSelectedPgId(cachedPgId);
 
-      if (localStorage.getItem('userUid')) {
+      if (localStorage.getItem('userUid') && localStorage.getItem('isLoggedIn') === 'true') {
         startupTracer.mark('S7_authRestored', 'Synchronous Frame 0 Restoration');
-        setAuthStatus('READY');
+        // Do NOT set READY here. Keep it in RESTORE_AUTH until currentUser is populated
+        setAuthStatus('RESTORE_AUTH');
+      } else {
+        setAuthStatus('RESTORE_AUTH');
       }
     }
 
@@ -495,6 +500,9 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return PermissionService.hasPropertyAccess(assignedProperties, pgId, isOwnerOrAdmin);
   }, [isOwnerOrAdmin, assignedProperties]);
 
+  // Derived authentication loading state
+  const isLoadingAuth = authStatus === 'BOOTING' || authStatus === 'RESTORE_AUTH' || (authStatus === 'READY' && !currentUser && typeof window !== 'undefined' && !!localStorage.getItem('userUid'));
+
   const contextValue = useMemo(() => ({
     currentUser,
     userProfile,
@@ -506,6 +514,7 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     permissions,
     assignedProperties,
     authStatus,
+    isLoadingAuth,
     pageStates,
     setPageState,
     hasPermission,
@@ -526,6 +535,7 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     permissions,
     assignedProperties,
     authStatus,
+    isLoadingAuth,
     pageStates,
     setPageState,
     hasPermission,

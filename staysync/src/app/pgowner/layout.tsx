@@ -18,6 +18,8 @@ import { requestNotificationPermission, triggerPWANotification } from '@/lib/pwa
 import styles from './pgowner.module.css';
 import drawerStyles from './drawer.module.css';
 import AccessDeniedCard from '@/components/AccessDeniedCard';
+import { SplashScreen } from '@/components/SplashScreen';
+import { NavigationSkeleton } from '@/components/NavigationSkeleton';
 
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
@@ -28,6 +30,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
   const [isMounted, setIsMounted] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
   const [siteName, setSiteName] = useState('A1 Hostels');
   const [siteLogo, setSiteLogo] = useState('/himalaya_logo_premium.png');
@@ -44,6 +47,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setIsMobileDrawerOpen(false);
+    setNavigatingTo(null);
     setAppState('lastOpenedPage', pathname);
     navTracer.mark('t11_pageCommitted', `Completed navigation to: ${pathname}`);
   }, [pathname]);
@@ -56,8 +60,12 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
       return;
     }
     lastNavTimeRef.current = { path: targetPath, time: now };
+    
+    // Only set optimistic state if we are actually navigating to a new path
+    if (targetPath !== pathname && targetPath !== navigatingTo) {
+      setNavigatingTo(targetPath);
+    }
 
-    lastNavTimeRef.current = { path: targetPath, time: now };
     navTracer.startNavigation(targetPath);
     setIsMobileDrawerOpen(false);
     
@@ -65,7 +73,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     // The `<Link>` component natively handles the navigation.
     // Having router.push() inside an onClick/onPointerDown handler on a <Link>
     // causes a race condition that makes Next.js App Router fall back to a hard reload.
-  }, []);
+  }, [pathname, navigatingTo]);
 
   // Non-blocking idle route prefetching for instant native zero-latency transitions
   useEffect(() => {
@@ -550,11 +558,13 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
     }
   }, [currentUser, isStaff, permissions, mainMenuItems]);
 
-  const renderSidebarContent = () => (
-    <>
-      <div className={`${drawerStyles.drawerHeader} ${styles.hideOnDesktop}`}>
-        <div className={drawerStyles.drawerHeaderTop}>
-          <h3 className={drawerStyles.drawerHeaderTitle}>PROPERTIES</h3>
+  const renderSidebarContent = () => {
+    const currentPath = navigatingTo || pathname;
+    return (
+      <>
+        <div className={`${drawerStyles.drawerHeader} ${styles.hideOnDesktop}`}>
+          <div className={drawerStyles.drawerHeaderTop}>
+            <h3 className={drawerStyles.drawerHeaderTitle}>PROPERTIES</h3>
           {/* Close button only on mobile */}
           <button 
             className={`${drawerStyles.drawerCloseBtn} mobile-only-close`} 
@@ -644,7 +654,6 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
         <div className={drawerStyles.drawerSection}>
           <h4 className={drawerStyles.drawerSectionTitle}>MAIN MENU</h4>
           {mainMenuItems.map((item, index) => {
-            const currentPath = pathname;
             const isMatch = currentPath === item.path || currentPath.startsWith(item.path + '/');
             
             return (
@@ -717,35 +726,39 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
           <LogOut size={18} />
           Sign Out
         </button>
-      </div>
-    </>
-  );
+        </div>
+      </>
+    );
+  };
 
   // Replicate the exact drawer shown in the screenshot
-  const renderMobileDrawer = () => (
-    <AnimatePresence>
-      {isMobileDrawerOpen && (
-        <>
-          <motion.div 
-            className={drawerStyles.mobileDrawerOverlay}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setIsMobileDrawerOpen(false)}
-          />
-          <motion.div
-            className={drawerStyles.mobileDrawerContainer}
-            initial={{ x: '-100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '-100%' }}
-            transition={{ type: 'tween', duration: 0.3 }}
-          >
-            {renderSidebarContent()}
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  );
+  const renderMobileDrawer = () => {
+    const currentPath = navigatingTo || pathname;
+    return (
+      <AnimatePresence>
+        {isMobileDrawerOpen && (
+          <>
+            <motion.div 
+              className={drawerStyles.mobileDrawerOverlay}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileDrawerOpen(false)}
+            />
+            <motion.div
+              className={drawerStyles.mobileDrawerContainer}
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'tween', duration: 0.3 }}
+            >
+              {renderSidebarContent()}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    );
+  };
 
   // Dynamic header title based on pathname
   let pageTitle = "Dashboard";
@@ -1469,6 +1482,8 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                 Back to Dashboard
               </button>
             </div>
+          ) : (navigatingTo && navigatingTo !== pathname) ? (
+            <NavigationSkeleton path={navigatingTo} />
           ) : (
             children
           )}
@@ -1481,7 +1496,7 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
       <nav className={styles.mobileBottomNav}>
         <div className={styles.mobileBottomNavInner} style={{ paddingBottom: 'env(safe-area-inset-bottom)', position: 'relative' }}>
           {(() => {
-            const currentPath = pathname;
+            const currentPath = navigatingTo || pathname;
             const navItems = [
               { href: `${routePrefix}/dashboard`, label: "Dashboard", icon: Home, matchKey: '/dashboard', show: !isMounted || (hasPermission ? hasPermission(PERMISSIONS.VIEW_DASHBOARD) : true) },
               { href: `${routePrefix}/tenants`, label: "Tenants", icon: Users, matchKey: '/tenants', show: !isMounted || (hasAnyPermission ? hasAnyPermission(PERMISSIONS.VIEW_TENANTS, PERMISSIONS.MANAGE_TENANTS) : true) },

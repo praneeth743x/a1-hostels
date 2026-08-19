@@ -17,7 +17,7 @@ export const WHATSAPP_CONFIG = {
     WELCOME: process.env.WA_TEMPLATE_WELCOME || 'tenant_welcome_v1',
     DUE_REMINDER: process.env.WA_TEMPLATE_DUE_REMINDER || 'due_day_reminderv1',
     OVERDUE_REMINDER: process.env.WA_TEMPLATE_OVERDUE_REMINDER || 'overdue_v1',
-    PAYMENT_CONFIRMATION: process.env.WA_TEMPLATE_PAYMENT_CONFIRMATION || 'payment_confirmation_v1',
+    PAYMENT_CONFIRMATION: process.env.WA_TEMPLATE_PAYMENT_CONFIRMATION || 'payment_confirmation',
     CUSTOM_REMINDER: process.env.WA_TEMPLATE_CUSTOM_REMINDER || 'general_tenant_notice',
     SANDBOX_FALLBACK: 'hello_world'
   },

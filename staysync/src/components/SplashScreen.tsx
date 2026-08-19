@@ -5,6 +5,18 @@ import { motion } from 'framer-motion';
 import { Building, Loader2, ShieldCheck } from 'lucide-react';
 
 export const SplashScreen: React.FC = () => {
+  const [logoUrl, setLogoUrl] = React.useState<string | null>(null);
+  const [siteName, setSiteName] = React.useState<string>('A1 Hostels');
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const cachedLogo = localStorage.getItem('cachedLogoUrl');
+      const cachedName = localStorage.getItem('cachedSiteName');
+      if (cachedLogo) setLogoUrl(cachedLogo);
+      if (cachedName) setSiteName(cachedName);
+    }
+  }, []);
+
   return (
     <div
       style={{
@@ -87,9 +99,14 @@ export const SplashScreen: React.FC = () => {
               alignItems: 'center',
               justifyContent: 'center',
               boxShadow: '0 20px 40px rgba(99, 102, 241, 0.4)',
+              overflow: 'hidden'
             }}
           >
-            <Building size={42} color="#FFFFFF" />
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '4px' }} />
+            ) : (
+              <Building size={42} color="#FFFFFF" />
+            )}
           </div>
         </div>
 
@@ -105,7 +122,7 @@ export const SplashScreen: React.FC = () => {
             WebkitTextFillColor: 'transparent',
           }}
         >
-          Raliving
+          {siteName}
         </h1>
         <p
           style={{

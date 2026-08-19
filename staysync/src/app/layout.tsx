@@ -43,22 +43,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                var pathname = window.location.pathname;
-                if (pathname === '/' || pathname === '') {
-                  var isCapacitor = window.Capacitor || (window.parent && window.parent.Capacitor) || navigator.userAgent.includes('Capacitor');
-                  var isPWA = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches || navigator.standalone || document.referrer.includes('android-app://');
-                  if (isCapacitor || isPWA) {
-                    window.location.replace('/login');
-                  }
-                }
-              })();
-            `
-          }}
-        />
       </head>
       <body suppressHydrationWarning data-build="2026-08-14-CLEAN_DEPLOY">
         <FaviconUpdater />

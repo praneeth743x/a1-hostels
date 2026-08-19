@@ -47,7 +47,7 @@ export default function LoginPage() {
     };
   }, [showSplash]);
 
-  const { currentUser, authStatus } = useHostel();
+  const { currentUser, authStatus, isLoadingAuth } = useHostel();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -354,7 +354,7 @@ export default function LoginPage() {
     }
   };
 
-  if (showSplash && !redirectFired) {
+  if (isLoadingAuth || (showSplash && !redirectFired) || (authStatus === 'READY' && currentUser)) {
     return <SplashScreen />;
   }
 

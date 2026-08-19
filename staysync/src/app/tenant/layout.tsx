@@ -12,6 +12,8 @@ import styles from './tenant.module.css';
 
 import AccessDeniedCard from '@/components/AccessDeniedCard';
 import { routePrefetcher } from '@/lib/routePrefetcher';
+import { useHostel } from '@/context/HostelContext';
+import { SplashScreen } from '@/components/SplashScreen';
 
 export default function TenantLayout({
   children,
@@ -25,9 +27,20 @@ export default function TenantLayout({
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const [isMounted, setIsMounted] = useState<boolean>(false);
+  const { isLoadingAuth, authStatus, currentUser } = useHostel();
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  if (isLoadingAuth) {
+    return <SplashScreen />;
+  }
+
+  // Prevent flashing portal UI if unauthenticated before redirect takes over
+  if (authStatus === 'UNAUTHENTICATED' || (authStatus === 'READY' && !currentUser)) {
+    return <SplashScreen />;
+  }
 
   useEffect(() => {
     routePrefetcher.prefetchIdle(router, [

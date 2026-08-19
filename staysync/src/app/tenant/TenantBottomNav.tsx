@@ -44,6 +44,10 @@ function BottomNavContent() {
               whileTap={{ scale: 0.94 }}
               onClick={() => {
                 setOptimisticTab(item.id);
+                // Dispatch event for instant UI update across components
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('tenantTabChange', { detail: item.id }));
+                }
                 if (isNotifications) {
                   router.push(`/tenant?tab=${item.id}`);
                 } else {
