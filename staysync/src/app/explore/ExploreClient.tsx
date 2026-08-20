@@ -1,31 +1,33 @@
 "use client";
 
-import React, { useState } from 'react';
-import Image from 'next/image';
-import { motion } from 'framer-motion';
-import { Search, Mic, Map, SlidersHorizontal, MapPin, Bookmark, Wifi, Utensils, AirVent, WashingMachine, ChevronDown, Camera, Home, Bed, Search as Compass, PlusSquare, Calendar, User, ArrowLeft, PhoneCall } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Search, Map, SlidersHorizontal, MapPin, Bookmark, Wifi, Utensils, 
+  AirVent, WashingMachine, ShieldCheck, Zap, ArrowLeft, PhoneCall, 
+  MessageCircle, Star, Sparkles, X, ChevronRight, Building2, CheckCircle2
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import styles from './explore.module.css';
 import globalStyles from '../page.module.css';
 
-// DUMMY_HOSTELS removed in favor of real data from the server
-
 const FILTERS = [
-  { label: 'Filters', icon: SlidersHorizontal, isPrimary: true },
-  { label: 'Wi-Fi', icon: Wifi },
-  { label: 'Food', icon: Utensils },
-  { label: 'AC Rooms', icon: AirVent },
-  { label: 'Washing Machine', icon: WashingMachine }
+  { label: 'All', id: 'all' },
+  { label: 'Wi-Fi', id: 'wifi', icon: Wifi },
+  { label: 'Food / Mess', id: 'food', icon: Utensils },
+  { label: 'AC Rooms', id: 'ac', icon: AirVent },
+  { label: 'Laundry', id: 'washing', icon: WashingMachine },
+  { label: 'Security', id: 'security', icon: ShieldCheck },
+  { label: 'Power Backup', id: 'power', icon: Zap }
 ];
 
 export default function ExploreClient({ initialHostels }: { initialHostels: any[] }) {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
   const [bookmarked, setBookmarked] = useState<string[]>([]);
-  const [activeFilters, setActiveFilters] = useState<string[]>([]);
-  const [userLoc, setUserLoc] = useState<{lat: number, lng: number} | null>(null);
+  const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [userLoc, setUserLoc] = useState<{ lat: number, lng: number } | null>(null);
   const [logoUrl, setLogoUrl] = useState<string>(() => {
     if (typeof window !== 'undefined' && localStorage.getItem('cachedLogoUrl')) {
       return localStorage.getItem('cachedLogoUrl')!;
@@ -33,7 +35,7 @@ export default function ExploreClient({ initialHostels }: { initialHostels: any[
     return '/himalaya_logo_premium.png';
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition((pos) => {
         setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude });
@@ -53,13 +55,9 @@ export default function ExploreClient({ initialHostels }: { initialHostels: any[
     });
   }, []);
 
-  const toggleBookmark = (id: string) => {
+  const toggleBookmark = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
     setBookmarked(prev => prev.includes(id) ? prev.filter(b => b !== id) : [...prev, id]);
-  };
-
-  const toggleFilter = (label: string) => {
-    if (label === 'Filters') return;
-    setActiveFilters(prev => prev.includes(label) ? prev.filter(f => f !== label) : [...prev, label]);
   };
 
   function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -75,20 +73,27 @@ export default function ExploreClient({ initialHostels }: { initialHostels: any[
 
   const filteredHostels = (initialHostels || [])
     .filter(h => {
-      const matchesSearch = (h.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            (h.address || '').toLowerCase().includes(searchQuery.toLowerCase());
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch = !q || 
+        (h.name || '').toLowerCase().includes(q) || 
+        (h.address || '').toLowerCase().includes(q) ||
+        (h.city || '').toLowerCase().includes(q) ||
+        (h.area || '').toLowerCase().includes(q);
       
-      const matchesFilters = activeFilters.length === 0 || activeFilters.every(filter => {
-        const lowerFilter = filter.toLowerCase();
-        const ams = (h.amenities || []).map((a: string) => a.toLowerCase());
-        const facs = (h.facilities || []).map((f: string) => f.toLowerCase());
-        
-        // Some properties just have "AC", so check for inclusion
-        return ams.some((a: string) => a.includes(lowerFilter.replace(' rooms', ''))) || 
-               facs.some((f: string) => f.includes(lowerFilter.replace(' rooms', '')));
-      });
+      if (activeFilter === 'all') return matchesSearch;
 
-      return matchesSearch && matchesFilters;
+      const ams = (h.amenities || []).map((a: string) => a.toLowerCase());
+      const facs = (h.facilities || []).map((f: string) => f.toLowerCase());
+      const allSpecs = [...ams, ...facs].join(' ');
+
+      if (activeFilter === 'wifi') return matchesSearch && (allSpecs.includes('wifi') || allSpecs.includes('wi-fi') || allSpecs.includes('internet'));
+      if (activeFilter === 'food') return matchesSearch && (allSpecs.includes('food') || allSpecs.includes('mess') || allSpecs.includes('meals') || allSpecs.includes('dining'));
+      if (activeFilter === 'ac') return matchesSearch && (allSpecs.includes('ac') || allSpecs.includes('air'));
+      if (activeFilter === 'washing') return matchesSearch && (allSpecs.includes('washing') || allSpecs.includes('laundry'));
+      if (activeFilter === 'security') return matchesSearch && (allSpecs.includes('cctv') || allSpecs.includes('security') || allSpecs.includes('guard'));
+      if (activeFilter === 'power') return matchesSearch && (allSpecs.includes('power') || allSpecs.includes('generator') || allSpecs.includes('backup'));
+
+      return matchesSearch;
     })
     .map(h => {
       let distance = Infinity;
@@ -98,14 +103,15 @@ export default function ExploreClient({ initialHostels }: { initialHostels: any[
       return { ...h, distance };
     })
     .sort((a, b) => {
-       if (userLoc) return a.distance - b.distance;
-       return 0;
+      if (userLoc && isFinite(a.distance) && isFinite(b.distance)) {
+        return a.distance - b.distance;
+      }
+      return 0;
     });
 
   return (
-    <div className={styles.pageContainer}>
-      
-      {/* Luxury Liquid Background from Landing Page */}
+    <div className={styles.exploreRoot}>
+      {/* Luxury Ambient Background */}
       <div className={globalStyles.silkAmbientBackground}>
         <div className={globalStyles.glowGoldOrb1}></div>
         <div className={globalStyles.glowGoldOrb2}></div>
@@ -114,12 +120,12 @@ export default function ExploreClient({ initialHostels }: { initialHostels: any[
         <div className={globalStyles.liquidRibbon2}></div>
       </div>
 
-      {/* Original Floating VisionOS Glass Header */}
+      {/* Vision Header */}
       <motion.header 
         className={globalStyles.visionHeader}
         initial={{ y: -30, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
       >
         <div className={globalStyles.headerTopRow}>
           <Link href="/" className={globalStyles.visionBrand} style={{ textDecoration: 'none' }}>
@@ -132,177 +138,247 @@ export default function ExploreClient({ initialHostels }: { initialHostels: any[
             </div>
             <div className={globalStyles.brandTitleColumn}>
               <span className={globalStyles.brandTitleText}>A1 HOSTELS</span>
-              <span className={globalStyles.brandSubtitleText}>EXPLORE HOSTELS</span>
+              <span className={globalStyles.brandSubtitleText}>PREMIUM LIVING</span>
             </div>
           </Link>
 
           <div className={globalStyles.headerActionGroup}>
             <button 
               onClick={() => router.push('/')} 
-              className={styles.backButton}
+              className={styles.homeBtn}
               type="button"
-              style={{ background: 'rgba(27, 46, 19, 0.08)', border: '1px solid rgba(27, 46, 19, 0.18)', padding: '6px 14px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: '#1b2e13', fontWeight: 700, fontSize: '0.8rem' }}
             >
               <ArrowLeft size={16} />
-              <span>Home</span>
+              <span>Back Home</span>
             </button>
           </div>
         </div>
       </motion.header>
 
-      {/* Scrollable Content Area */}
-      <main className={styles.mainContent}>
-        
-        {/* Premium Sticky Top Section */}
-        <div className={styles.topSection}>
-          {/* Header Area */}
-          <header className={styles.header}>
-            <div className={styles.headerLeft}>
-              <h1 className={styles.title}>Explore Hostels</h1>
-              <p className={styles.subtitle}>Find your perfect stay</p>
+      {/* Main Container */}
+      <main className={styles.mainContainer}>
+        {/* Hero Search Section */}
+        <section className={styles.heroSection}>
+          <div className={styles.heroTextRow}>
+            <div>
+              <div className={styles.heroBadge}>
+                <Sparkles size={13} className={styles.sparkleIcon} />
+                <span>EXPLORE VERIFIED SPACES</span>
+              </div>
+              <h1 className={styles.heroTitle}>Discover Your Ideal PG & Hostel</h1>
+              <p className={styles.heroSubtitle}>Browse luxury student and executive accommodations with top tier amenities</p>
             </div>
+
             <button 
-              className={styles.mapButton}
+              className={styles.mapTriggerBtn}
               onClick={() => window.open('https://www.google.com/maps/search/hostels', '_blank')}
             >
               <Map size={18} />
-              <span>Map</span>
-            </button>
-          </header>
-
-          {/* Search Bar & Filter Row */}
-          <div className={styles.searchRow}>
-            <div className={styles.searchContainer}>
-              <Search className={styles.searchIcon} size={22} />
-              <input 
-                type="text" 
-                placeholder="Search by hostel or place name..." 
-                className={styles.searchInput}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            
-            <button 
-              className={`${styles.filterButton} ${activeFilters.length > 0 ? styles.filterButtonActive : ''}`}
-              onClick={() => setShowFilters(!showFilters)}
-            >
-              <SlidersHorizontal size={22} />
-              {activeFilters.length > 0 && <span className={styles.filterBadge}>{activeFilters.length}</span>}
+              <span>View On Map</span>
             </button>
           </div>
 
-          {/* Expandable Filters Dropdown */}
-          {showFilters && (
-            <div className={styles.filterDropdown}>
-              <div className={styles.filterDropdownHeader}>
-                <span className={styles.filterDropdownTitle}>Facilities</span>
-                {activeFilters.length > 0 && (
-                  <button className={styles.clearFiltersBtn} onClick={() => setActiveFilters([])}>
-                    Clear all
-                  </button>
-                )}
-              </div>
-              <div className={styles.filterDropdownGrid}>
-                {FILTERS.slice(1).map((filter, index) => {
-                  const Icon = filter.icon;
-                  const isActive = activeFilters.includes(filter.label);
-                  return (
-                    <button 
-                      key={index} 
-                      className={`${styles.dropdownFilterItem} ${isActive ? styles.dropdownFilterItemActive : ''}`}
-                      onClick={() => toggleFilter(filter.label)}
-                    >
-                      <Icon size={18} />
-                      <span>{filter.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+          {/* Search Input Bar */}
+          <div className={styles.searchBarWrapper}>
+            <Search className={styles.searchBarIcon} size={20} />
+            <input 
+              type="text" 
+              placeholder="Search by PG name, city, landmark, or area..." 
+              className={styles.searchBarInput}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button 
+                type="button" 
+                className={styles.searchClearBtn}
+                onClick={() => setSearchQuery('')}
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Pills */}
+          <div className={styles.filterPillsRow}>
+            {FILTERS.map((f) => {
+              const Icon = f.icon;
+              const isActive = activeFilter === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setActiveFilter(f.id)}
+                  className={`${styles.filterPill} ${isActive ? styles.filterPillActive : ''}`}
+                >
+                  {Icon && <Icon size={15} />}
+                  <span>{f.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Results Bar */}
+        <div className={styles.resultsInfoBar}>
+          <div className={styles.resultsCount}>
+            <span>Showing</span> <strong>{filteredHostels.length}</strong> <span>hostels</span>
+            {activeFilter !== 'all' && (
+              <span className={styles.activeFilterTag}>
+                Filtered by {FILTERS.find(f => f.id === activeFilter)?.label}
+                <button onClick={() => setActiveFilter('all')}><X size={12} /></button>
+              </span>
+            )}
+          </div>
+
+          {userLoc && (
+            <div className={styles.locationBadge}>
+              <MapPin size={13} />
+              <span>Sorted by nearest to you</span>
             </div>
           )}
         </div>
 
-        {/* Results Header */}
-        <div className={styles.resultHeader}>
-          <h2 className={styles.resultCount}>{filteredHostels.length} Hostels <span className={styles.foundText}>found</span></h2>
-          <button className={styles.sortButton}>
-            Sort by: <span className={styles.sortHighlight}>{userLoc ? 'Nearest' : 'Relevance'}</span>
-            <ChevronDown size={14} className={styles.sortChevron} />
-          </button>
-        </div>
-
-        {/* Hostel List */}
-        <div className={styles.hostelList}>
+        {/* Hostels Grid */}
+        <div className={styles.hostelsGrid}>
           {filteredHostels.length === 0 ? (
-            <div className={styles.emptyState}>
-              <p>No hostels found</p>
-              <span>Try changing your search or filters.</span>
-              <button onClick={() => setSearchQuery('')} className={styles.clearSearchBtn}>Clear Search</button>
+            <div className={styles.emptyStateContainer}>
+              <div className={styles.emptyStateIcon}><Building2 size={40} /></div>
+              <h3>No Hostels Found</h3>
+              <p>We couldn't find any properties matching "{searchQuery}". Try searching with different keywords or resetting filters.</p>
+              <button 
+                type="button" 
+                onClick={() => { setSearchQuery(''); setActiveFilter('all'); }} 
+                className={styles.resetSearchBtn}
+              >
+                Reset All Filters
+              </button>
             </div>
           ) : (
-            filteredHostels.map(hostel => (
-              <div 
-                key={hostel.id} 
-                className={styles.hostelCard}
-                onClick={() => router.push(`/hostels/${hostel.id}`)}
-                style={{ cursor: 'pointer' }}
-              >
-                
-                {/* Image Column */}
-                <div className={styles.cardImageContainer}>
-                  <img src={(hostel.images && hostel.images.length > 0) ? hostel.images[0] : (hostel.imageUrl || '/luxury_building.png')} alt={hostel.name} className={styles.cardImage} />
-                  <div className={styles.photoBadge}>
-                    <Camera size={12} />
-                    <span>{(hostel.images?.length || 0) + 1} Photos</span>
-                  </div>
-                </div>
+            filteredHostels.map((hostel, index) => {
+              const coverImg = (hostel.images && hostel.images.length > 0) 
+                ? hostel.images[0] 
+                : (hostel.imageUrl || '/luxury_building.png');
+              const isSaved = bookmarked.includes(hostel.id);
+              const cleanPhone = (hostel.phone || '').replace(/\D/g, '');
 
-                {/* Info Column */}
-                <div className={styles.cardInfo}>
-                  <div className={styles.cardHeader}>
-                    <h3 className={styles.hostelName}>{hostel.name || 'Unnamed Hostel'}</h3>
-                    <button 
-                      className={`${styles.bookmarkButton} ${bookmarked.includes(hostel.id) ? styles.bookmarked : ''}`}
-                      onClick={() => toggleBookmark(hostel.id)}
-                    >
-                      <Bookmark size={20} fill={bookmarked.includes(hostel.id) ? "currentColor" : "none"} />
-                    </button>
-                  </div>
+              return (
+                <motion.div 
+                  key={hostel.id}
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, delay: index * 0.05 }}
+                  className={styles.hostelCard}
+                  onClick={() => router.push(`/hostels/${hostel.id}`)}
+                >
+                  {/* Image Cover */}
+                  <div className={styles.cardCover}>
+                    <img 
+                      src={coverImg} 
+                      alt={hostel.name || 'PG Hostel'} 
+                      className={styles.coverImage}
+                      loading="lazy"
+                    />
+                    <div className={styles.coverGradient}></div>
 
-                  <div className={styles.locationRow}>
-                    <MapPin size={14} className={styles.locationIcon} />
-                    <span className={styles.locationText}>{hostel.address || 'Address not specified'}</span>
-                  </div>
-
-                  <div className={styles.facilitiesRow}>
-                    <div className={styles.facilityIcon}><Wifi size={14} /></div>
-                    <div className={styles.facilityIcon}><Utensils size={14} /></div>
-                    <div className={styles.facilityIcon}><AirVent size={14} /></div>
-                    <div className={styles.facilityIcon}><WashingMachine size={14} /></div>
-                    <div className={styles.facilityCount}>+{(hostel.amenities?.length || 0) + (hostel.facilities?.length || 0)}</div>
-                  </div>
-
-                  <div className={styles.cardFooter}>
-                    <div className={styles.priceContainer}>
-                      <span className={styles.priceAmount}>Contact us</span>
-                      <span className={styles.priceSuffix}> for pricing</span>
+                    {/* Top Badges */}
+                    <div className={styles.coverTopBadges}>
+                      <div className={styles.verifiedPill}>
+                        <CheckCircle2 size={12} />
+                        <span>Verified</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className={`${styles.bookmarkBtn} ${isSaved ? styles.bookmarkBtnActive : ''}`}
+                        onClick={(e) => toggleBookmark(hostel.id, e)}
+                        title={isSaved ? 'Remove from saved' : 'Save hostel'}
+                      >
+                        <Bookmark size={16} fill={isSaved ? 'currentColor' : 'none'} />
+                      </button>
                     </div>
-                    
-                    <a 
-                      href={`tel:${hostel.phone}`} 
-                      className={styles.callButton}
-                      onClick={(e) => e.stopPropagation()} // Prevent card click
-                    >
-                      <PhoneCall size={20} />
-                    </a>
+
+                    {/* Bottom Cover Info */}
+                    <div className={styles.coverBottomBadges}>
+                      <div className={styles.ratingBadge}>
+                        <Star size={12} fill="#f59e0b" color="#f59e0b" />
+                        <span>4.9</span>
+                      </div>
+                      {isFinite(hostel.distance) && (
+                        <div className={styles.distanceBadge}>
+                          <MapPin size={11} />
+                          <span>{hostel.distance < 1 ? `${Math.round(hostel.distance * 1000)}m` : `${hostel.distance.toFixed(1)} km`}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))
+
+                  {/* Card Body */}
+                  <div className={styles.cardBody}>
+                    <div className={styles.titleRow}>
+                      <h3 className={styles.hostelTitle}>{hostel.name || 'A1 Hostels & PG'}</h3>
+                    </div>
+
+                    <div className={styles.addressRow}>
+                      <MapPin size={14} className={styles.addressPin} />
+                      <span className={styles.addressText}>{hostel.address || hostel.city || 'Hyderabad, Telangana'}</span>
+                    </div>
+
+                    {/* Facility Tags */}
+                    <div className={styles.amenitiesRow}>
+                      <span className={styles.amenityTag}><Wifi size={12} /> High-Speed Wi-Fi</span>
+                      <span className={styles.amenityTag}><Utensils size={12} /> 3-Time Food</span>
+                      <span className={styles.amenityTag}><AirVent size={12} /> AC / Non-AC</span>
+                    </div>
+
+                    {/* Footer Actions */}
+                    <div className={styles.cardFooter}>
+                      <div className={styles.priceCol}>
+                        <span className={styles.priceLabel}>Monthly Rent</span>
+                        <span className={styles.priceVal}>
+                          {hostel.starting_price || hostel.price ? `₹${Number(hostel.starting_price || hostel.price).toLocaleString('en-IN')}` : 'Best Rates'}
+                        </span>
+                      </div>
+
+                      <div className={styles.actionButtons}>
+                        {cleanPhone && (
+                          <>
+                            <a 
+                              href={`https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(`Hi, I am interested in ${hostel.name || 'your PG Hostel'}. Please share room availability and details.`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={styles.whatsappActionBtn}
+                              onClick={(e) => e.stopPropagation()}
+                              title="Chat on WhatsApp"
+                            >
+                              <MessageCircle size={16} />
+                            </a>
+
+                            <a 
+                              href={`tel:${cleanPhone}`}
+                              className={styles.callActionBtn}
+                              onClick={(e) => e.stopPropagation()}
+                              title="Call Property"
+                            >
+                              <PhoneCall size={16} />
+                            </a>
+                          </>
+                        )}
+
+                        <button 
+                          type="button" 
+                          className={styles.viewDetailsBtn}
+                        >
+                          <span>Details</span>
+                          <ChevronRight size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })
           )}
         </div>
-        
       </main>
     </div>
   );

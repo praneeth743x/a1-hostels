@@ -62,18 +62,27 @@ export default function RootLayout({
               }
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  const isCapacitor = typeof window !== 'undefined' && (window.Capacitor || (window.parent && window.parent.Capacitor) || navigator.userAgent.includes('Capacitor'));
+                  const isCapacitor = typeof window !== 'undefined' && 
+                    (window.Capacitor !== undefined || 
+                    (window.parent && window.parent.Capacitor !== undefined) || 
+                    navigator.userAgent.includes('Capacitor'));
+                  
                   if (isCapacitor || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                    // For Capacitor and local dev, unregister any existing service workers to prevent caching issues
                     navigator.serviceWorker.getRegistrations().then(function(registrations) {
                       for (let reg of registrations) {
                         reg.unregister();
+                        console.log('Unregistered SW for Capacitor/Local Dev');
                       }
                     });
                   } else {
+                    // For Web/PWA, register service worker cleanly
                     navigator.serviceWorker.register('/sw.js').then(function(registration) {
                       registration.update();
                       if (window.__startupTracer) window.__startupTracer.mark('S9_swRegistered');
-                    }).catch(function(err) {});
+                    }).catch(function(err) {
+                      console.warn('SW Registration warning: ', err);
+                    });
                   }
                 });
               }

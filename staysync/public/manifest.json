@@ -2,7 +2,7 @@
   "name": "A1 Hostels",
   "short_name": "A1 Hostels",
   "description": "A1 Hostels | Premium PG Hostels",
-  "start_url": "/",
+  "start_url": "/moblogin",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0F172A",

@@ -1,0 +1,375 @@
+.container {
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #070B18 !important;
+  background-image: radial-gradient(circle at center, #0d1630 0%, #070b18 100%) !important;
+  padding: 24px 16px max(40px, env(safe-area-inset-bottom, 32px)) 16px;
+  box-sizing: border-box;
+  position: relative;
+  overflow-y: auto;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #ffffff;
+}
+
+.ambientGlow {
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(88, 107, 255, 0.15) 0%, rgba(88, 107, 255, 0) 70%);
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.card {
+  width: 100%;
+  max-width: 480px;
+  background: rgba(13, 22, 48, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(91, 107, 255, 0.35);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3), 0 0 40px rgba(70, 100, 255, 0.12);
+  border-radius: 24px;
+  padding: 40px 32px;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 32px 20px;
+    border-radius: 20px;
+  }
+}
+
+.logoFrame {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(13, 22, 48, 0.9) 0%, rgba(5, 10, 25, 0.95) 100%);
+  border: 1px solid rgba(88, 107, 255, 0.5);
+  box-shadow: 0 0 20px rgba(88, 107, 255, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.logoImage {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.heading {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+  color: #ffffff;
+  text-align: center;
+  letter-spacing: -0.02em;
+}
+
+@media (max-width: 480px) {
+  .heading {
+    font-size: 28px;
+  }
+}
+
+.highlightText {
+  color: #586BFF;
+}
+
+.subtitle {
+  font-size: 15px;
+  color: #9AA7C7;
+  margin: 0 0 24px 0;
+  text-align: center;
+  font-weight: 400;
+}
+
+.divider {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: rgba(154, 167, 199, 0.35);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  margin: 16px 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(91, 107, 255, 0.15);
+}
+
+.divider:not(:empty)::before {
+  margin-right: 16px;
+}
+
+.divider:not(:empty)::after {
+  margin-left: 16px;
+}
+
+.form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.inputGroup {
+  position: relative;
+  width: 100%;
+}
+
+.inputIcon {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9AA7C7;
+  pointer-events: none;
+}
+
+.input {
+  width: 100%;
+  height: 58px;
+  border-radius: 14px;
+  background: rgba(5, 10, 25, 0.55);
+  border: 1px solid rgba(120, 140, 190, 0.22);
+  padding: 0 48px 0 48px;
+  color: #ffffff;
+  font-size: 15px;
+  box-sizing: border-box;
+  outline: none;
+  transition: all 0.2s ease-in-out;
+}
+
+.inputWithToggle {
+  padding-right: 52px;
+}
+
+.input:focus {
+  border-color: #586BFF;
+  box-shadow: 0 0 12px rgba(88, 107, 255, 0.25);
+  background: rgba(5, 10, 25, 0.75);
+}
+
+.passwordToggle {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9AA7C7;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.passwordToggle:hover {
+  color: #ffffff;
+}
+
+.forgotPasswordRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -8px;
+}
+
+.forgotPasswordLink {
+  color: #586BFF;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.forgotPasswordLink:hover {
+  color: #7B8CFF;
+  text-decoration: underline;
+}
+
+.submitButton {
+  width: 100%;
+  height: 58px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #586BFF 0%, #3949D8 100%);
+  border: none;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 20px rgba(88, 107, 255, 0.3);
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+.submitButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(88, 107, 255, 0.4);
+  filter: brightness(1.15);
+}
+
+.submitButton:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.submitButton:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.googleButton {
+  width: 100%;
+  height: 58px;
+  border-radius: 14px;
+  background: rgba(13, 22, 48, 0.6);
+  border: 1px solid rgba(120, 140, 190, 0.22);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.15s ease-in-out;
+  outline: none;
+}
+
+.googleButton:hover:not(:disabled) {
+  background: rgba(13, 22, 48, 0.85);
+  border-color: rgba(91, 107, 255, 0.4);
+}
+
+.googleButton:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.errorBox {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 12px;
+  color: #FCA5A5;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+/* Modal Styling */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 10, 25, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.modal {
+  width: 100%;
+  max-width: 440px;
+  background: #0D1630;
+  border: 1px solid rgba(91, 107, 255, 0.35);
+  border-radius: 20px;
+  padding: 32px 24px;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 30px rgba(88, 107, 255, 0.1);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.modalTitle {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  color: #9AA7C7;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+
+.closeButton:hover {
+  color: #ffffff;
+}
+
+.modalDescription {
+  font-size: 14px;
+  color: #9AA7C7;
+  line-height: 1.5;
+  margin: 0 0 24px 0;
+}
+
+.modalMsgBox {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.modalMsgSuccess {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #A7F3D0;
+}
+
+.modalMsgError {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #FCA5A5;
+}

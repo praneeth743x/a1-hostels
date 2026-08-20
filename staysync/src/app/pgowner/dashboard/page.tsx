@@ -84,6 +84,10 @@ export default function PropertyAnalytics() {
 
   useEffect(() => {
     setIsMounted(true);
+    // Run daily automated reminders silently in the background (deduplicated per day)
+    import('@/app/actions/whatsappActions').then(({ runDailyAutomatedRemindersAction }) => {
+      runDailyAutomatedRemindersAction().catch(() => {});
+    }).catch(() => {});
   }, []);
   
   // Shared Filter State for both Overview and Graphs

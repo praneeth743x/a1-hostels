@@ -109,7 +109,12 @@ export function getTenantPaymentStatus(
     return Number(val.toString().replace(/,/g, '')) || 0;
   };
 
-  const pendingAmount = tenantPendingDues.reduce((acc, d) => acc + parseNum(d.amount), 0);
+  const pendingAmount = tenantPendingDues.reduce((acc, d) => {
+    const rem = d.pending_balance !== undefined 
+      ? parseNum(d.pending_balance) 
+      : Math.max(0, parseNum(d.amount) - parseNum(d.amount_paid));
+    return acc + rem;
+  }, 0);
   const paidAmount = tenantPaid.reduce((acc, p) => acc + parseNum(p.amount_paid || p.amount), 0);
 
   let dueDate: Date | null = null;

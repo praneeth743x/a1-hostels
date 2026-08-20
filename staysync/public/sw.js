@@ -1,8 +1,8 @@
 // PWA Service Worker for New Hostel Instance
-const CACHE_NAME = 'staysync-instance-v2';
+const CACHE_NAME = 'staysync-instance-v4';
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
+  // Safe install without force skipWaiting
 });
 
 self.addEventListener('activate', (event) => {
@@ -10,43 +10,16 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cache) => {
-          if (cache !== CACHE_NAME) {
-            return caches.delete(cache);
-          }
+          return caches.delete(cache);
         })
       );
-    }).then(() => self.clients.claim())
+    })
   );
 });
 
-// Network-first fetch strategy for HTML pages and Next.js dynamic static chunks
+// Passive fetch listener to satisfy PWA install requirements without intercepting or caching requests
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  const url = new URL(event.request.url);
-
-  // Bypass service worker for Next.js RSC navigation, hot module updates, API calls, and external domains
-  if (
-    url.pathname.startsWith('/_next/') ||
-    url.pathname.startsWith('/api/') ||
-    url.pathname.startsWith('/__/') || // Firebase reserved auth/hosting namespace
-    url.searchParams.has('_rsc') ||
-    event.request.headers.get('RSC') === '1' ||
-    event.request.headers.get('Next-Router-State-Tree') ||
-    event.request.headers.get('Next-Url') ||
-    url.origin !== location.origin
-  ) {
-    return;
-  }
-
-  event.respondWith(
-    fetch(event.request).catch(async () => {
-      try {
-        const cached = await caches.match(event.request);
-        if (cached) return cached;
-      } catch (e) {}
-      return new Response('', { status: 503, statusText: 'Service Unavailable' });
-    })
-  );
+  // Let the browser handle all network requests normally
 });
 
 // Handle PWA background Push notifications directly on mobile notification bar

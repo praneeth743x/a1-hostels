@@ -122,7 +122,7 @@ export async function createTeamMemberAction(params: {
     // 1. Auto-create Firebase Auth User if not existing
     const { adminAuth } = await import('@/lib/firebase-admin');
     let authUid: string | undefined;
-    const initialPassword = params.phone ? `Sync@${params.phone.replace(/\D/g, '').slice(-6)}` : 'StaySync@123';
+    const initialPassword = params.phone ? `A1@${params.phone.replace(/\D/g, '').slice(-6)}` : 'A1Hostels@123';
 
     try {
       const userRecord = await adminAuth.getUserByEmail(cleanEmail);

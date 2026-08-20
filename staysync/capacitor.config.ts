@@ -8,6 +8,11 @@ const config: CapacitorConfig = {
     url: process.env.NEXT_PUBLIC_APP_URL || 'https://a1-hostels.web.app',
     cleartext: true,
     allowNavigation: [
+      "a1-hostels.web.app",
+      "https://a1-hostels.web.app",
+      "*.web.app",
+      "a1-hostels.firebaseapp.com",
+      "https://a1-hostels.firebaseapp.com",
       "*.firebaseapp.com",
       "accounts.google.com",
       "*.googleapis.com",

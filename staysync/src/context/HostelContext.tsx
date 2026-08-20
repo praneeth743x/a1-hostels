@@ -164,8 +164,10 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           console.error('Redirect result error in global context:', error);
           if (typeof window !== 'undefined') {
             sessionStorage.setItem('redirect_login_error', error.message || 'Failed to sign in with Google.');
-            if (window.location.pathname !== '/login') {
-              window.location.href = '/login';
+            const isPWA = typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches;
+            const targetPath = isPWA ? '/moblogin' : '/login';
+            if (window.location.pathname !== targetPath) {
+              window.location.href = targetPath;
             }
           }
         });

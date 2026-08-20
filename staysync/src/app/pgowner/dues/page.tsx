@@ -189,7 +189,11 @@ const processDuesData = (rawPendingData: any[], rawTenantsData: any[], rawPaidDa
 
     const diffTime = today.getTime() - dueDate.getTime();
     const dueDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const amount = Number(p.amount || 0);
+    const amount = p.pending_balance !== undefined 
+      ? Number(p.pending_balance) 
+      : Math.max(0, Number(p.amount || 0) - Number(p.amount_paid || 0));
+
+    if (amount <= 0) return; // Skip fully settled charges
 
     if (!groupedMap.has(tenantId)) {
       groupedMap.set(tenantId, {
@@ -215,7 +219,7 @@ const processDuesData = (rawPendingData: any[], rawTenantsData: any[], rawPaidDa
     if (!group.facePicture && facePicture) {
       group.facePicture = facePicture;
     }
-    group.charges.push({ ...p, dueDays });
+    group.charges.push({ ...p, amount, dueDays });
   });
 
   const processed = Array.from(groupedMap.values()).map(g => {
@@ -1429,15 +1433,10 @@ function DuesPageContent() {
                   {expandedCardId === due.payment_id && (
 
                     <motion.div 
-
                       initial={{ height: 0, opacity: 0 }}
-
                       animate={{ height: 'auto', opacity: 1 }}
-
                       exit={{ height: 0, opacity: 0 }}
-
-                      style={{ overflow: 'hidden' }}
-
+                      style={{ overflow: 'visible' }}
                     >
 
                       <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '16px', paddingTop: '16px' }}>
@@ -1547,24 +1546,39 @@ function DuesPageContent() {
                             </div>
 
                             <div style={{ gridColumn: '1 / -1' }}>
-                              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginBottom: '4px' }}>Payment Method</label>
-                              <CustomSelect 
-                                value={paymentMethod}
-
-                                onChange={(val) => setPaymentMethod(val)}
-
-                                options={[
-
-                                  { value: 'UPI', label: 'UPI' },
-
-                                  { value: 'Cash', label: 'Cash' },
-
-                                  { value: 'Bank Transfer', label: 'Bank Transfer' }
-
-                                ]}
-
-                              />
-
+                              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Payment Method</label>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                                {[
+                                  { id: 'UPI', label: 'UPI', icon: '⚡' },
+                                  { id: 'Cash', label: 'Cash', icon: '💵' },
+                                  { id: 'Bank Transfer', label: 'Bank', icon: '🏦' }
+                                ].map((m) => (
+                                  <button
+                                    key={m.id}
+                                    type="button"
+                                    onClick={() => setPaymentMethod(m.id)}
+                                    style={{
+                                      padding: '10px 6px',
+                                      borderRadius: '10px',
+                                      border: paymentMethod === m.id ? '2px solid #6366f1' : '1px solid #e2e8f0',
+                                      background: paymentMethod === m.id ? '#eef2ff' : '#ffffff',
+                                      color: paymentMethod === m.id ? '#4338ca' : '#475569',
+                                      fontWeight: paymentMethod === m.id ? 700 : 600,
+                                      fontSize: '0.82rem',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '4px',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease',
+                                      boxShadow: paymentMethod === m.id ? '0 2px 8px rgba(99,102,241,0.18)' : 'none'
+                                    }}
+                                  >
+                                    <span>{m.icon}</span>
+                                    <span>{m.label}</span>
+                                  </button>
+                                ))}
+                              </div>
                             </div>
 
                           </div>

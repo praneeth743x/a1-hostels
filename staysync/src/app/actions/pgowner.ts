@@ -475,27 +475,114 @@ export async function getProperties(ownerId: string) {
   }
 }
 
+export async function requestHostelDeletion(pgId: string, ownerEmail: string) {
+  try {
+    const pgDoc = await adminDb.collection('properties').doc(pgId).get();
+    if (!pgDoc.exists) return { success: false, error: 'Hostel not found' };
+
+    const pgData = pgDoc.data() as any;
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 60000).toISOString(); // 1 minute
+
+    const [roomsSnap, tenantsSnap] = await Promise.all([
+      adminDb.collection('rooms').where('pg_id', '==', pgId).get(),
+      adminDb.collection('tenants').where('pg_id', '==', pgId).get()
+    ]);
+
+    await adminDb.collection('deletion_requests').doc(token).set({
+      type: 'property',
+      propertyId: pgId,
+      status: 'pending',
+      expiresAt,
+      requestedAt: new Date().toISOString()
+    });
+
+    const { sendHostelDeletionConfirmationEmail } = await import('@/lib/email');
+    const emailSent = await sendHostelDeletionConfirmationEmail(
+      ownerEmail,
+      pgData.name || 'Hostel',
+      token,
+      roomsSnap.size,
+      tenantsSnap.size
+    );
+
+    if (!emailSent) {
+      return { success: false, error: 'Failed to send confirmation email' };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 export async function deleteProperty(pgId: string) {
   try {
-    // Delete payments
-    const payments = await adminDb.collection('payments').where('pg_id', '==', pgId).get();
-    const pBatch = adminDb.batch();
-    payments.docs.forEach(doc => pBatch.delete(doc.ref));
-    await pBatch.commit();
+    // 1. Fetch and clean up all tenants in this hostel
+    const tenantsSnap = await adminDb.collection('tenants').where('pg_id', '==', pgId).get();
+    for (const tDoc of tenantsSnap.docs) {
+      const tData = tDoc.data();
+      const tUid = tData.uid;
+      const tEmail = tData.email;
+      const tPhone = (tData.mobile || tData.phone || '').replace(/\D/g, '').slice(-10);
 
-    // Delete tenants
-    const tenants = await adminDb.collection('tenants').where('pg_id', '==', pgId).get();
-    const tBatch = adminDb.batch();
-    tenants.docs.forEach(doc => tBatch.delete(doc.ref));
-    await tBatch.commit();
+      if (tUid) await adminAuth.deleteUser(tUid).catch(() => {});
+      if (tEmail) {
+        try {
+          const u = await adminAuth.getUserByEmail(tEmail);
+          if (u) await adminAuth.deleteUser(u.uid);
+        } catch (e) {}
+      }
+      if (tPhone && tPhone.length === 10) {
+        try {
+          const u = await adminAuth.getUserByPhoneNumber(`+91${tPhone}`);
+          if (u) await adminAuth.deleteUser(u.uid);
+        } catch (e) {}
+      }
 
-    // Delete rooms
-    const rooms = await adminDb.collection('rooms').where('pg_id', '==', pgId).get();
-    const rBatch = adminDb.batch();
-    rooms.docs.forEach(doc => rBatch.delete(doc.ref));
-    await rBatch.commit();
+      // Delete user_profiles for this tenant
+      if (tEmail) {
+        const pSnap = await adminDb.collection('user_profiles').where('email', '==', tEmail).get();
+        pSnap.docs.forEach(doc => doc.ref.delete());
+      }
+    }
 
-    // Delete property
+    // 2. Cascade delete all documents across collections
+    const collectionsToClean = [
+      'payments',
+      'dues',
+      'tenants',
+      'rooms',
+      'complaints',
+      'notices',
+      'expenses',
+      'food_menus',
+      'tenant_activity_logs'
+    ];
+
+    for (const col of collectionsToClean) {
+      const snap = await adminDb.collection(col).where('pg_id', '==', pgId).get();
+      if (!snap.empty) {
+        const batch = adminDb.batch();
+        snap.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+      }
+    }
+
+    // 3. Clean up team members assigned to this hostel
+    const teamSnap = await adminDb.collection('team_members').where('pg_id', '==', pgId).get();
+    for (const memberDoc of teamSnap.docs) {
+      const mData = memberDoc.data();
+      if (mData.email) {
+        try {
+          const u = await adminAuth.getUserByEmail(mData.email);
+          if (u) await adminAuth.deleteUser(u.uid);
+        } catch (e) {}
+      }
+      await memberDoc.ref.delete();
+    }
+
+    // 4. Delete property document
     await adminDb.collection('properties').doc(pgId).delete();
     
     revalidatePath('/pgowner/properties');
@@ -638,173 +725,266 @@ export async function addTenant(data: {
     govtBack?: string;
     collegeFront?: string;
     collegeBack?: string;
+    empFront?: string;
+    empBack?: string;
   };
 }) {
   try {
-    const cleanDigits = data.phone.replace(/\D/g, '').slice(-10);
+    const cleanDigits = (data.phone || '').replace(/\D/g, '').slice(-10);
     const cleanEmail = (data.email || '').trim().toLowerCase();
+
+    if (!cleanDigits || cleanDigits.length < 10) {
+      return { success: false, error: 'Please enter a valid 10-digit phone number.' };
+    }
+
     const formattedPhone = `+91${cleanDigits}`;
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      return { success: false, error: 'A valid email address is required.' };
-    }
+    // Execute ALL strict uniqueness checks concurrently in parallel
+    const [
+      tenantPhoneSnap,
+      tenantEmailSnap,
+      profilePhoneSnap,
+      profileMobileSnap,
+      profileEmailSnap,
+      teamPhoneSnap,
+      authPhoneUser,
+      authEmailUser
+    ] = await Promise.all([
+      adminDb.collection('tenants').where('mobile', '==', cleanDigits).get().catch(() => null),
+      cleanEmail ? adminDb.collection('tenants').where('email', '==', cleanEmail).get().catch(() => null) : Promise.resolve(null),
+      adminDb.collection('user_profiles').where('phone', '==', cleanDigits).get().catch(() => null),
+      adminDb.collection('user_profiles').where('mobile', '==', cleanDigits).get().catch(() => null),
+      cleanEmail ? adminDb.collection('user_profiles').where('email', '==', cleanEmail).get().catch(() => null) : Promise.resolve(null),
+      adminDb.collection('team_members').where('mobile', '==', cleanDigits).get().catch(() => null),
+      adminAuth.getUserByPhoneNumber(formattedPhone).catch(() => null),
+      cleanEmail ? adminAuth.getUserByEmail(cleanEmail).catch(() => null) : Promise.resolve(null)
+    ]);
 
-    // 1. Check Firebase Auth by Phone
-    if (cleanDigits.length === 10) {
-      const authPhoneUser = await adminAuth.getUserByPhoneNumber(formattedPhone).catch(() => null);
-      if (authPhoneUser) {
-        return { success: false, error: 'A user with this phone number already exists in the system.' };
-      }
-    }
-
-    // 2. Check Firebase Auth by Email
-    if (cleanEmail) {
-      const authEmailUser = await adminAuth.getUserByEmail(cleanEmail).catch(() => null);
-      if (authEmailUser) {
-        return { success: false, error: 'A user with this email address already exists in the system.' };
-      }
-    }
-
-    // 3. Check user_profiles collection (PG Owners, Super Admins, Team Members, Users)
-    if (cleanDigits.length === 10) {
-      const profilePhoneSnap = await adminDb.collection('user_profiles')
-        .where('phone', 'in', [cleanDigits, formattedPhone])
-        .get();
-      if (!profilePhoneSnap.empty) {
-        return { success: false, error: 'A user with this phone number already exists in the system.' };
-      }
-      const profileMobileSnap = await adminDb.collection('user_profiles')
-        .where('mobile', 'in', [cleanDigits, formattedPhone])
-        .get();
-      if (!profileMobileSnap.empty) {
-        return { success: false, error: 'A user with this phone number already exists in the system.' };
+    // 1. Strict Phone Duplicate Check across active tenants
+    if (tenantPhoneSnap && !tenantPhoneSnap.empty) {
+      const hasActivePhoneTenant = tenantPhoneSnap.docs.some(doc => {
+        const d = doc.data();
+        return d.is_active !== false && d.status !== 'Inactive';
+      });
+      if (hasActivePhoneTenant) {
+        return { success: false, error: `A tenant with phone number ${cleanDigits} already exists.` };
       }
     }
 
-    if (cleanEmail) {
-      const profileEmailSnap = await adminDb.collection('user_profiles')
-        .where('email', '==', cleanEmail)
-        .get();
-      if (!profileEmailSnap.empty) {
-        return { success: false, error: 'A user with this email address already exists in the system.' };
+    // 2. Strict Email Duplicate Check across active tenants
+    if (cleanEmail && tenantEmailSnap && !tenantEmailSnap.empty) {
+      const hasActiveEmailTenant = tenantEmailSnap.docs.some(doc => {
+        const d = doc.data();
+        return d.is_active !== false && d.status !== 'Inactive';
+      });
+      if (hasActiveEmailTenant) {
+        return { success: false, error: `A tenant with email address ${cleanEmail} already exists.` };
       }
     }
 
-    // 4. Check team_members collection
-    if (cleanDigits.length === 10) {
-      const teamPhoneSnap = await adminDb.collection('team_members')
-        .where('mobile', 'in', [cleanDigits, formattedPhone])
-        .get();
-      if (!teamPhoneSnap.empty) {
-        return { success: false, error: 'A team member with this phone number already exists in the system.' };
-      }
+    // 3. Strict Phone Duplicate Check across user_profiles & team_members
+    if ((profilePhoneSnap && !profilePhoneSnap.empty) || (profileMobileSnap && !profileMobileSnap.empty)) {
+      return { success: false, error: `A user profile with phone number ${cleanDigits} already exists.` };
     }
-    if (cleanEmail) {
-      const teamEmailSnap = await adminDb.collection('team_members')
-        .where('email', '==', cleanEmail)
-        .get();
-      if (!teamEmailSnap.empty) {
-        return { success: false, error: 'A team member with this email address already exists in the system.' };
+    if (teamPhoneSnap && !teamPhoneSnap.empty) {
+      return { success: false, error: `A team member with phone number ${cleanDigits} already exists.` };
+    }
+
+    // 4. Strict Email Duplicate Check across user_profiles
+    if (cleanEmail && profileEmailSnap && !profileEmailSnap.empty) {
+      return { success: false, error: `A user profile with email address ${cleanEmail} already exists.` };
+    }
+
+    // 5. Strict Firebase Auth Account Checks (with Orphan Cleanup)
+    if (authPhoneUser) {
+      const hasAssociatedRecord = 
+        (tenantPhoneSnap && !tenantPhoneSnap.empty) || 
+        (profilePhoneSnap && !profilePhoneSnap.empty) || 
+        (profileMobileSnap && !profileMobileSnap.empty) || 
+        (teamPhoneSnap && !teamPhoneSnap.empty);
+
+      if (hasAssociatedRecord) {
+        return { success: false, error: `An active account with phone number ${formattedPhone} already exists.` };
+      } else {
+        // Orphaned Auth user from previously deleted tenant: clean up
+        await adminAuth.deleteUser(authPhoneUser.uid).catch(() => {});
       }
     }
 
-    // 5. Check tenants collection (Active / Participating tenants)
-    if (cleanDigits.length === 10) {
-      const tenantMobileSnap = await adminDb.collection('tenants')
-        .where('mobile', '==', cleanDigits)
-        .get();
-      const activeTenantMatch = tenantMobileSnap.docs.some(doc => isTenantActiveForBusiness(doc.data()));
-      if (activeTenantMatch) {
-        return { success: false, error: 'An active tenant with this phone number already exists in the system.' };
-      }
-    }
+    if (authEmailUser) {
+      const hasAssociatedRecord = 
+        (cleanEmail && tenantEmailSnap && !tenantEmailSnap.empty) || 
+        (cleanEmail && profileEmailSnap && !profileEmailSnap.empty);
 
-    if (cleanEmail) {
-      const tenantEmailSnap = await adminDb.collection('tenants')
-        .where('email', '==', cleanEmail)
-        .get();
-      const activeEmailTenantMatch = tenantEmailSnap.docs.some(doc => isTenantActiveForBusiness(doc.data()));
-      if (activeEmailTenantMatch) {
-        return { success: false, error: 'An active tenant with this email address already exists in the system.' };
+      if (hasAssociatedRecord) {
+        return { success: false, error: `An active account with email address ${cleanEmail} already exists.` };
+      } else {
+        // Orphaned Auth user from previously deleted tenant: clean up
+        await adminAuth.deleteUser(authEmailUser.uid).catch(() => {});
       }
     }
 
     const tenantRef = adminDb.collection('tenants').doc();
+    const finalRentAmount = Math.round(Number(data.rentAmount) || 0);
+    const finalDeposit = Math.round(Number(data.securityDeposit) || 0);
+    const finalOpeningFee = Math.round(Number(data.openingPendingFee) || 0);
+
     const tenantData: any = {
       tenant_id: tenantRef.id,
       pg_id: data.pgId,
       room_id: data.roomId,
       full_name: data.fullName,
       mobile: cleanDigits,
-      email: cleanEmail || undefined,
-      rent_amount: data.rentAmount || 0,
-      security_deposit: data.securityDeposit || 0,
+      parent_phone: data.parentPhone || '',
+      alternate_phone: data.parentPhone || '',
+      emergency_contact: data.parentPhone || '',
+      email: cleanEmail || '',
+      work_status: data.workStatus || 'student',
+      rent_amount: finalRentAmount,
+      security_deposit: finalDeposit,
       extra_fee: 0,
       is_active: true,
-      move_in_date: data.moveInDate || '',
+      status: 'Active',
+      move_in_date: data.moveInDate || new Date().toISOString(),
       documents: data.documents || {},
-      face_picture: (data.documents as any)?.facePicture || (data.documents as any)?.photo || (data as any).facePicture || (data as any).face_picture || '',
+      face_picture: data.documents?.facePicture || '',
       created_at: new Date().toISOString()
     };
-    await tenantRef.set(tenantData);
-    
-    const roomRefLocal = adminDb.collection('rooms').doc(data.roomId);
-    const roomSnapLocal = await roomRefLocal.get();
-    const roomExtraFee = roomSnapLocal.exists ? (roomSnapLocal.data()?.extra_fee || 0) : 0;
 
-    // Also create the first rent payment bill
+    const batch = adminDb.batch();
+    batch.set(tenantRef, tenantData);
+
+    const currentMonth = new Date(data.moveInDate || Date.now()).toLocaleString('default', { month: 'long' });
     const paymentRef = adminDb.collection('payments').doc();
-    await paymentRef.set({
+    batch.set(paymentRef, {
       payment_id: paymentRef.id,
       pg_id: data.pgId,
+      owner_id: data.ownerId || '',
       tenant_id: tenantRef.id,
-      amount: (data.rentAmount || 0) + roomExtraFee,
+      tenant_name: data.fullName,
+      tenant_phone: cleanDigits,
+      amount: finalRentAmount,
+      amount_paid: 0,
       status: 'pending',
-      month: new Date().toLocaleString('default', { month: 'long' }),
+      type: 'monthly_rent',
+      description: `${currentMonth} Rent`,
+      month: currentMonth,
+      due_date: data.moveInDate || new Date().toISOString(),
       created_at: new Date().toISOString()
     });
 
-    if (data.openingPendingFee && data.openingPendingFee > 0) {
+    if (finalOpeningFee > 0) {
       const openingFeeRef = adminDb.collection('payments').doc();
-      await openingFeeRef.set({
+      const openingMonth = new Date(data.openingBalanceDueDate || Date.now()).toLocaleString('default', { month: 'long' });
+      batch.set(openingFeeRef, {
         payment_id: openingFeeRef.id,
         pg_id: data.pgId,
+        owner_id: data.ownerId || '',
         tenant_id: tenantRef.id,
-        amount: data.openingPendingFee,
+        tenant_name: data.fullName,
+        tenant_phone: cleanDigits,
+        amount: finalOpeningFee,
+        amount_paid: 0,
         status: 'pending',
-        month: new Date(data.openingBalanceDueDate || Date.now()).toLocaleString('default', { month: 'long' }),
+        month: openingMonth,
         description: 'Opening Pending Fee',
         type: 'opening-fee',
+        due_date: data.openingBalanceDueDate || data.moveInDate || new Date().toISOString(),
         created_at: data.openingBalanceDueDate || new Date().toISOString()
       });
     }
 
-    try {
-      const { recordActivityLog } = await import('@/app/actions/teamActions');
-      await recordActivityLog({
-        owner_id: data.ownerId,
-        user_id: data.ownerId,
-        pg_id: data.pgId,
-        tenant_id: tenantRef.id,
-        event_type: 'TENANT_ADDED',
-        title: 'Added New Resident',
-        details: `Added new resident ${data.fullName} (${data.phone}) to hostel.`,
-        performed_by: 'Owner'
-      });
-    } catch (e) {
-      console.warn("Failed to record TENANT_ADDED activity log:", e);
-    }
+    await batch.commit();
 
-    revalidatePath('/pgowner/tenants');
-    return { success: true, data: [tenantData] };
+    // Asynchronously dispatch WhatsApp Welcome + Due/Overdue Notification in background (<50ms non-blocking)
+    (async () => {
+      try {
+        const { sendTenantWelcomeNotification, sendRentReminderWithLink } = await import('@/lib/whatsapp');
+        let hostelName = 'A1 Hostels';
+        const pgSnap = await adminDb.collection('properties').doc(data.pgId).get();
+        if (pgSnap.exists) hostelName = pgSnap.data()?.name || hostelName;
+
+        let roomNum = 'N/A';
+        const roomSnap = await adminDb.collection('rooms').doc(data.roomId).get();
+        if (roomSnap.exists) roomNum = roomSnap.data()?.room_number || roomNum;
+
+        // 1. Send Welcome Notification
+        await sendTenantWelcomeNotification({
+          tenantPhone: cleanDigits,
+          tenantName: data.fullName,
+          roomNumber: roomNum,
+          moveInDate: data.moveInDate,
+          rentAmount: finalRentAmount,
+          securityDeposit: finalDeposit,
+          hostelName,
+          tenantId: tenantRef.id,
+          triggeredBy: 'auto_tenant_create'
+        });
+
+        // 2. If tenant has pending rent / opening fee, also send Due/Overdue Reminder
+        const totalPendingDue = finalRentAmount + finalOpeningFee;
+        if (totalPendingDue > 0) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          let moveIn = new Date(data.moveInDate || Date.now());
+          if (isNaN(moveIn.getTime())) moveIn = new Date();
+          moveIn.setHours(0, 0, 0, 0);
+
+          const diffTime = today.getTime() - moveIn.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          let statusType: 'STANDARD' | 'DUE_TODAY' | 'DUE_TOMORROW' | 'OVERDUE' = 'DUE_TODAY';
+          let overdueDays = 0;
+
+          if (diffDays > 0) {
+            statusType = 'OVERDUE';
+            overdueDays = diffDays;
+          } else if (diffDays === 0) {
+            statusType = 'DUE_TODAY';
+          } else if (diffDays === -1) {
+            statusType = 'DUE_TOMORROW';
+          } else {
+            statusType = 'STANDARD';
+          }
+
+          const currentMonth = today.toLocaleString('default', { month: 'long', year: 'numeric' });
+          const dueDateFormatted = moveIn.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+          await sendRentReminderWithLink(
+            cleanDigits,
+            data.fullName,
+            totalPendingDue,
+            currentMonth,
+            paymentRef.id,
+            hostelName,
+            statusType,
+            overdueDays,
+            {
+              tenantId: tenantRef.id,
+              triggeredBy: 'auto_tenant_create_due',
+              roomNumber: roomNum,
+              dueDateStr: dueDateFormatted
+            }
+          );
+        }
+      } catch (err) {
+        console.warn('Background welcome/due notification error:', err);
+      }
+    })();
+
+    return { success: true, data: { tenant_id: tenantRef.id } };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    console.error('Error in addTenant action:', err);
+    return { success: false, error: err.message || 'Failed to save tenant record.' };
   }
 }
 
 export async function updateTenantBasicDetails(tenantId: string, data: {
   fullName?: string;
   mobile?: string;
+  parentPhone?: string;
+  alternatePhone?: string;
   email?: string;
   moveInDate?: string;
   checkOutDate?: string;
@@ -816,6 +996,16 @@ export async function updateTenantBasicDetails(tenantId: string, data: {
     const updateData: any = {};
     if (data.fullName !== undefined) updateData.full_name = data.fullName;
     if (data.mobile !== undefined) updateData.mobile = data.mobile;
+    if (data.parentPhone !== undefined) {
+      updateData.parent_phone = data.parentPhone;
+      updateData.alternate_phone = data.parentPhone;
+      updateData.emergency_contact = data.parentPhone;
+    }
+    if (data.alternatePhone !== undefined) {
+      updateData.alternate_phone = data.alternatePhone;
+      updateData.parent_phone = data.alternatePhone;
+      updateData.emergency_contact = data.alternatePhone;
+    }
     if (data.email !== undefined) updateData.email = data.email;
     if (data.moveInDate !== undefined) updateData.move_in_date = data.moveInDate;
     if (data.checkOutDate !== undefined) updateData.check_out_date = data.checkOutDate;
@@ -1381,9 +1571,38 @@ export async function collectFIFOPayment(
       if (rDoc.exists) snapshotRoomNum = rDoc.data()?.room_number || snapshotRoomNum;
     }
 
-    if ((!snapshotPgName || snapshotPgName === 'A1 Hostels') && (pgId || tenantData?.pg_id)) {
+    let targetOwnerId = tenantData?.owner_id || '';
+    if (pgId || tenantData?.pg_id) {
       const pDoc = await adminDb.collection('properties').doc(pgId || tenantData?.pg_id).get();
-      if (pDoc.exists) snapshotPgName = pDoc.data()?.name || snapshotPgName;
+      if (pDoc.exists) {
+        const pData = pDoc.data();
+        if (!snapshotPgName || snapshotPgName === 'A1 Hostels') snapshotPgName = pData?.name || snapshotPgName;
+        if (!targetOwnerId) targetOwnerId = pData?.owner_id || '';
+      }
+    }
+
+    // Resolve Collector Name & Role
+    let collectorName = 'PG Staff';
+    let collectorRole = collectedByRole || 'Staff';
+
+    if (collectorUid) {
+      try {
+        const [profSnap, memberSnap] = await Promise.all([
+          adminDb.collection('user_profiles').doc(collectorUid).get().catch(() => null),
+          adminDb.collection('team_members').where('auth_uid', '==', collectorUid).get().catch(() => null)
+        ]);
+        if (profSnap && profSnap.exists) {
+          const p = profSnap.data();
+          collectorName = p?.full_name || p?.name || p?.displayName || collectorName;
+          collectorRole = p?.role || collectorRole;
+        } else if (memberSnap && !memberSnap.empty) {
+          const m = memberSnap.docs[0].data();
+          collectorName = m?.full_name || m?.name || collectorName;
+          collectorRole = m?.role || m?.role_title || collectorRole;
+        }
+      } catch (e) {
+        console.warn('Collector name lookup failed', e);
+      }
     }
 
     // 1. Fetch all pending payments for the tenant
@@ -1392,6 +1611,7 @@ export async function collectFIFOPayment(
       .where('status', 'in', ['pending', 'overdue'])
       .get();
     const paidDocRefs: any[] = [];
+    
     if (!pendingSnap.empty) {
       let pendingPayments = pendingSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
       
@@ -1438,14 +1658,19 @@ export async function collectFIFOPayment(
               payment_id: paymentRef.id,
               tenant_id: tenantId,
               pg_id: pgId || tenantData?.pg_id,
-              type: payment.type,
-              description: payment.description,
+              owner_id: targetOwnerId,
+              type: payment.type || 'monthly_rent',
+              description: payment.description || 'Rent Payment',
               amount: payment.amount,
               original_amount: payment.amount,
               status: 'paid',
               amount_paid: 0,
               payment_method: method || 'Cash',
               payment_date: new Date().toISOString(),
+              collected_by: collectorName,
+              collected_by_name: collectorName,
+              collected_by_role: collectorRole,
+              collected_by_uid: collectorUid || '',
               tenant_name: payment.tenant_name || snapshotTenantName,
               room_number: payment.room_number || snapshotRoomNum,
               pg_name: payment.pg_name || snapshotPgName,
@@ -1460,6 +1685,10 @@ export async function collectFIFOPayment(
               amount_paid: 0,
               payment_method: method || 'Cash',
               payment_date: new Date().toISOString(),
+              collected_by: collectorName,
+              collected_by_name: collectorName,
+              collected_by_role: collectorRole,
+              collected_by_uid: collectorUid || '',
               tenant_name: payment.tenant_name || snapshotTenantName,
               room_number: payment.room_number || snapshotRoomNum,
               pg_name: payment.pg_name || snapshotPgName
@@ -1474,103 +1703,182 @@ export async function collectFIFOPayment(
 
           const isVirtual = payment.is_virtual || payment.id?.startsWith('virtual-');
           const paymentRef = isVirtual ? adminDb.collection('payments').doc() : adminDb.collection('payments').doc(payment.payment_id || payment.id);
-          const amountDue = payment.amount || 0;
+          
+          // CRITICAL: originalChargeAmount is the total original price of the charge (e.g. 5,500)
+          const originalChargeAmount = Number(payment.original_amount || payment.amount || 0);
+          const previousPaid = Number(payment.amount_paid || payment.paid_amount || 0);
+          
+          // Current outstanding due on this specific charge
+          const amountDue = payment.pending_balance !== undefined 
+            ? Number(payment.pending_balance) 
+            : Math.max(0, originalChargeAmount - previousPaid);
 
-          if (remainingToCollect >= amountDue) {
-            // Fully clear this charge
-            if (isVirtual) {
+          if (amountDue <= 0) continue;
+
+          const payTowardsThis = Math.min(remainingToCollect, amountDue);
+          const newTotalPaid = previousPaid + payTowardsThis;
+          const remAmount = Math.max(0, originalChargeAmount - newTotalPaid);
+          const isNowFullyPaid = remAmount <= 0;
+
+          if (isVirtual) {
+            // Virtual doc being paid
+            if (isNowFullyPaid) {
               await paymentRef.set({
                 payment_id: paymentRef.id,
                 tenant_id: tenantId,
                 pg_id: pgId || tenantData?.pg_id,
-                type: payment.type,
-                description: payment.description,
-                amount: amountDue,
-                original_amount: amountDue,
+                owner_id: targetOwnerId,
+                type: payment.type || 'monthly_rent',
+                description: payment.description || 'Rent Payment',
+                amount: originalChargeAmount,
+                original_amount: originalChargeAmount,
                 status: 'paid',
-                amount_paid: amountDue,
-                payment_method: method || 'Cash',
+                amount_paid: originalChargeAmount,
+                pending_balance: 0,
+                payment_method: method || 'UPI',
                 payment_date: new Date().toISOString(),
+                collected_by: collectorName,
+                collected_by_name: collectorName,
+                collected_by_role: collectorRole,
+                collected_by_uid: collectorUid || '',
                 tenant_name: payment.tenant_name || snapshotTenantName,
                 room_number: payment.room_number || snapshotRoomNum,
                 pg_name: payment.pg_name || snapshotPgName,
                 created_at: new Date().toISOString()
               });
+
               if (payment.type === 'security_deposit') {
                 await adminDb.collection('tenants').doc(tenantId).update({ security_deposit_paid: true });
               }
+
+              paidDocRefs.push(paymentRef);
             } else {
-              await paymentRef.update({
-                status: 'paid',
-                amount_paid: amountDue,
-                payment_method: method || 'Cash',
-                payment_date: new Date().toISOString(),
-                tenant_name: payment.tenant_name || snapshotTenantName,
-                room_number: payment.room_number || snapshotRoomNum,
-                pg_name: payment.pg_name || snapshotPgName
-              });
-            }
-            paidDocRefs.push(paymentRef);
-            remainingToCollect -= amountDue;
-          } else {
-            // Partially clear this charge
-            if (isVirtual) {
+              // Partial payment on virtual charge:
+              // 1. Create the persistent pending document with remaining due
               await paymentRef.set({
                 payment_id: paymentRef.id,
                 tenant_id: tenantId,
                 pg_id: pgId || tenantData?.pg_id,
-                type: payment.type,
-                description: payment.description,
-                amount: amountDue,
-                original_amount: amountDue,
-                status: 'paid',
-                amount_paid: remainingToCollect,
-                pending_balance: amountDue - remainingToCollect,
-                payment_method: method || 'Cash',
+                owner_id: targetOwnerId,
+                type: payment.type || 'monthly_rent',
+                description: payment.description || 'Rent Payment',
+                amount: remAmount,
+                original_amount: originalChargeAmount,
+                status: 'pending',
+                amount_paid: newTotalPaid,
+                pending_balance: remAmount,
+                payment_method: method || 'UPI',
                 payment_date: new Date().toISOString(),
+                collected_by: collectorName,
+                collected_by_name: collectorName,
+                collected_by_role: collectorRole,
+                collected_by_uid: collectorUid || '',
                 tenant_name: payment.tenant_name || snapshotTenantName,
                 room_number: payment.room_number || snapshotRoomNum,
                 pg_name: payment.pg_name || snapshotPgName,
                 created_at: new Date().toISOString()
               });
-            } else {
+
+              // 2. Create the paid receipt document for transaction history
+              const receiptRef = adminDb.collection('payments').doc();
+              await receiptRef.set({
+                payment_id: receiptRef.id,
+                pg_id: pgId || tenantData?.pg_id || '',
+                owner_id: targetOwnerId,
+                tenant_id: tenantId,
+                amount: payTowardsThis,
+                amount_paid: payTowardsThis,
+                original_amount: originalChargeAmount,
+                status: 'paid',
+                month: payment.month || new Date().toLocaleString('default', { month: 'long' }),
+                description: `Partial payment for ${payment.description || payment.type || 'Rent'}`,
+                type: payment.type || 'monthly_rent',
+                payment_method: method || 'UPI',
+                payment_date: new Date().toISOString(),
+                created_at: new Date().toISOString(),
+                collected_by: collectorName,
+                collected_by_name: collectorName,
+                collected_by_role: collectorRole,
+                collected_by_uid: collectorUid || '',
+                tenant_name: payment.tenant_name || snapshotTenantName,
+                room_number: payment.room_number || snapshotRoomNum,
+                pg_name: payment.pg_name || snapshotPgName,
+                pending_balance: remAmount
+              });
+              paidDocRefs.push(receiptRef);
+            }
+          } else {
+            // Real document in payments collection
+            if (isNowFullyPaid) {
+              // Mark fully paid
               await paymentRef.update({
                 status: 'paid',
-                amount_paid: remainingToCollect,
-                pending_balance: amountDue - remainingToCollect,
-                payment_method: method || 'Cash',
+                amount: originalChargeAmount,
+                amount_paid: originalChargeAmount,
+                pending_balance: 0,
+                payment_method: method || 'UPI',
                 payment_date: new Date().toISOString(),
+                collected_by: collectorName,
+                collected_by_name: collectorName,
+                collected_by_role: collectorRole,
+                collected_by_uid: collectorUid || '',
                 tenant_name: payment.tenant_name || snapshotTenantName,
                 room_number: payment.room_number || snapshotRoomNum,
                 pg_name: payment.pg_name || snapshotPgName
               });
-            }
-            
-            // Create a receipt doc for partial payment
-            const receiptRef = adminDb.collection('payments').doc();
-            await receiptRef.set({
-              ...payment,
-              payment_id: receiptRef.id,
-              status: 'paid',
-              amount_paid: remainingToCollect,
-              amount: remainingToCollect,
-              description: `Partial payment for ${payment.description || payment.type}`,
-              payment_method: method || 'Cash',
-              payment_date: new Date().toISOString(),
-              created_at: new Date().toISOString(),
-              tenant_name: payment.tenant_name || snapshotTenantName,
-              room_number: payment.room_number || snapshotRoomNum,
-              pg_name: payment.pg_name || snapshotPgName
-            });
-            paidDocRefs.push(receiptRef);
+              paidDocRefs.push(paymentRef);
+            } else {
+              // Partial payment on existing pending document:
+              // 1. Update the pending document's remaining amount & balance (KEEP status: 'pending' so it stays in dues!)
+              await paymentRef.update({
+                status: 'pending',
+                amount: remAmount,
+                amount_paid: newTotalPaid,
+                pending_balance: remAmount,
+                payment_method: method || 'UPI',
+                last_payment_date: new Date().toISOString(),
+                collected_by: collectorName,
+                collected_by_name: collectorName,
+                collected_by_role: collectorRole,
+                collected_by_uid: collectorUid || ''
+              });
 
-            remainingToCollect = 0;
+              // 2. Create EXACTLY ONE receipt document representing this collection transaction for payment history
+              const receiptRef = adminDb.collection('payments').doc();
+              await receiptRef.set({
+                payment_id: receiptRef.id,
+                pg_id: pgId || tenantData?.pg_id || '',
+                owner_id: targetOwnerId,
+                tenant_id: tenantId,
+                amount: payTowardsThis,
+                amount_paid: payTowardsThis,
+                original_amount: originalChargeAmount,
+                status: 'paid',
+                month: payment.month || new Date().toLocaleString('default', { month: 'long' }),
+                description: `Partial payment for ${payment.description || payment.type || 'Rent'}`,
+                type: payment.type || 'monthly_rent',
+                payment_method: method || 'UPI',
+                payment_date: new Date().toISOString(),
+                created_at: new Date().toISOString(),
+                collected_by: collectorName,
+                collected_by_name: collectorName,
+                collected_by_role: collectorRole,
+                collected_by_uid: collectorUid || '',
+                tenant_name: payment.tenant_name || snapshotTenantName,
+                room_number: payment.room_number || snapshotRoomNum,
+                pg_name: payment.pg_name || snapshotPgName,
+                pending_balance: remAmount
+              });
+              paidDocRefs.push(receiptRef);
+            }
           }
+
+          remainingToCollect -= payTowardsThis;
         }
       }
     }
 
-    // 2. If remainingToCollect > 0 (meaning no pending dues existed, or payment exceeded pending dues):
+    // 2. If remainingToCollect > 0 (advance payment):
     if (remainingToCollect > 0) {
       const targetPgId = pgId || tenantData?.pg_id || '';
 
@@ -1612,17 +1920,23 @@ export async function collectFIFOPayment(
       await advanceRef.set({
         payment_id: advanceRef.id,
         pg_id: targetPgId,
+        owner_id: targetOwnerId,
         tenant_id: tenantId,
         amount: remainingToCollect,
         amount_paid: remainingToCollect,
         original_amount: tenantData?.rent_amount || remainingToCollect,
         status: 'paid',
         month: targetMonth,
-        payment_method: method,
+        payment_method: method || 'UPI',
         payment_date: new Date().toISOString(),
         created_at: new Date().toISOString(),
         is_advance: true,
         description: `Rent Payment (${targetMonth})`,
+        type: 'monthly_rent',
+        collected_by: collectorName,
+        collected_by_name: collectorName,
+        collected_by_role: collectorRole,
+        collected_by_uid: collectorUid || '',
         tenant_name: snapshotTenantName,
         room_number: snapshotRoomNum,
         pg_name: snapshotPgName
@@ -1630,46 +1944,57 @@ export async function collectFIFOPayment(
       paidDocRefs.push(advanceRef);
     }
 
-    // After processing, compute the total remaining pending for this tenant
-    // and stamp it on all payment docs we just modified/created, so the History
-    // page has an accurate pending_balance via real-time listener immediately.
+    // 3. Compute remaining pending dues for this tenant
     const remainingPendingSnap = await adminDb.collection('payments')
       .where('tenant_id', '==', tenantId)
       .where('status', '==', 'pending')
       .get();
-    const totalRemainingPending = remainingPendingSnap.docs.reduce((sum, d) => sum + (Number(d.data().amount) || 0), 0);
+    const totalRemainingPending = remainingPendingSnap.docs.reduce((sum, d) => {
+      const data = d.data();
+      const orig = Number(data.original_amount || data.amount || 0);
+      const paid = Number(data.amount_paid || 0);
+      const rem = data.pending_balance !== undefined ? Number(data.pending_balance) : Math.max(0, orig - paid);
+      return sum + rem;
+    }, 0);
 
-    // Also check if there's virtual rent due (tenant has no pending docs but rent is overdue)
-    let virtualPending = 0;
-    if (totalRemainingPending === 0 && tenantData) {
-      const { getTenantPaymentStatus } = require('@/lib/paymentStatus');
-      const paidForVirtual = await adminDb.collection('payments')
-        .where('tenant_id', '==', tenantId)
-        .where('status', '==', 'paid')
-        .get();
-      const paidPayments = paidForVirtual.docs.map(d => d.data());
-      const statusInfo = getTenantPaymentStatus(tenantData, [], paidPayments, new Date());
-      if (['OVERDUE', 'CRITICAL', 'DUE_TODAY'].includes(statusInfo.status)) {
-        virtualPending = statusInfo.virtualRentRemaining !== undefined ? statusInfo.virtualRentRemaining : (Number(tenantData.rent_amount) || 0);
-      }
-    }
-
-    const finalPending = totalRemainingPending + virtualPending;
-
-    // Atomically update all the newly paid/modified documents with the computed pending_balance
+    // Atomically stamp pending_balance on paid transaction docs
     if (paidDocRefs.length > 0) {
       const batchUpdate = adminDb.batch();
       for (const ref of paidDocRefs) {
-        batchUpdate.update(ref, { pending_balance: finalPending });
+        batchUpdate.update(ref, { pending_balance: totalRemainingPending });
       }
       await batchUpdate.commit();
+    }
+
+    // 4. Send Real-time Notification to PG Owner Portal
+    if (targetOwnerId && totalAmount > 0) {
+      try {
+        await adminDb.collection('notifications').add({
+          owner_id: targetOwnerId,
+          pg_id: pgId || tenantData?.pg_id || '',
+          type: 'payment',
+          title: `[${snapshotPgName}] Fee Collected: ₹${totalAmount.toLocaleString('en-IN')}`,
+          message: `${collectorName} collected ₹${totalAmount.toLocaleString('en-IN')} from ${snapshotTenantName} (${snapshotRoomNum ? 'Room ' + snapshotRoomNum : 'Rent'}) via ${method || 'UPI'}.`,
+          amount: totalAmount,
+          tenant_id: tenantId,
+          tenant_name: snapshotTenantName,
+          room_number: snapshotRoomNum,
+          collected_by_name: collectorName,
+          collected_by_role: collectorRole,
+          created_at: new Date().toISOString(),
+          read: false
+        });
+      } catch (nErr) {
+        console.warn('Owner notification trigger error:', nErr);
+      }
     }
 
     revalidatePath('/pgowner/dues');
     revalidatePath('/pgowner/history');
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    console.error('Error in collectFIFOPayment:', err);
+    return { success: false, error: err.message || 'Payment collection failed.' };
   }
 }
 

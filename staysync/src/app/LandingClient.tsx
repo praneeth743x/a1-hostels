@@ -238,7 +238,7 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
           }
           router.replace(target);
         } else {
-          router.replace('/login');
+          router.replace('/moblogin');
         }
       } else if (!isExplicitLoggedOut && isLoggedIn) {
         let target = '';
@@ -491,7 +491,7 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
             </div>
             <div className={styles.brandTitleColumn}>
               <span className={styles.brandTitleText}>{siteName || 'A1 HOSTELS'}</span>
-              <span className={styles.brandSubtitleText}>SINCE 2018 • PREMIUM PG & HOSTEL LIVING</span>
+              <span className={styles.brandSubtitleText}>PREMIUM PG & HOSTEL LIVING</span>
             </div>
           </div>
 
@@ -665,7 +665,7 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
 
           <div className={styles.contextBadge}>
             <Sparkles size={14} className={styles.badgeGoldSparkle} />
-            <span>SINCE 2018 • PREMIUM PG & HOSTEL LIVING</span>
+            <span>PREMIUM PG & HOSTEL LIVING</span>
           </div>
 
           <h1 className={styles.contextTitle}>

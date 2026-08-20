@@ -7,7 +7,13 @@
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "android/**",
+      "ios/**",
+      ".firebase/**",
+      ".next/cache/**",
+      ".next/dev/**",
+      "public/**/*.apk"
     ],
     "frameworksBackend": {
       "region": "us-central1",

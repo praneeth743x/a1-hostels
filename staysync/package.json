@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node -e \"const fs=require('fs'); ['cache','dev','standalone'].forEach(d => { const p='.next/'+d; if(fs.existsSync(p)) fs.rmSync(p, {recursive:true, force:true}); });\"",
     "pwa:build": "next build",
     "start": "next start",
     "lint": "eslint",

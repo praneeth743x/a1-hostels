@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Camera, X, Building2, MoreVertical, Filter, Users, ChevronRight, ChevronLeft, Save, CheckCircle2, Menu, Bell, BedDouble, IndianRupee, Home, Calendar, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Search, Plus, Camera, X, Building2, MoreVertical, Filter, Users, ChevronRight, ChevronLeft, Save, CheckCircle2, Menu, Bell, BedDouble, IndianRupee, Home, Calendar, AlertTriangle, AlertCircle, User, Phone, Mail, Briefcase, PhoneCall } from 'lucide-react';
 import { FloatingInput } from '@/components/FloatingInput';
 import { AnimatedButton } from '@/components/AnimatedButton';
 import { CustomDatePicker } from '@/components/CustomDatePicker';
@@ -234,19 +234,26 @@ export default function TenantDirectory() {
     if (activePgId && selectedRoom && hostelData) {
       const r = hostelData.rooms?.find((room: any) => room.room_id === selectedRoom || room.id === selectedRoom);
       const prop = hostelData.property;
-      if (r && prop?.theme_primary_color) {
-        try {
-          const pricing = JSON.parse(prop.theme_primary_color);
-          const fee = pricing[r.total_beds || r.beds || 1];
-          if (fee) {
-            setRentAmount(parseInt(fee));
+      if (r) {
+        const directPrice = r.price || r.rent || r.monthly_rent;
+        if (directPrice) {
+          setRentAmount(Math.round(Number(directPrice)));
+        } else if (prop?.theme_primary_color) {
+          try {
+            const pricing = JSON.parse(prop.theme_primary_color);
+            const fee = pricing[r.total_beds || r.beds || 1];
+            if (fee) {
+              setRentAmount(Math.round(Number(fee)));
+            }
+          } catch (e) {
+            console.error("Failed to parse pricing", e);
           }
-        } catch (e) {
-          console.error("Failed to parse pricing", e);
         }
       }
     }
   }, [selectedRoom, activePgId, hostelData]);
+
+  const [previews, setPreviews] = useState<Record<string, string>>({});
 
   const handleAddTenant = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,55 +263,78 @@ export default function TenantDirectory() {
       alert("Please select a Hostel and Room.");
       return;
     }
-    if (!tenantEmail.trim() || !tenantEmail.includes('@')) {
-      alert("Please enter a valid email address.");
+    if (!phone.trim() || phone.replace(/\D/g, '').length < 10) {
+      alert("Please enter a valid 10-digit phone number.");
       return;
     }
-    setIsSaving(true);
-    setUploadProgress('Uploading documents...');
 
-    let documentUrls: any = {};
-    const uploadFile = async (file: File, path: string) => {
-      // Compress image before uploading to save time and bandwidth
-      const options = {
-        maxSizeMB: 0.2, // Max 200KB
-        maxWidthOrHeight: 1024,
-        useWebWorker: true,
-      };
-      
-      let fileToUpload = file;
-      try {
-        setUploadProgress(`Compressing ${file.name}...`);
-        fileToUpload = await imageCompression(file, options);
-      } catch (err) {
-        console.warn('Compression failed, using original file', err);
-      }
-      
-      setUploadProgress('Uploading...');
-      const storageRef = ref(storage, path);
-      // Timeout after 10 seconds to prevent hanging
-      const uploadPromise = uploadBytes(storageRef, fileToUpload);
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Upload timeout')), 10000));
-      
-      await Promise.race([uploadPromise, timeoutPromise]);
-      return await getDownloadURL(storageRef);
+    setIsSaving(true);
+    setUploadProgress('Saving tenant...');
+
+    // Hardware-accelerated 10ms Canvas image compression
+    const compressFast = (file: File): Promise<Blob> => {
+      if (file.size <= 300 * 1024) return Promise.resolve(file);
+      return new Promise((resolve) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          const canvas = document.createElement('canvas');
+          const maxDim = 800;
+          let w = img.width, h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+            else { w = Math.round((w * maxDim) / h); h = maxDim; }
+          }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, w, h);
+          canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', 0.7);
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve(file);
+        };
+        img.src = url;
+      });
     };
 
-    try {
-      if (documents.facePicture) documentUrls.facePicture = await uploadFile(documents.facePicture, `tenants/${currentOwnerId}/${Date.now()}_face.jpg`);
-      if (documents.govtFront) documentUrls.govtFront = await uploadFile(documents.govtFront, `tenants/${currentOwnerId}/${Date.now()}_govF.jpg`);
-      if (documents.govtBack) documentUrls.govtBack = await uploadFile(documents.govtBack, `tenants/${currentOwnerId}/${Date.now()}_govB.jpg`);
-      if (documents.collegeFront) documentUrls.collegeFront = await uploadFile(documents.collegeFront, `tenants/${currentOwnerId}/${Date.now()}_colF.jpg`);
-      if (documents.collegeBack) documentUrls.collegeBack = await uploadFile(documents.collegeBack, `tenants/${currentOwnerId}/${Date.now()}_colB.jpg`);
-      if (documents.empFront) documentUrls.empFront = await uploadFile(documents.empFront, `tenants/${currentOwnerId}/${Date.now()}_empF.jpg`);
-      if (documents.empBack) documentUrls.empBack = await uploadFile(documents.empBack, `tenants/${currentOwnerId}/${Date.now()}_empB.jpg`);
-    } catch (error: any) {
-      console.error("Upload error", error);
-      alert("Failed to upload some documents: " + error.message + ". The tenant will be saved without documents.");
-      // reset progress and let it continue saving
+    const uploadFile = async (file: File, path: string) => {
+      try {
+        const blobToUpload = await compressFast(file);
+        const storageRef = ref(storage, path);
+        const uploadPromise = uploadBytes(storageRef, blobToUpload);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2500));
+        await Promise.race([uploadPromise, timeoutPromise]);
+        return await getDownloadURL(storageRef);
+      } catch (err) {
+        console.warn('Fast upload skipped file', err);
+        return '';
+      }
+    };
+
+    let documentUrls: any = {};
+    const keysToUpload = Object.keys(documents).filter(key => documents[key] instanceof File);
+
+    if (keysToUpload.length > 0) {
+      try {
+        const uploadTasks = keysToUpload.map(async (key) => {
+          const file = documents[key];
+          const path = `tenants/${currentOwnerId}/${Date.now()}_${key}.jpg`;
+          const url = await uploadFile(file, path);
+          return { key, url };
+        });
+
+        const results = await Promise.all(uploadTasks);
+        results.forEach(({ key, url }) => {
+          if (url) documentUrls[key] = url;
+        });
+      } catch (error: any) {
+        console.warn("Upload finished with warnings:", error);
+      }
     }
     
-    setUploadProgress('Saving tenant...');
     const res = await addTenant({ 
       ownerId: currentOwnerId, 
       pgId: currentPgId, 
@@ -315,17 +345,14 @@ export default function TenantDirectory() {
       parentPhone, 
       workStatus, 
       moveInDate: moveInDate ? moveInDate.toISOString() : new Date().toISOString(),
-      rentAmount: rentAmount === '' ? 0 : rentAmount,
-      securityDeposit: securityDeposit === '' ? 0 : securityDeposit,
-      openingPendingFee: hasOldPendingFee && openingPendingFee !== '' ? openingPendingFee : 0,
+      rentAmount: rentAmount === '' ? 0 : Math.round(Number(rentAmount)),
+      securityDeposit: securityDeposit === '' ? 0 : Math.round(Number(securityDeposit)),
+      openingPendingFee: hasOldPendingFee && openingPendingFee !== '' ? Math.round(Number(openingPendingFee)) : 0,
       openingBalanceDueDate: hasOldPendingFee && moveInDate ? moveInDate.toISOString() : undefined,
       documents: documentUrls
     });
     
     if (res.success && res.data) {
-      const selectedHostelName = hostelData?.property?.name || hostelData?.property?.pg_name || '';
-      const selectedRoomName = hostelData?.rooms?.find((r:any) => r.room_id === selectedRoom || r.id === selectedRoom)?.room_number || '';
-      
       notifyHostelDataChanged(currentPgId);
       
       if (returnUrl) {
@@ -335,18 +362,21 @@ export default function TenantDirectory() {
       }
       setFullName(''); setPhone(''); setTenantEmail(''); setParentPhone(''); setMoveInDate(null);
       setRentAmount(''); setSecurityDeposit(''); setOpeningPendingFee(''); setHasOldPendingFee(false);
-      setDocuments({ facePicture: null, govtFront: null, govtBack: null, collegeFront: null, collegeBack: null });
+      setDocuments({ facePicture: null, govtFront: null, govtBack: null, collegeFront: null, collegeBack: null, empFront: null, empBack: null });
+      setPreviews({});
       setUploadProgress('');
       router.refresh();
     } else {
-      alert("Failed to add tenant: " + res.error);
+      alert("Failed to add tenant: " + (res.error || "Unknown error"));
     }
     setIsSaving(false);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
     if (e.target.files && e.target.files[0]) {
-      setDocuments((prev: any) => ({ ...prev, [type]: e.target.files![0] }));
+      const file = e.target.files[0];
+      setDocuments((prev: any) => ({ ...prev, [type]: file }));
+      setPreviews((prev: any) => ({ ...prev, [type]: URL.createObjectURL(file) }));
     }
   };
 
@@ -570,21 +600,47 @@ export default function TenantDirectory() {
                   </div>
                 </div>
               </div>
-              <div 
-                className={styles.tenantStatusPill}
-                style={{
-                  background: t.status === 'Paused' ? '#fef3c7' : (t.status === 'Vacated' ? '#f1f5f9' : (t.status === 'Notice Period' ? '#f3e8ff' : '#ecfdf5')),
-                  color: t.status === 'Paused' ? '#b45309' : (t.status === 'Vacated' ? '#475569' : (t.status === 'Notice Period' ? '#7e22ce' : '#047857')),
-                  borderColor: t.status === 'Paused' ? '#fde68a' : (t.status === 'Vacated' ? '#cbd5e1' : (t.status === 'Notice Period' ? '#d8b4fe' : '#a7f3d0'))
-                }}
-              >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {t.phone && (
+                  <a
+                    href={`tel:${t.phone.replace(/\D/g, '')}`}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      background: '#ecfdf5',
+                      color: '#059669',
+                      border: '1px solid #a7f3d0',
+                      textDecoration: 'none',
+                      boxShadow: '0 2px 6px rgba(5, 150, 105, 0.15)',
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0
+                    }}
+                    title={`Call ${t.name || 'Tenant'}`}
+                  >
+                    <PhoneCall size={15} />
+                  </a>
+                )}
                 <div 
-                  className={styles.tenantStatusDot}
+                  className={styles.tenantStatusPill}
                   style={{
-                    background: t.status === 'Paused' ? '#d97706' : (t.status === 'Vacated' ? '#64748b' : (t.status === 'Notice Period' ? '#9333ea' : '#10b981'))
+                    background: t.status === 'Paused' ? '#fef3c7' : (t.status === 'Vacated' ? '#f1f5f9' : (t.status === 'Notice Period' ? '#f3e8ff' : '#ecfdf5')),
+                    color: t.status === 'Paused' ? '#b45309' : (t.status === 'Vacated' ? '#475569' : (t.status === 'Notice Period' ? '#7e22ce' : '#047857')),
+                    borderColor: t.status === 'Paused' ? '#fde68a' : (t.status === 'Vacated' ? '#cbd5e1' : (t.status === 'Notice Period' ? '#d8b4fe' : '#a7f3d0'))
                   }}
-                />
-                {t.status}
+                >
+                  <div 
+                    className={styles.tenantStatusDot}
+                    style={{
+                      background: t.status === 'Paused' ? '#d97706' : (t.status === 'Vacated' ? '#64748b' : (t.status === 'Notice Period' ? '#9333ea' : '#10b981'))
+                    }}
+                  />
+                  {t.status}
+                </div>
               </div>
             </div>
             
@@ -649,9 +705,10 @@ export default function TenantDirectory() {
         ) : (
           <div 
             key="form"
-            style={{ display: 'flex', flexDirection: 'column' }}
+            style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#f8fafc', minHeight: '100vh', paddingBottom: '80px' }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', backgroundColor: 'transparent', zIndex: 50 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', backgroundColor: '#ffffff', borderBottom: '1px solid #f1f5f9', position: 'sticky', top: 0, zIndex: 50 }}>
               <button 
                 onClick={() => {
                   if (returnUrl) {
@@ -660,182 +717,59 @@ export default function TenantDirectory() {
                     setShowModal(false);
                   }
                 }} 
-                style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '50%', width: '40px', height: '40px', color: '#0f172a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}
+                style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '50%', width: '36px', height: '36px', color: '#6366f1', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 type="button"
               >
-                <ChevronLeft size={20} />
+                <ChevronLeft size={18} />
               </button>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0 16px', color: '#0f172a' }}>Add New Tenant</h2>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0 14px', color: '#1e1b4b' }}>Add New Tenant</h2>
             </div>
 
-            <div className={styles.dashboardContent} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
+            <div style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '520px', margin: '0 auto', width: '100%' }}>
+              
+              <form id="add-tenant-form" onSubmit={handleAddTenant} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 
-
-
-                {/* Tenant Information Section */}
-                <section>
-                  <div style={{ marginBottom: '20px' }}>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px 0' }}>Tenant Information</h3>
-                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>Enter tenant details accurately</p>
+                {/* Card 1: Personal Information */}
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #edf2f7', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <User size={16} color="#6366f1" />
+                    </div>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#4338ca' }}>Personal Information</span>
                   </div>
 
-                  <form id="add-tenant-form" onSubmit={handleAddTenant} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
-                      <div style={{ zIndex: 49 }}>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Allocate Room</label>
-                        <CustomSelect 
-                          searchable
-                          value={selectedRoom}
-                          onChange={setSelectedRoom}
-                          options={currentRooms.map((r: any) => {
-                            const tenantsList = hostelData?.tenants || [];
-                            const occupiedCount = tenantsList.filter((t: any) => (t.status === 'Active' || t.is_active !== false) && (t.room === r.room_number || t.room_id === r.room_id || t.room_id === r.id)).length;
-                            const totalBeds = r.total_beds || r.beds || 1;
-                            
-                            return { 
-                              value: r.room_id || r.id, 
-                              disabled: occupiedCount >= totalBeds,
-                              searchKey: String(r.room_number || r.num || ''),
-                              label: (
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingRight: '8px' }}>
-                                  <span style={{ fontWeight: 600 }}>{r.floor ? `${r.floor} - ` : ''}Room {r.room_number} {occupiedCount >= totalBeds ? '(Full)' : ''}</span>
-                                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                    {Array.from({ length: totalBeds }).map((_, i) => (
-                                      <BedDouble 
-                                        key={i} 
-                                        size={14} 
-                                        color={i < occupiedCount ? "#ef4444" : "#10b981"} 
-                                      />
-                                    ))}
-                                  </div>
-                                </div>
-                              ) 
-                            };
-                          })}
-                          placeholder="Choose Room"
-                          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>}
-                        />
-                      </div>
-                      
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Monthly Rent (₹)</label>
-                        <div style={{ position: 'relative' }}>
-                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                            <IndianRupee size={16} />
-                          </div>
-                          <input 
-                            type="number"
-                            placeholder="e.g. 8500"
-                            style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
-                            value={rentAmount}
-                            onChange={e => {
-                              const val = e.target.value;
-                              if (val === '') setRentAmount('');
-                              else setRentAmount(parseInt(val) || 0);
-                            }}
-                          />
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Security Deposit (₹)</label>
-                        <div style={{ position: 'relative' }}>
-                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                            <IndianRupee size={16} />
-                          </div>
-                          <input 
-                            type="number"
-                            placeholder="e.g. 15000"
-                            style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
-                            value={securityDeposit}
-                            onChange={e => {
-                              const val = e.target.value;
-                              if (val === '') setSecurityDeposit('');
-                              else setSecurityDeposit(parseInt(val) || 0);
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                          <input
-                            type="checkbox"
-                            id="hasOldPendingFee"
-                            checked={hasOldPendingFee}
-                            onChange={(e) => setHasOldPendingFee(e.target.checked)}
-                            style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
-                          />
-                          <label htmlFor="hasOldPendingFee" style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155', cursor: 'pointer' }}>
-                            Tenant has an old pending fee
-                          </label>
-                        </div>
-
-                        {hasOldPendingFee && (
-                          <div style={{ marginTop: '8px' }}>
-                            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Opening Pending Fee (₹)</label>
-                            <div style={{ position: 'relative' }}>
-                              <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                                <IndianRupee size={16} />
-                              </div>
-                              <input 
-                                type="number"
-                                placeholder="e.g. 500"
-                                style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
-                                value={openingPendingFee}
-                                onChange={e => {
-                                  const val = e.target.value;
-                                  if (val === '') setOpeningPendingFee('');
-                                  else setOpeningPendingFee(parseInt(val) || 0);
-                                }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Full Name</label>
-                        <div style={{ position: 'relative' }}>
-                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                          </div>
-                          <input 
-                            type="text"
-                            placeholder="Enter full name"
-                            style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
-                            value={fullName}
-                            onChange={e => setFullName(e.target.value)}
-                            required
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>
-                          {hasOldPendingFee ? 'Opening Pending Date / Check-in Date' : 'Check-in Date'}
-                        </label>
-                        <CustomDatePicker 
-                          selectedDate={moveInDate}
-                          onChange={(date: Date | null) => setMoveInDate(date)}
-                          placeholder="Select check-in date"
-                          required={true}
-                        />
-                      </div>
-                    </div>
-                    
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Phone Number</label>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                        Full Name <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
                       <div style={{ position: 'relative' }}>
-                        <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                        <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                          <User size={15} />
+                        </div>
+                        <input 
+                          type="text"
+                          placeholder="Enter full name"
+                          style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', fontSize: '0.88rem', color: '#0f172a', outline: 'none' }}
+                          value={fullName}
+                          onChange={e => setFullName(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                        Phone Number <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                          <Phone size={15} />
                         </div>
                         <input 
                           type="tel"
-                          placeholder="Enter phone number"
-                          style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                          placeholder="Enter 10-digit mobile number"
+                          style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', fontSize: '0.88rem', color: '#0f172a', outline: 'none' }}
                           value={phone}
                           onChange={e => setPhone(e.target.value)}
                           required
@@ -844,24 +778,210 @@ export default function TenantDirectory() {
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Email Address</label>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                        Alternate Phone Number <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 400 }}>(Optional)</span>
+                      </label>
                       <div style={{ position: 'relative' }}>
-                        <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                        <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                          <Phone size={15} />
+                        </div>
+                        <input 
+                          type="tel"
+                          placeholder="Enter alternate mobile number"
+                          style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', fontSize: '0.88rem', color: '#0f172a', outline: 'none' }}
+                          value={parentPhone}
+                          onChange={e => setParentPhone(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                        Email Address <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                          <Mail size={15} />
                         </div>
                         <input 
                           type="email"
                           placeholder="Enter email address"
-                          style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                          style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', fontSize: '0.88rem', color: '#0f172a', outline: 'none' }}
                           value={tenantEmail}
                           onChange={e => setTenantEmail(e.target.value)}
                           required
                         />
                       </div>
                     </div>
+                  </div>
+                </div>
 
-                    <div style={{ zIndex: 48 }}>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Work/Study Status</label>
+                {/* Card 2: Allocate Room */}
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #edf2f7', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Home size={16} color="#6366f1" />
+                    </div>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#4338ca' }}>Allocate Room</span>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                      Choose Room <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <CustomSelect 
+                      searchable
+                      value={selectedRoom}
+                      onChange={setSelectedRoom}
+                      options={currentRooms.map((r: any) => {
+                        const tenantsList = hostelData?.tenants || [];
+                        const occupiedCount = tenantsList.filter((t: any) => (t.status === 'Active' || t.is_active !== false) && (t.room === r.room_number || t.room_id === r.room_id || t.room_id === r.id)).length;
+                        const totalBeds = r.total_beds || r.beds || 1;
+                        
+                        return { 
+                          value: r.room_id || r.id, 
+                          disabled: occupiedCount >= totalBeds,
+                          searchKey: String(r.room_number || r.num || ''),
+                          label: (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingRight: '8px' }}>
+                              <span style={{ fontWeight: 600 }}>{r.floor ? `${r.floor} - ` : ''}Room {r.room_number} {occupiedCount >= totalBeds ? '(Full)' : ''}</span>
+                              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                {Array.from({ length: totalBeds }).map((_, i) => (
+                                  <BedDouble 
+                                    key={i} 
+                                    size={14} 
+                                    color={i < occupiedCount ? "#ef4444" : "#10b981"} 
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          ) 
+                        };
+                      })}
+                      placeholder="Select a room"
+                      icon={<Home size={15} color="#94a3b8" />}
+                    />
+                  </div>
+                </div>
+
+                {/* Card 3: Rent & Deposits */}
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #edf2f7', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <IndianRupee size={16} color="#6366f1" />
+                    </div>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#4338ca' }}>Rent & Deposits</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                        Monthly Rent (₹) <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                          <IndianRupee size={14} />
+                        </div>
+                        <input 
+                          type="number"
+                          placeholder="e.g. 8500"
+                          style={{ width: '100%', padding: '10px 10px 10px 30px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', fontSize: '0.85rem', color: '#0f172a', outline: 'none' }}
+                          value={rentAmount}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val === '') setRentAmount('');
+                            else setRentAmount(parseInt(val) || 0);
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                        Security Deposit (₹) <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                          <IndianRupee size={14} />
+                        </div>
+                        <input 
+                          type="number"
+                          placeholder="e.g. 15000"
+                          style={{ width: '100%', padding: '10px 10px 10px 30px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', fontSize: '0.85rem', color: '#0f172a', outline: 'none' }}
+                          value={securityDeposit}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val === '') setSecurityDeposit('');
+                            else setSecurityDeposit(parseInt(val) || 0);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Old Pending Fee Container */}
+                  <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="checkbox"
+                        id="hasOldPendingFee"
+                        checked={hasOldPendingFee}
+                        onChange={(e) => setHasOldPendingFee(e.target.checked)}
+                        style={{ width: '16px', height: '16px', accentColor: '#6366f1', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="hasOldPendingFee" style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155', cursor: 'pointer' }}>
+                        Tenant has an old pending fee
+                      </label>
+                    </div>
+
+                    {hasOldPendingFee && (
+                      <div style={{ marginTop: '10px' }}>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Opening Pending Fee (₹)</label>
+                        <div style={{ position: 'relative' }}>
+                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                            <IndianRupee size={15} />
+                          </div>
+                          <input 
+                            type="number"
+                            placeholder="e.g. 500"
+                            style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', fontSize: '0.88rem', color: '#0f172a', outline: 'none' }}
+                            value={openingPendingFee}
+                            onChange={e => {
+                              const val = e.target.value;
+                              if (val === '') setOpeningPendingFee('');
+                              else setOpeningPendingFee(parseInt(val) || 0);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card 4: Other Details */}
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #edf2f7', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Calendar size={16} color="#6366f1" />
+                    </div>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#4338ca' }}>Other Details</span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                        {hasOldPendingFee ? 'Opening Pending Date / Check-in Date *' : 'Check-in Date *'}
+                      </label>
+                      <CustomDatePicker 
+                        selectedDate={moveInDate}
+                        onChange={(date: Date | null) => setMoveInDate(date)}
+                        placeholder="Select check-in date"
+                        required={true}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Work/Study Status</label>
                       <CustomSelect 
                         value={workStatus}
                         onChange={setWorkStatus}
@@ -870,21 +990,21 @@ export default function TenantDirectory() {
                           { value: 'employed', label: 'Employed' },
                           { value: 'other', label: 'Other' }
                         ]}
-                        icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>}
+                        icon={<Briefcase size={15} color="#94a3b8" />}
                       />
                     </div>
 
                     {workStatus === 'student' && (
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>College Name & Details</label>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>College Name & Details</label>
                         <div style={{ position: 'relative' }}>
-                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                            <Building2 size={15} />
                           </div>
                           <input 
                             type="text"
                             placeholder="Enter college name & details"
-                            style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                            style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', fontSize: '0.88rem', color: '#0f172a', outline: 'none' }}
                           />
                         </div>
                       </div>
@@ -892,147 +1012,242 @@ export default function TenantDirectory() {
                     
                     {workStatus === 'employed' && (
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '8px', color: '#334155' }}>Workplace Name & Details</label>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Workplace Name & Details</label>
                         <div style={{ position: 'relative' }}>
-                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                            <Building2 size={15} />
                           </div>
                           <input 
                             type="text"
                             placeholder="Enter workplace name & details"
-                            style={{ width: '100%', padding: '12px 12px 12px 36px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '0.9rem', color: '#0f172a', outline: 'none' }}
+                            style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', fontSize: '0.88rem', color: '#0f172a', outline: 'none' }}
                           />
                         </div>
                       </div>
                     )}
-
-                    <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '16px', display: 'flex', gap: '12px' }}>
-                      <div style={{ color: '#3b82f6', marginTop: '2px' }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                      </div>
-                      <div>
-                        <h4 style={{ margin: '0 0 4px 0', fontSize: '0.85rem', fontWeight: 700, color: '#1e3a8a' }}>Information</h4>
-                        <p style={{ margin: 0, fontSize: '0.75rem', color: '#1e40af', lineHeight: '1.4' }}>Please ensure all details are correct before saving. You can edit them later if needed.</p>
-                      </div>
-                    </div>
-                  </form>
-                </section>
-
-                <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: 0 }} />
-                
-                {/* Document Uploads Section Moved to Bottom */}
-                <section>
-                  <div style={{ marginBottom: '16px' }}>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px 0' }}>Document Uploads</h3>
-                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>Upload clear images of required documents</p>
                   </div>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
-                    <label style={{ backgroundColor: 'white', border: documents.facePicture ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                </div>
+
+                {/* Card 5: Document Uploads */}
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #edf2f7', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Camera size={16} color="#6366f1" />
+                    </div>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#4338ca' }}>Document Uploads</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px' }}>
+                    {/* Face Picture */}
+                    <label style={{ backgroundColor: '#faf5ff', border: documents.facePicture ? '2px solid #10b981' : '1px dashed #c084fc', borderRadius: '14px', height: '135px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px', position: 'relative', overflow: 'hidden', transition: 'all 0.2s ease' }}>
                       <input type="file" accept="image/*" capture="user" onChange={(e) => handleFileChange(e, 'facePicture')} style={{ display: 'none' }} />
-                      {documents.facePicture && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
-                      <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.facePicture ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                        <Camera size={20} color={documents.facePicture ? "#10b981" : "#3b82f6"} />
-                      </div>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Face Picture</span>
-                      <span style={{ fontSize: '0.75rem', color: documents.facePicture ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.facePicture ? 'Selected' : 'Upload clear face photo'}</span>
+                      {documents.facePicture && (
+                        <div style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10, backgroundColor: '#10b981', color: 'white', borderRadius: '50%', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <CheckCircle2 size={15} />
+                        </div>
+                      )}
+                      {previews.facePicture ? (
+                        <div style={{ position: 'relative', width: '100%', height: '65px', borderRadius: '8px', overflow: 'hidden', marginBottom: '6px' }}>
+                          <img src={previews.facePicture} alt="Face Picture" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                      ) : (
+                        <div style={{ width: 38, height: 38, borderRadius: '50%', backgroundColor: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                          <Camera size={18} color="#6366f1" />
+                        </div>
+                      )}
+                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>Face Picture</span>
+                      <span style={{ fontSize: '0.7rem', color: documents.facePicture ? '#10b981' : '#7c3aed', textAlign: 'center', fontWeight: documents.facePicture ? 600 : 400 }}>
+                        {documents.facePicture ? '✓ Selected' : 'Upload photo'}
+                      </span>
                     </label>
 
-                    <label style={{ backgroundColor: 'white', border: documents.govtFront ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                    {/* Govt Proof Front */}
+                    <label style={{ backgroundColor: '#faf5ff', border: documents.govtFront ? '2px solid #10b981' : '1px dashed #c084fc', borderRadius: '14px', height: '135px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px', position: 'relative', overflow: 'hidden', transition: 'all 0.2s ease' }}>
                       <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'govtFront')} style={{ display: 'none' }} />
-                      {documents.govtFront && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
-                      <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.govtFront ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                        <Camera size={20} color={documents.govtFront ? "#10b981" : "#3b82f6"} />
-                      </div>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Govt Proof (Front)</span>
-                      <span style={{ fontSize: '0.75rem', color: documents.govtFront ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.govtFront ? 'Selected' : 'Upload front side'}</span>
+                      {documents.govtFront && (
+                        <div style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10, backgroundColor: '#10b981', color: 'white', borderRadius: '50%', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <CheckCircle2 size={15} />
+                        </div>
+                      )}
+                      {previews.govtFront ? (
+                        <div style={{ position: 'relative', width: '100%', height: '65px', borderRadius: '8px', overflow: 'hidden', marginBottom: '6px' }}>
+                          <img src={previews.govtFront} alt="Govt Front" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                      ) : (
+                        <div style={{ width: 38, height: 38, borderRadius: '50%', backgroundColor: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                          <Camera size={18} color="#6366f1" />
+                        </div>
+                      )}
+                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>Govt Proof (Front)</span>
+                      <span style={{ fontSize: '0.7rem', color: documents.govtFront ? '#10b981' : '#7c3aed', textAlign: 'center', fontWeight: documents.govtFront ? 600 : 400 }}>
+                        {documents.govtFront ? '✓ Selected' : 'Upload front'}
+                      </span>
                     </label>
 
-                    <label style={{ backgroundColor: 'white', border: documents.govtBack ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                    {/* Govt Proof Back */}
+                    <label style={{ backgroundColor: '#faf5ff', border: documents.govtBack ? '2px solid #10b981' : '1px dashed #c084fc', borderRadius: '14px', height: '135px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px', position: 'relative', overflow: 'hidden', transition: 'all 0.2s ease' }}>
                       <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'govtBack')} style={{ display: 'none' }} />
-                      {documents.govtBack && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
-                      <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.govtBack ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                        <Camera size={20} color={documents.govtBack ? "#10b981" : "#3b82f6"} />
-                      </div>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Govt Proof (Back)</span>
-                      <span style={{ fontSize: '0.75rem', color: documents.govtBack ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.govtBack ? 'Selected' : 'Upload back side'}</span>
+                      {documents.govtBack && (
+                        <div style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10, backgroundColor: '#10b981', color: 'white', borderRadius: '50%', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <CheckCircle2 size={15} />
+                        </div>
+                      )}
+                      {previews.govtBack ? (
+                        <div style={{ position: 'relative', width: '100%', height: '65px', borderRadius: '8px', overflow: 'hidden', marginBottom: '6px' }}>
+                          <img src={previews.govtBack} alt="Govt Back" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                      ) : (
+                        <div style={{ width: 38, height: 38, borderRadius: '50%', backgroundColor: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                          <Camera size={18} color="#6366f1" />
+                        </div>
+                      )}
+                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>Govt Proof (Back)</span>
+                      <span style={{ fontSize: '0.7rem', color: documents.govtBack ? '#10b981' : '#7c3aed', textAlign: 'center', fontWeight: documents.govtBack ? 600 : 400 }}>
+                        {documents.govtBack ? '✓ Selected' : 'Upload back'}
+                      </span>
                     </label>
 
                     {workStatus === 'student' && (
                       <>
-                        <label style={{ backgroundColor: 'white', border: documents.collegeFront ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                        <label style={{ backgroundColor: '#faf5ff', border: documents.collegeFront ? '2px solid #10b981' : '1px dashed #c084fc', borderRadius: '14px', height: '135px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px', position: 'relative', overflow: 'hidden', transition: 'all 0.2s ease' }}>
                           <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'collegeFront')} style={{ display: 'none' }} />
-                          {documents.collegeFront && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
-                          <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.collegeFront ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                            <Camera size={20} color={documents.collegeFront ? "#10b981" : "#3b82f6"} />
-                          </div>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>College ID (Front)</span>
-                          <span style={{ fontSize: '0.75rem', color: documents.collegeFront ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.collegeFront ? 'Selected' : 'Upload front side'}</span>
+                          {documents.collegeFront && (
+                            <div style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10, backgroundColor: '#10b981', color: 'white', borderRadius: '50%', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <CheckCircle2 size={15} />
+                            </div>
+                          )}
+                          {previews.collegeFront ? (
+                            <div style={{ position: 'relative', width: '100%', height: '65px', borderRadius: '8px', overflow: 'hidden', marginBottom: '6px' }}>
+                              <img src={previews.collegeFront} alt="College Front" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                          ) : (
+                            <div style={{ width: 38, height: 38, borderRadius: '50%', backgroundColor: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                              <Camera size={18} color="#6366f1" />
+                            </div>
+                          )}
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>College ID (Front)</span>
+                          <span style={{ fontSize: '0.7rem', color: documents.collegeFront ? '#10b981' : '#7c3aed', textAlign: 'center', fontWeight: documents.collegeFront ? 600 : 400 }}>
+                            {documents.collegeFront ? '✓ Selected' : 'Upload front'}
+                          </span>
                         </label>
                         
-                        <label style={{ backgroundColor: 'white', border: documents.collegeBack ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                        <label style={{ backgroundColor: '#faf5ff', border: documents.collegeBack ? '2px solid #10b981' : '1px dashed #c084fc', borderRadius: '14px', height: '135px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px', position: 'relative', overflow: 'hidden', transition: 'all 0.2s ease' }}>
                           <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'collegeBack')} style={{ display: 'none' }} />
-                          {documents.collegeBack && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
-                          <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.collegeBack ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                            <Camera size={20} color={documents.collegeBack ? "#10b981" : "#3b82f6"} />
-                          </div>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>College ID (Back)</span>
-                          <span style={{ fontSize: '0.75rem', color: documents.collegeBack ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.collegeBack ? 'Selected' : 'Upload back side'}</span>
+                          {documents.collegeBack && (
+                            <div style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10, backgroundColor: '#10b981', color: 'white', borderRadius: '50%', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <CheckCircle2 size={15} />
+                            </div>
+                          )}
+                          {previews.collegeBack ? (
+                            <div style={{ position: 'relative', width: '100%', height: '65px', borderRadius: '8px', overflow: 'hidden', marginBottom: '6px' }}>
+                              <img src={previews.collegeBack} alt="College Back" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                          ) : (
+                            <div style={{ width: 38, height: 38, borderRadius: '50%', backgroundColor: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                              <Camera size={18} color="#6366f1" />
+                            </div>
+                          )}
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>College ID (Back)</span>
+                          <span style={{ fontSize: '0.7rem', color: documents.collegeBack ? '#10b981' : '#7c3aed', textAlign: 'center', fontWeight: documents.collegeBack ? 600 : 400 }}>
+                            {documents.collegeBack ? '✓ Selected' : 'Upload back'}
+                          </span>
                         </label>
                       </>
                     )}
                     
                     {workStatus === 'employed' && (
                       <>
-                        <label style={{ backgroundColor: 'white', border: documents.empFront ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+                        <label style={{ backgroundColor: '#faf5ff', border: documents.empFront ? '2px solid #10b981' : '1px dashed #c084fc', borderRadius: '14px', height: '135px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px', position: 'relative', overflow: 'hidden', transition: 'all 0.2s ease' }}>
                           <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'empFront')} style={{ display: 'none' }} />
-                          {documents.empFront && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
-                          <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.empFront ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                            <Camera size={20} color={documents.empFront ? "#10b981" : "#3b82f6"} />
-                          </div>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Emp ID (Front)</span>
-                          <span style={{ fontSize: '0.75rem', color: documents.empFront ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.empFront ? 'Selected' : 'Upload front side'}</span>
+                          {documents.empFront && (
+                            <div style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10, backgroundColor: '#10b981', color: 'white', borderRadius: '50%', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <CheckCircle2 size={15} />
+                            </div>
+                          )}
+                          {previews.empFront ? (
+                            <div style={{ position: 'relative', width: '100%', height: '65px', borderRadius: '8px', overflow: 'hidden', marginBottom: '6px' }}>
+                              <img src={previews.empFront} alt="Emp Front" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                          ) : (
+                            <div style={{ width: 38, height: 38, borderRadius: '50%', backgroundColor: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                              <Camera size={18} color="#6366f1" />
+                            </div>
+                          )}
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>Emp ID (Front)</span>
+                          <span style={{ fontSize: '0.7rem', color: documents.empFront ? '#10b981' : '#7c3aed', textAlign: 'center', fontWeight: documents.empFront ? 600 : 400 }}>
+                            {documents.empFront ? '✓ Selected' : 'Upload front'}
+                          </span>
                         </label>
-                        <label style={{ backgroundColor: 'white', border: documents.empBack ? '1px solid #10b981' : '1px solid #e2e8f0', borderRadius: '12px', height: '140px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', position: 'relative' }}>
+
+                        <label style={{ backgroundColor: '#faf5ff', border: documents.empBack ? '2px solid #10b981' : '1px dashed #c084fc', borderRadius: '14px', height: '135px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px', position: 'relative', overflow: 'hidden', transition: 'all 0.2s ease' }}>
                           <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileChange(e, 'empBack')} style={{ display: 'none' }} />
-                          {documents.empBack && <div style={{ position: 'absolute', top: '8px', right: '8px', color: '#10b981' }}><CheckCircle2 size={18} /></div>}
-                          <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: documents.empBack ? '#d1fae5' : '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                            <Camera size={20} color={documents.empBack ? "#10b981" : "#3b82f6"} />
-                          </div>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Emp ID (Back)</span>
-                          <span style={{ fontSize: '0.75rem', color: documents.empBack ? '#10b981' : '#64748b', textAlign: 'center' }}>{documents.empBack ? 'Selected' : 'Upload back side'}</span>
+                          {documents.empBack && (
+                            <div style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10, backgroundColor: '#10b981', color: 'white', borderRadius: '50%', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <CheckCircle2 size={15} />
+                            </div>
+                          )}
+                          {previews.empBack ? (
+                            <div style={{ position: 'relative', width: '100%', height: '65px', borderRadius: '8px', overflow: 'hidden', marginBottom: '6px' }}>
+                              <img src={previews.empBack} alt="Emp Back" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                          ) : (
+                            <div style={{ width: 38, height: 38, borderRadius: '50%', backgroundColor: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                              <Camera size={18} color="#6366f1" />
+                            </div>
+                          )}
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>Emp ID (Back)</span>
+                          <span style={{ fontSize: '0.7rem', color: documents.empBack ? '#10b981' : '#7c3aed', textAlign: 'center', fontWeight: documents.empBack ? 600 : 400 }}>
+                            {documents.empBack ? '✓ Selected' : 'Upload back'}
+                          </span>
                         </label>
                       </>
                     )}
                   </div>
-                </section>
-
-                <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: 0 }} />
-
+                </div>
 
                 {uploadProgress && (
-                  <div style={{ textAlign: 'center', padding: '8px', fontSize: '0.85rem', color: '#3b82f6', fontWeight: 600 }}>
+                  <div style={{ textAlign: 'center', padding: '10px', fontSize: '0.85rem', color: '#6366f1', fontWeight: 700, background: '#f5f3ff', borderRadius: '12px', border: '1px solid #ddd6fe' }}>
                     {uploadProgress}
                   </div>
                 )}
-              </div>
-              
-              {/* Bottom Action */}
-              <div style={{ padding: '16px 20px', backgroundColor: 'transparent', zIndex: 50, marginTop: 'auto' }}>
-                <button 
-                  type="submit" 
-                  form="add-tenant-form"
-                  disabled={isSaving}
-                  style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', backgroundColor: '#3b82f6', color: 'white', padding: '16px', borderRadius: '12px', border: 'none', fontWeight: 600, fontSize: '1rem', cursor: 'pointer', transition: 'background-color 0.2s', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)' }}
-                >
-                  <div style={{ position: 'absolute', left: '8px', width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', fontSize: '1.2rem', fontWeight: 700 }}>
-                    N
-                  </div>
-                  {isSaving ? 'Saving...' : 'Save Tenant Details'}
-                </button>
-              </div>
+
+                {/* Submit Action Button */}
+                <div style={{ padding: '8px 0 24px 0' }}>
+                  <button 
+                    type="submit" 
+                    disabled={isSaving}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      width: '100%', 
+                      background: isSaving ? '#94a3b8' : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', 
+                      color: 'white', 
+                      padding: '14px 20px', 
+                      borderRadius: '14px', 
+                      border: 'none', 
+                      fontWeight: 700, 
+                      fontSize: '0.95rem', 
+                      cursor: isSaving ? 'not-allowed' : 'pointer', 
+                      transition: 'all 0.2s ease', 
+                      boxShadow: isSaving ? 'none' : '0 6px 18px rgba(99, 102, 241, 0.35)',
+                      gap: '8px'
+                    }}
+                  >
+                    {isSaving ? (
+                      <span>{uploadProgress || 'Saving Tenant...'}</span>
+                    ) : (
+                      <>
+                        <Save size={18} />
+                        <span>Save Tenant Details</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
 
             </div>
+          </div>
         )}
       </AnimatePresence>
     </div>

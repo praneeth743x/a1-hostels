@@ -53,7 +53,7 @@ export function buildRentReminderUtilityMessage(params: RentReminderParams): str
     dueMonth,
     dueDate = 'Immediate',
     invoiceId,
-    paymentLink = `https://staysync.app/pay/${invoiceId}`
+    paymentLink = `https://a1-hostels.web.app/pay/${invoiceId}`
   } = params;
 
   const formattedAmount = amount.toLocaleString('en-IN');
@@ -107,7 +107,7 @@ export function buildTenantWelcomeUtilityMessage(params: {
     rentAmount,
     securityDeposit,
     invoiceId,
-    paymentLink = `https://staysync.app/pay/${invoiceId}`
+    paymentLink = `https://a1-hostels.web.app/pay/${invoiceId}`
   } = params;
 
   const sanitizedHostel = hostelName.trim().toUpperCase();
@@ -146,7 +146,7 @@ export function buildRentDueTodayUtilityMessage(params: RentReminderParams): str
     amount,
     dueMonth,
     invoiceId,
-    paymentLink = `https://staysync.app/pay/${invoiceId}`
+    paymentLink = `https://a1-hostels.web.app/pay/${invoiceId}`
   } = params;
 
   const sanitizedHostel = hostelName.trim().toUpperCase();
@@ -184,7 +184,7 @@ export function buildRentDueTomorrowUtilityMessage(params: RentReminderParams): 
     amount,
     dueMonth,
     invoiceId,
-    paymentLink = `https://staysync.app/pay/${invoiceId}`
+    paymentLink = `https://a1-hostels.web.app/pay/${invoiceId}`
   } = params;
 
   const sanitizedHostel = hostelName.trim().toUpperCase();
@@ -223,7 +223,7 @@ export function buildRentOverdueUtilityMessage(params: RentReminderParams & { ov
     dueMonth,
     overdueDays = 1,
     invoiceId,
-    paymentLink = `https://staysync.app/pay/${invoiceId}`
+    paymentLink = `https://a1-hostels.web.app/pay/${invoiceId}`
   } = params;
 
   const sanitizedHostel = hostelName.trim().toUpperCase();
@@ -271,7 +271,7 @@ export function buildFeeReceiptUtilityMessage(params: {
     paymentDate,
     category = 'Rent Payment',
     receiptId,
-    receiptLink = `https://staysync.app/receipt/${receiptId}`
+    receiptLink = `https://a1-hostels.web.app/receipt/${receiptId}`
   } = params;
 
   const sanitizedHostel = hostelName.trim().toUpperCase();

@@ -22,7 +22,6 @@ function ResetPasswordForm() {
 
   useEffect(() => {
     if (!token) {
-      setEmail('praneeth743x@gmail.com'); // fallback dummy email if no token
       setLoading(false);
       return;
     }
@@ -32,13 +31,11 @@ function ResetPasswordForm() {
         if (res.success && res.email) {
           setEmail(res.email);
         } else {
-          setStatus({ type: 'error', msg: res.error || 'Invalid or expired link.' });
-          setEmail('praneeth743x@gmail.com');
+          setStatus({ type: 'error', msg: res.error || 'Invalid or expired reset link.' });
         }
         setLoading(false);
       }).catch((err) => {
-        setStatus({ type: 'error', msg: 'Failed to verify token.' });
-        setEmail('praneeth743x@gmail.com');
+        setStatus({ type: 'error', msg: 'Failed to verify reset link.' });
         setLoading(false);
       });
     });

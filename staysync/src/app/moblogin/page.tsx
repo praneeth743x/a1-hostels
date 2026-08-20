@@ -1,51 +1,31 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, LogIn, Search, X, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { Mail, Lock } from 'lucide-react';
 import { auth } from '@/lib/firebase';
-import { GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup, signInWithRedirect, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { rpcCall } from '@/lib/rpc';
-import InstallPWAButton from '@/components/InstallPWAButton';
 import { useHostel } from '@/context/HostelContext';
 import { SplashScreen } from '@/components/SplashScreen';
 import { isTrueColdLaunch, markSessionStarted } from '@/lib/launchDetector';
-import styles from './login.module.css';
 import { getPlatform, PlatformType } from '@/lib/platform';
 import AppLogin from '@/components/AppLogin';
 
-export default function LoginPage() {
+export default function MobileLoginPage() {
   const router = useRouter();
 
-  const [isStandalonePwa, setIsStandalonePwa] = useState(false);
-  const [platform, setPlatform] = useState<PlatformType>('WEB_BROWSER');
+  const [platform, setPlatform] = useState<PlatformType>('PWA');
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
 
   useEffect(() => {
     const p = getPlatform();
-    if (p === 'PWA' || p === 'ANDROID_APP') {
-      router.replace('/moblogin');
+    if (p === 'WEB_BROWSER') {
+      router.replace('/login');
       return;
     }
     setPlatform(p);
-    setIsStandalonePwa(false);
   }, [router]);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const errorParam = params.get('error');
-      if (errorParam === 'account_disabled') {
-        setError("Your account has been disabled. Please contact support.");
-      }
-      const redirectErr = sessionStorage.getItem('redirect_login_error');
-      if (redirectErr) {
-        setError(redirectErr);
-        sessionStorage.removeItem('redirect_login_error');
-      }
-    }
-  }, []);
 
   // PWA Cold-Launch Detection
   const [showSplash] = useState<boolean>(() => {
@@ -61,7 +41,7 @@ export default function LoginPage() {
     if (showSplash) {
       splashTimeoutRef.current = setTimeout(() => {
         setRedirectFired(true);
-      }, 0); // Reduced to 0 for instant loading
+      }, 0);
     }
     return () => {
       if (splashTimeoutRef.current) clearTimeout(splashTimeoutRef.current);
@@ -88,7 +68,6 @@ export default function LoginPage() {
   }, []);
 
   // Forgot Password Modal
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const [forgotPasswordMsg, setForgotPasswordMsg] = useState<string | null>(null);
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
@@ -110,9 +89,6 @@ export default function LoginPage() {
     }
   }, [router]);
 
-  // Redirect result is handled globally by HostelContext.
-  // Login page only handles the auth status changes via the useEffect below.
-
   const routingInProgressRef = useRef(false);
 
   useEffect(() => {
@@ -120,7 +96,6 @@ export default function LoginPage() {
       const isExplicitLoggedOut = typeof window !== 'undefined' && sessionStorage.getItem('loggedOut') === 'true';
 
       if (currentUser.email && (!isExplicitLoggedOut || loading)) {
-        // Skip if a sign-in handler (handleGoogleSignIn/handleEmailLogin) is already routing
         if (routingInProgressRef.current) return;
         sessionStorage.removeItem('loggedOut');
         setRedirectFired(true);
@@ -149,7 +124,6 @@ export default function LoginPage() {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     const deviceName = isMobile ? 'Mobile App' : 'Web Browser';
 
-    // Await device registration to ensure it exists in Firestore before page redirect
     await rpcCall('registerDevice', userId, deviceId, deviceName).catch((e) => console.error("Device registration error:", e));
 
     try {
@@ -177,7 +151,7 @@ export default function LoginPage() {
         window.location.href = target;
       }
       setTimeout(() => {
-        if (typeof window !== 'undefined' && window.location.pathname === '/login') {
+        if (typeof window !== 'undefined' && window.location.pathname === '/moblogin') {
           window.location.href = target;
         }
       }, 300);
@@ -185,7 +159,6 @@ export default function LoginPage() {
       console.error("Failed to fetch role:", e);
       setError(e.message || "Failed to resolve user role.");
       setLoading(false);
-      // Reset auth state on failure so we don't get stuck in splash screen loop
       await signOut(auth).catch(() => {});
     }
   };
@@ -280,7 +253,6 @@ export default function LoginPage() {
       }
 
       const userCredential = await signInWithEmailAndPassword(auth, targetEmail, password);
-
       const meta = await rpcCall('getLoginAuthMeta', userCredential.user.uid, targetEmail);
 
       if (meta?.isSuspended || !meta?.exists) {
@@ -317,7 +289,6 @@ export default function LoginPage() {
       let targetEmail = input;
 
       if (!input.includes('@')) {
-        // Treat as phone number
         const res = await rpcCall('getTenantEmailByPhone', input);
         if (!res?.success || !res?.email) {
           throw new Error(res?.error || "No account found with this phone number.");
@@ -348,214 +319,26 @@ export default function LoginPage() {
     return <SplashScreen />;
   }
 
-  // Mobile view renders removed from browser-only login page
-
-
   return (
-    <div className={styles.loginPageContainer}>
-      {/* ==================== LEFT — Hero Panel (Desktop Only) ==================== */}
-      <div className={styles.heroPanel}>
-        <img 
-          src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80" 
-          alt="Premium Hostel" 
-          className={styles.heroImage}
-        />
-        <div className={styles.heroOverlay} />
-        <div className={styles.heroContent}>
-          <h1 className={styles.heroTitle}>Welcome Back</h1>
-          <p className={styles.heroSubtitle}>Manage your properties, track payments, and keep everything running smoothly — all in one place.</p>
-          <div className={styles.heroBadges}>
-            <div className={styles.heroBadge}>
-              <ShieldCheck size={16} className={styles.heroBadgeIcon} />
-              <span>Secure & Encrypted</span>
-            </div>
-            <div className={styles.heroBadge}>
-              <Search size={16} className={styles.heroBadgeIcon} />
-              <span>Real-time Tracking</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ==================== RIGHT — Form Panel ==================== */}
-      <div className={styles.formPanel}>
-        {/* Ambient glow (mobile) */}
-        <div className={styles.ambientBackground}>
-          <div className={styles.glowPink} />
-          <div className={styles.glowBlue} />
-          <div className={styles.glowPurple} />
-        </div>
-
-        {/* Back to Home (browser only) */}
-        {!isStandalonePwa && !(typeof navigator !== 'undefined' && (navigator.userAgent || '').toLowerCase().includes('wv')) && (
-          <button 
-            type="button" 
-            onClick={() => router.push('/')} 
-            className={`${styles.backToHome} ${styles.animateIn}`}
-          >
-            <ArrowLeft size={16} />
-            <span>Back to Home</span>
-          </button>
-        )}
-
-        <div className={styles.formPanelInner}>
-          {/* Brand */}
-          <div className={`${styles.brand} ${styles.animateIn} ${styles.animateDelay1}`}>
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className={styles.brandLogo} />
-            ) : (
-              <div className={styles.brandLogoFallback}>
-                <ShieldCheck size={26} color="#ffffff" />
-              </div>
-            )}
-            <div className={styles.brandName}>{siteName}</div>
-          </div>
-
-          <div className={styles.loginCard}>
-            {error && <div className={styles.errorBox}>{error}</div>}
-
-            {/* Google Sign In */}
-            <div className={`${styles.animateIn} ${styles.animateDelay3}`}>
-              <button 
-                type="button" 
-                className={styles.googleBtn}
-                onClick={handleGoogleSignIn}
-                disabled={loading}
-              >
-                <img 
-                  src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" 
-                  alt="Google" 
-                  className={styles.googleIcon}
-                />
-                <span>{loading ? 'Signing in...' : 'Continue with Google'}</span>
-              </button>
-            </div>
-
-            <div className={`${styles.divider} ${styles.animateIn} ${styles.animateDelay3}`}>
-              <span>or sign in with email</span>
-            </div>
-
-            {/* Email / Password Form */}
-            <form onSubmit={handleEmailLogin} className={`${styles.formSection} ${styles.animateIn} ${styles.animateDelay4}`}>
-              <div className={styles.inputGroup}>
-                <label className={styles.inputLabel} htmlFor="login-email">Email or Mobile</label>
-                <div className={styles.inputWrapper}>
-                  <Mail className={styles.inputIcon} size={16} />
-                  <input
-                    id="login-email"
-                    type="text"
-                    className={styles.loginInput}
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    required
-                    disabled={loading}
-                    autoComplete="email"
-                  />
-                </div>
-              </div>
-              
-              <div className={styles.inputGroup}>
-                <label className={styles.inputLabel} htmlFor="login-password">Password</label>
-                <div className={styles.inputWrapper}>
-                  <Lock className={styles.inputIcon} size={16} />
-                  <input
-                    id="login-password"
-                    type="password"
-                    className={styles.loginInput}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    required
-                    disabled={loading}
-                    autoComplete="current-password"
-                  />
-                </div>
-              </div>
-
-              <div className={styles.forgotRow}>
-                <button type="button" onClick={() => setShowForgotPassword(true)} className={styles.forgotLink}>
-                  Forgot Password?
-                </button>
-              </div>
-              
-              <button type="submit" className={styles.primaryButton} disabled={loading}>
-                {loading ? 'Signing in...' : 'Sign In'} <LogIn size={18} strokeWidth={2.5} />
-              </button>
-            </form>
-          </div>
-
-          {/* Footer — Downloads & Privacy */}
-          <div className={`${styles.footerSection} ${styles.animateIn} ${styles.animateDelay5}`}>
-            <div className={styles.installBtnWrapper}>
-              <InstallPWAButton />
-            </div>
-
-            <div className={styles.downloadRow}>
-              <a href="/downloads/a1-hostels.apk" download className={styles.downloadBtn}>
-                🤖 Android App
-              </a>
-              <button 
-                onClick={() => alert("iOS Users: Please tap 'Download Web App' above, then 'Add to Home Screen' from Safari.")} 
-                type="button" 
-                className={styles.downloadBtn}
-              >
-                🍏 iOS App
-              </button>
-            </div>
-
-            <a href="/privacy" target="_blank" rel="noopener noreferrer" className={styles.privacyLink}>
-              Privacy Policy & Data Protection
-            </a>
-          </div>
-        </div>
-      </div>
-
-      {/* ==================== FORGOT PASSWORD MODAL ==================== */}
-      <AnimatePresence>
-        {showForgotPassword && (
-          <div className={styles.modalOverlay}>
-            <motion.div 
-              className={styles.modalCard}
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-            >
-              <div className={styles.modalHeader}>
-                <h3 className={styles.modalTitle}>Reset Password</h3>
-                <button onClick={() => { setShowForgotPassword(false); setForgotPasswordMsg(null); }} className={styles.modalClose}>
-                  <X size={18} />
-                </button>
-              </div>
-              <p className={styles.modalDescription}>
-                Enter your registered email or mobile number and we'll send you a password reset link.
-              </p>
-              
-              <form onSubmit={handleForgotPassword} className={styles.modalForm}>
-                <input 
-                  type="text" 
-                  placeholder="Email or Mobile Number" 
-                  className={styles.modalInput} 
-                  value={forgotPasswordEmail} 
-                  onChange={e => setForgotPasswordEmail(e.target.value)}
-                  required
-                />
-                <button type="submit" className={styles.primaryButton} disabled={forgotPasswordLoading}>
-                  {forgotPasswordLoading ? 'Sending...' : 'Send Reset Link'} <Mail size={16} />
-                </button>
-              </form>
-
-              {forgotPasswordMsg && (
-                <div className={`${styles.modalAlert} ${forgotPasswordMsg.includes('sent') ? styles.modalAlertSuccess : styles.modalAlertError}`}>
-                  {forgotPasswordMsg}
-                </div>
-              )}
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </div>
+    <AppLogin
+      email={email}
+      setEmail={setEmail}
+      password={password}
+      setPassword={setPassword}
+      loading={loading}
+      error={error}
+      onSubmit={handleEmailLogin}
+      onGoogleSignIn={handleGoogleSignIn}
+      logoUrl={logoUrl}
+      siteName={siteName}
+      showForgotPasswordModal={showForgotPasswordModal}
+      setShowForgotPasswordModal={setShowForgotPasswordModal}
+      forgotPasswordEmail={forgotPasswordEmail}
+      setForgotPasswordEmail={setForgotPasswordEmail}
+      forgotPasswordMsg={forgotPasswordMsg}
+      setForgotPasswordMsg={setForgotPasswordMsg}
+      forgotPasswordLoading={forgotPasswordLoading}
+      onForgotPasswordSubmit={handleForgotPassword}
+    />
   );
 }
-

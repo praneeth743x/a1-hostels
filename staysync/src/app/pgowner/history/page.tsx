@@ -161,18 +161,10 @@ function HistoryPageContent() {
     (storeTenants || []).forEach((t: any) => {
       const statusInfo = getTenantPaymentStatus(t, storeDues, allStorePayments, new Date());
       let totalDue = parseAmount(statusInfo.pendingAmount);
-      if (['OVERDUE', 'CRITICAL', 'DUE_TODAY'].includes(statusInfo.status)) {
+      if (statusInfo.isVirtual && ['OVERDUE', 'CRITICAL', 'DUE_TODAY'].includes(statusInfo.status)) {
         totalDue += parseAmount(statusInfo.virtualRentRemaining !== undefined ? statusInfo.virtualRentRemaining : t.rent_amount);
       }
       
-      // Also check explicit store dues as fallback
-      const explicitDues = storeDues.filter((d: any) => (d.tenant_id === t.tenant_id || d.tenant_id === t.id) && (d.status === 'pending' || d.status === 'overdue'))
-                                    .reduce((sum: number, d: any) => sum + parseAmount(d.amount), 0);
-      
-      if (explicitDues > totalDue) {
-        totalDue = explicitDues;
-      }
-
       const tid = t.tenant_id || t.id;
       if (tid) duesMap[tid] = totalDue;
     });
@@ -183,7 +175,10 @@ function HistoryPageContent() {
     allPaymentTenantIds.forEach(tid => {
       if (duesMap[tid] !== undefined) return; // already computed above
       const explicitDues = storeDues.filter((d: any) => d.tenant_id === tid && (d.status === 'pending' || d.status === 'overdue'))
-                                    .reduce((sum: number, d: any) => sum + parseAmount(d.amount), 0);
+                                    .reduce((sum: number, d: any) => {
+                                      const rem = d.pending_balance !== undefined ? parseAmount(d.pending_balance) : Math.max(0, parseAmount(d.amount) - parseAmount(d.amount_paid));
+                                      return sum + rem;
+                                    }, 0);
       duesMap[tid] = explicitDues;
     });
 
@@ -192,11 +187,10 @@ function HistoryPageContent() {
       const tenant = tenantsMap[tenantId] || {};
       const room = roomsMap[p.room_id] || roomsMap[tenant.room_id] || (typeof tenant.rooms === 'object' ? tenant.rooms : {}) || {};
 
-      // Use duesMap if available, otherwise fall back to payment's own pending_balance field
-      const computedPending = duesMap[tenantId];
-      const pendingTotal = computedPending !== undefined && computedPending > 0
-        ? computedPending
-        : parseAmount(p.pending_balance);
+      // Prioritize payment's own recorded pending_balance on the transaction receipt
+      const pendingTotal = p.pending_balance !== undefined 
+        ? parseAmount(p.pending_balance) 
+        : (duesMap[tenantId] !== undefined ? duesMap[tenantId] : 0);
 
       return {
         ...p,

@@ -11,7 +11,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import imageCompression from 'browser-image-compression';
 import styles from './tenantDetails.module.css';
-import { Bell, Download, MoreVertical, Phone, Mail, MapPin, Briefcase, Building2, Calendar, ArrowLeft, Edit, LogIn, LogOut, Clock, Plus, Loader2, Pause, Play, CreditCard, CheckCircle2, Receipt, Printer, MessageSquare, Send, AlertTriangle, ChevronDown, User, Trash2 } from 'lucide-react';
+import { Bell, Download, MoreVertical, Phone, PhoneCall, Mail, MapPin, Briefcase, Building2, Calendar, ArrowLeft, Edit, LogIn, LogOut, Clock, Plus, Loader2, Pause, Play, CreditCard, CheckCircle2, Receipt, Printer, MessageSquare, Send, AlertTriangle, ChevronDown, User, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { sendManualTenantNotificationAction, toggleTenantWhatsAppAction } from '@/app/actions/whatsappActions';
 import { AvatarImage } from '@/components/AvatarImage';
@@ -78,6 +78,7 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
   const [editData, setEditData] = useState({
     fullName: '',
     mobile: '',
+    alternatePhone: '',
     email: '',
     moveInDate: '',
     checkOutDate: '',
@@ -201,6 +202,7 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
     setEditData({
       fullName: tenant?.full_name || '',
       mobile: tenant?.mobile || '',
+      alternatePhone: tenant?.parent_phone || tenant?.alternate_phone || tenant?.emergency_contact || '',
       email: tenant?.email || '',
       moveInDate: tenant?.move_in_date || (tenant?.created_at ? new Date(tenant.created_at).toISOString().split('T')[0] : ''),
       checkOutDate: tenant?.check_out_date || (tenant?.created_at ? new Date(new Date(tenant.created_at).getTime() + 365*24*60*60*1000).toISOString().split('T')[0] : ''),
@@ -249,6 +251,8 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
 
     const payload = {
       ...editData,
+      parentPhone: editData.alternatePhone,
+      alternatePhone: editData.alternatePhone,
       documents: documentUrls,
       performedByUid: auth.currentUser?.uid || localStorage.getItem('userUid') || '',
       performedByName: auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'PG Staff/Owner'
@@ -260,6 +264,9 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
         ...tenant,
         full_name: editData.fullName,
         mobile: editData.mobile,
+        parent_phone: editData.alternatePhone,
+        alternate_phone: editData.alternatePhone,
+        emergency_contact: editData.alternatePhone,
         email: editData.email,
         move_in_date: editData.moveInDate,
         check_out_date: editData.checkOutDate,
@@ -283,7 +290,8 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
       toast.error("Owner email not found. Please relogin.");
       return;
     }
-    const res = await rpcCall('requestTenantDeletion', resolvedParams.id, ownerEmail);
+    const requesterName = userProfile?.full_name || userProfile?.name || currentUser?.displayName || userProfile?.email || currentUser?.email?.split('@')[0] || 'PG Owner';
+    const res = await rpcCall('requestTenantDeletion', resolvedParams.id, ownerEmail, requesterName);
     if (res.success) {
       toast.success("Confirmation email sent! Check your inbox.");
       setTenant({...tenant, deletion_requested_at: new Date().toISOString()});
@@ -1446,6 +1454,16 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
                   />
                 </div>
                 <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '4px', display: 'block' }}>Alternate Mobile Number</label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g. 9876543210"
+                    value={editData.alternatePhone || ''}
+                    onChange={(e) => setEditData({...editData, alternatePhone: e.target.value})}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
+                  />
+                </div>
+                <div>
                   <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '4px', display: 'block' }}>Email</label>
                   <input 
                     type="email" 
@@ -1471,6 +1489,14 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
                   <div className={styles.tdNewInfoContent}>
                     <div className={styles.tdNewInfoLabel}>Phone</div>
                     <div className={styles.tdNewInfoValue}>{tenant.mobile || '-'}</div>
+                  </div>
+                </div>
+
+                <div className={styles.tdNewInfoRow}>
+                  <PhoneCall size={18} className={styles.tdNewInfoIcon} />
+                  <div className={styles.tdNewInfoContent}>
+                    <div className={styles.tdNewInfoLabel}>Alternate Mobile Number</div>
+                    <div className={styles.tdNewInfoValue}>{tenant.parent_phone || tenant.alternate_phone || tenant.emergency_contact || '-'}</div>
                   </div>
                 </div>
                 

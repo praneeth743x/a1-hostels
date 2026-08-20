@@ -79,7 +79,7 @@ export async function GET(req: Request) {
       const tenantSummary = duesList.slice(0, 3).map(d => `${d.tenantName} (Room ${d.roomNumber})`).join(', ');
       const extraCount = duesList.length > 3 ? ` +${duesList.length - 3} more` : '';
 
-      const title = `[StaySync 6 PM Summary] ${duesList.length} Tenant(s) Due Tomorrow (₹${totalAmount.toLocaleString('en-IN')})`;
+      const title = `[A1 Hostels 6 PM Summary] ${duesList.length} Tenant(s) Due Tomorrow (₹${totalAmount.toLocaleString('en-IN')})`;
       const message = `Tomorrow's Dues (${currentMonth}): ${tenantSummary}${extraCount}. Total Pending: ₹${totalAmount.toLocaleString('en-IN')}.`;
 
       // Save notification to Firestore under notifications collection

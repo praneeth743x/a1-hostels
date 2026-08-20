@@ -97,7 +97,7 @@ export async function getTenantDashboardData(email: string) {
 export async function sendPasswordResetAction(email: string, appUrl: string) {
   try {
     const token = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 60000).toISOString(); // 1 minute expiration
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes expiration
 
     await adminDb.collection('password_resets').doc(token).set({
       email,
@@ -152,7 +152,7 @@ export async function verifyCustomResetToken(token: string) {
     const expiresAt = new Date(data?.expiresAt || 0);
     
     if (now > expiresAt) {
-      return { success: false, error: 'This password reset link has expired (1 minute limit).' };
+      return { success: false, error: 'This password reset link has expired.' };
     }
     
     return { success: true, email: data.email };
@@ -179,7 +179,7 @@ export async function executeCustomPasswordReset(token: string, newPassword: str
     const expiresAt = new Date(data?.expiresAt || 0);
     
     if (now > expiresAt) {
-      return { success: false, error: 'This password reset link has expired (1 minute limit).' };
+      return { success: false, error: 'This password reset link has expired.' };
     }
     
     if (newPassword.length < 6) {
@@ -248,6 +248,9 @@ export async function deleteTenantPermanently(tenantId: string) {
     let tenantName = 'Tenant';
     let roomNum = 'N/A';
     let pgName = 'A1 Hostels';
+    let tenantEmail = '';
+    let tenantPhone = '';
+    let tenantUid = '';
 
     const tenantDoc = await adminDb.collection('tenants').doc(tenantId).get();
     if (tenantDoc.exists) {
@@ -255,6 +258,9 @@ export async function deleteTenantPermanently(tenantId: string) {
       tenantName = tenantData.full_name || tenantData.name || tenantName;
       roomNum = tenantData.room_number || tenantData.room || roomNum;
       pgName = tenantData.pg_name || tenantData.hostel || pgName;
+      tenantEmail = (tenantData.email || '').trim().toLowerCase();
+      tenantPhone = (tenantData.mobile || tenantData.phone || '').replace(/\D/g, '').slice(-10);
+      tenantUid = tenantData.uid || '';
 
       if ((!roomNum || roomNum === 'N/A') && tenantData.room_id) {
         const roomDoc = await adminDb.collection('rooms').doc(tenantData.room_id).get();
@@ -270,18 +276,30 @@ export async function deleteTenantPermanently(tenantId: string) {
         }
       }
 
-      if (tenantData.uid) {
+      // 1. Delete Firebase Auth account thoroughly across UID, Email, and Phone
+      if (tenantUid) {
+        await adminAuth.deleteUser(tenantUid).catch(() => {});
+      }
+      if (tenantEmail) {
         try {
-          await adminAuth.deleteUser(tenantData.uid);
-        } catch (e) { console.error('Failed to delete auth user:', e); }
+          const authUser = await adminAuth.getUserByEmail(tenantEmail);
+          if (authUser) await adminAuth.deleteUser(authUser.uid);
+        } catch (e) {}
+      }
+      if (tenantPhone && tenantPhone.length === 10) {
+        try {
+          const authUser = await adminAuth.getUserByPhoneNumber(`+91${tenantPhone}`);
+          if (authUser) await adminAuth.deleteUser(authUser.uid);
+        } catch (e) {}
       }
     }
 
     const batch = adminDb.batch();
-    // 1. Delete tenant document permanently
+
+    // 2. Delete tenant document permanently
     batch.delete(adminDb.collection('tenants').doc(tenantId));
     
-    // 2. Process payments: Preserve paid payments with snapshot info, delete unpaid dues
+    // 3. Process payments: Preserve paid payments with snapshot info, delete unpaid dues
     const payments = await adminDb.collection('payments').where('tenant_id', '==', tenantId).get();
     for (const doc of payments.docs) {
       const pData = doc.data();
@@ -299,9 +317,26 @@ export async function deleteTenantPermanently(tenantId: string) {
       }
     }
     
-    // 3. Delete unpaid dues from dues collection
+    // 4. Delete unpaid dues from dues collection
     const dues = await adminDb.collection('dues').where('tenant_id', '==', tenantId).get();
     dues.docs.forEach(doc => batch.delete(doc.ref));
+
+    // 5. Delete complaints and activity logs
+    const complaints = await adminDb.collection('complaints').where('tenant_id', '==', tenantId).get();
+    complaints.docs.forEach(doc => batch.delete(doc.ref));
+
+    const activityLogs = await adminDb.collection('tenant_activity_logs').where('tenant_id', '==', tenantId).get();
+    activityLogs.docs.forEach(doc => batch.delete(doc.ref));
+
+    // 6. Delete matching user_profiles
+    if (tenantEmail) {
+      const userProfilesByEmail = await adminDb.collection('user_profiles').where('email', '==', tenantEmail).get();
+      userProfilesByEmail.docs.forEach(doc => batch.delete(doc.ref));
+    }
+    if (tenantPhone) {
+      const userProfilesByPhone = await adminDb.collection('user_profiles').where('phone', '==', tenantPhone).get();
+      userProfilesByPhone.docs.forEach(doc => batch.delete(doc.ref));
+    }
     
     await batch.commit();
 
@@ -317,7 +352,7 @@ export async function deleteTenantPermanently(tenantId: string) {
   }
 }
 
-export async function requestTenantDeletion(tenantId: string, ownerEmail: string) {
+export async function requestTenantDeletion(tenantId: string, ownerEmail: string, requesterName?: string) {
   try {
     const tenantDoc = await adminDb.collection('tenants').doc(tenantId).get();
     if (!tenantDoc.exists) return { success: false, error: 'Tenant not found' };
@@ -326,34 +361,71 @@ export async function requestTenantDeletion(tenantId: string, ownerEmail: string
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 60000).toISOString(); // 1 minute
 
-    const dues = await adminDb.collection('dues').where('tenant_id', '==', tenantId).get();
+    // Calculate real pending dues from payments collection
+    const paymentsSnap = await adminDb.collection('payments')
+      .where('tenant_id', '==', tenantId)
+      .where('status', '==', 'pending')
+      .get();
+    
     let dueAmount = 0;
-    dues.forEach(d => {
-      if (d.data().status === 'unpaid' || d.data().status === 'partial') {
-        dueAmount += Number(d.data().amount || 0) - Number(d.data().paid_amount || 0);
-      }
+    paymentsSnap.forEach(d => {
+      const data = d.data();
+      const orig = Number(data.original_amount || data.amount || 0);
+      const paid = Number(data.amount_paid || 0);
+      const rem = data.pending_balance !== undefined ? Number(data.pending_balance) : Math.max(0, orig - paid);
+      dueAmount += rem;
     });
 
-    let hostelName = 'Hostel';
+    // If no explicit pending documents in payments collection, fallback to monthly rent if active
+    if (paymentsSnap.empty && tenant.is_active !== false) {
+      dueAmount = Number(tenant.rent_amount || tenant.monthly_rent || 0);
+    }
+
+    let hostelName = 'A1 Hostels';
     if (tenant.pg_id) {
       const pgDoc = await adminDb.collection('properties').doc(tenant.pg_id).get();
       if (pgDoc.exists) hostelName = pgDoc.data()?.name || hostelName;
     }
 
-    const roomNo = tenant.room || tenant.room_id || 'N/A';
-    
+    // Resolve human-readable room number
+    let roomNo = tenant.room_number || tenant.room || '';
+    if ((!roomNo || roomNo.length > 10) && tenant.room_id) {
+      try {
+        const rDoc = await adminDb.collection('rooms').doc(tenant.room_id).get();
+        if (rDoc.exists) {
+          roomNo = rDoc.data()?.room_number || rDoc.data()?.number || rDoc.data()?.room || roomNo;
+        }
+      } catch (e) {
+        console.warn("Room number lookup error:", e);
+      }
+    }
+    if (!roomNo) roomNo = 'Unassigned';
+
+    const actorName = requesterName || 'PG Management';
+
     await adminDb.collection('deletion_requests').doc(token).set({
       tenantId,
       status: 'pending',
       expiresAt,
-      requestedAt: new Date().toISOString()
+      requestedAt: new Date().toISOString(),
+      requestedBy: actorName
     });
 
     await adminDb.collection('tenants').doc(tenantId).update({
-      deletion_requested_at: new Date().toISOString()
+      deletion_requested_at: new Date().toISOString(),
+      deletion_requested_by: actorName
     });
 
-    const emailSent = await sendDeletionConfirmationEmail(ownerEmail, tenant.full_name || tenant.name || 'Tenant', token, hostelName, roomNo, dueAmount);
+    const emailSent = await sendDeletionConfirmationEmail(
+      ownerEmail, 
+      tenant.full_name || tenant.name || 'Tenant', 
+      token, 
+      hostelName, 
+      roomNo, 
+      dueAmount,
+      actorName
+    );
+    
     if (!emailSent) {
       return { success: false, error: 'Failed to send confirmation email' };
     }

@@ -30,7 +30,7 @@ export async function autoProvisionTeamMember(cleanEmail: string, targetUid?: st
         const existingUser = await adminAuth.getUserByEmail(cleanEmail);
         authUid = existingUser.uid;
       } catch (authError: any) {
-        const initialPassword = memberData.phone ? `Sync@${memberData.phone.replace(/\D/g, '').slice(-6)}` : 'StaySync@123';
+        const initialPassword = memberData.phone ? `A1@${memberData.phone.replace(/\D/g, '').slice(-6)}` : 'A1Hostels@123';
         const newUser = await adminAuth.createUser({
           email: cleanEmail,
           password: initialPassword,

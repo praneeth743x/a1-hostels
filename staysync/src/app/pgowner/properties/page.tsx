@@ -147,12 +147,14 @@ export default function MyHostelsPage() {
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeletingProperty, setIsDeletingProperty] = useState(false);
+  const [deletionEmailSent, setDeletionEmailSent] = useState(false);
 
   const handleInitiateDelete = (e: React.MouseEvent, pgId: string, name: string) => {
     e.stopPropagation();
     setDeleteTargetProperty({ id: pgId, name });
     setDeleteStep(1);
     setDeleteConfirmText('');
+    setDeletionEmailSent(false);
   };
 
   const handleConfirmFinalDelete = async () => {
@@ -161,17 +163,23 @@ export default function MyHostelsPage() {
       toast.error("Please type DELETE to confirm.");
       return;
     }
+    const ownerEmail = auth.currentUser?.email || (typeof window !== 'undefined' ? localStorage.getItem('userEmail') : '') || '';
+    if (!ownerEmail) {
+      toast.error("Owner email not found. Please re-login.");
+      return;
+    }
     setIsDeletingProperty(true);
     try {
-      const res = await rpcCall('deleteProperty', deleteTargetProperty.id);
+      const { requestHostelDeletion } = await import('@/app/actions/pgowner');
+      const res = await requestHostelDeletion(deleteTargetProperty.id, ownerEmail);
       if (res.success) {
-        setDeleteTargetProperty(null);
-        await refreshProperties();
+        setDeletionEmailSent(true);
+        toast.success("Confirmation email sent! Please check your inbox.");
       } else {
-        toast.error("Failed to delete property: " + (res.error || 'Unknown error'));
+        toast.error("Failed to initiate deletion: " + (res.error || 'Unknown error'));
       }
     } catch (err: any) {
-      toast.error("Error deleting property: " + err.message);
+      toast.error("Error initiating deletion: " + err.message);
     } finally {
       setIsDeletingProperty(false);
     }
@@ -1379,102 +1387,122 @@ export default function MyHostelsPage() {
                 </button>
               </div>
 
-              {/* Body Step 1 */}
-              {deleteStep === 1 && (
-                <div style={{ padding: '20px' }}>
-                  <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
-                    <div style={{ fontWeight: 700, color: '#991b1b', fontSize: '0.9rem', marginBottom: '6px' }}>⚠️ Warning: Permanent Data Loss</div>
-                    <div style={{ fontSize: '0.82rem', color: '#7f1d1d', lineHeight: '1.5' }}>
-                      Deleting <strong>{deleteTargetProperty.name}</strong> will permanently remove:
-                      <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
-                        <li>All floor & room configurations</li>
-                        <li>All tenant profiles & check-in history</li>
-                        <li>All pending dues and payment records</li>
-                      </ul>
+              {/* Modal Body & Actions */}
+              {deletionEmailSent ? (
+                <div style={{ padding: '28px 24px', textAlign: 'center' }}>
+                  <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#ecfdf5', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '26px' }}>✓</div>
+                  <h4 style={{ margin: '0 0 8px', fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>Confirmation Email Sent</h4>
+                  <p style={{ margin: '0 0 20px', fontSize: '0.86rem', color: '#64748b', lineHeight: '1.5' }}>
+                    A secure confirmation link has been sent to your registered email address. Please check your inbox and click <strong>Confirm Permanent Deletion</strong> within <strong>1 minute</strong> to permanently delete this hostel.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTargetProperty(null)}
+                    style={{ width: '100%', padding: '12px', borderRadius: '10px', background: '#4F46E5', color: '#ffffff', border: 'none', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Body Step 1 */}
+                  {deleteStep === 1 && (
+                    <div style={{ padding: '20px' }}>
+                      <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+                        <div style={{ fontWeight: 700, color: '#991b1b', fontSize: '0.9rem', marginBottom: '6px' }}>⚠️ Warning: Permanent Data Loss</div>
+                        <div style={{ fontSize: '0.82rem', color: '#7f1d1d', lineHeight: '1.5' }}>
+                          Deleting <strong>{deleteTargetProperty.name}</strong> will permanently remove:
+                          <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                            <li>All floor & room configurations</li>
+                            <li>All tenant profiles, accounts & check-in history</li>
+                            <li>All pending dues and payment records</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.83rem', color: '#475569' }}>
+                        Are you sure you want to proceed with deleting this property?
+                      </p>
                     </div>
+                  )}
+
+                  {/* Body Step 2 */}
+                  {deleteStep === 2 && (
+                    <div style={{ padding: '20px' }}>
+                      <p style={{ margin: '0 0 12px', fontSize: '0.85rem', color: '#334155' }}>
+                        To confirm deletion of <strong>{deleteTargetProperty.name}</strong>, type <strong style={{ color: '#dc2626' }}>DELETE</strong> below to receive the authorization email:
+                      </p>
+                      <input 
+                        type="text"
+                        placeholder="Type DELETE to confirm"
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '2px solid #fca5a5',
+                          fontSize: '0.95rem',
+                          fontWeight: 700,
+                          color: '#0f172a',
+                          outline: 'none'
+                        }}
+                        autoFocus
+                      />
+                    </div>
+                  )}
+
+                  {/* Footer Actions */}
+                  <div style={{ padding: '12px 20px 20px', display: 'flex', gap: '10px', background: '#fafafa', borderTop: '1px solid #f1f5f9' }}>
+                    {deleteStep === 1 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTargetProperty(null)}
+                          style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteStep(2)}
+                          style={{ flex: 1.3, padding: '10px', borderRadius: '8px', border: 'none', background: '#e11d48', color: '#ffffff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
+                        >
+                          Proceed to Delete →
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteStep(1)}
+                          style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
+                        >
+                          ← Back
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleConfirmFinalDelete}
+                          disabled={deleteConfirmText.trim().toUpperCase() !== 'DELETE' || isDeletingProperty}
+                          style={{
+                            flex: 1.5,
+                            padding: '10px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: deleteConfirmText.trim().toUpperCase() === 'DELETE' ? '#dc2626' : '#fca5a5',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '0.85rem',
+                            cursor: deleteConfirmText.trim().toUpperCase() === 'DELETE' ? 'pointer' : 'not-allowed',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          {isDeletingProperty ? 'Sending Email...' : 'Send Confirmation Email'}
+                        </button>
+                      </>
+                    )}
                   </div>
-                  <p style={{ margin: 0, fontSize: '0.83rem', color: '#475569' }}>
-                    Are you sure you want to proceed with deleting this property?
-                  </p>
-                </div>
+                </>
               )}
-
-              {/* Body Step 2 */}
-              {deleteStep === 2 && (
-                <div style={{ padding: '20px' }}>
-                  <p style={{ margin: '0 0 12px', fontSize: '0.85rem', color: '#334155' }}>
-                    To prevent accidental deletion of <strong>{deleteTargetProperty.name}</strong>, please type <strong style={{ color: '#dc2626' }}>DELETE</strong> in the box below:
-                  </p>
-                  <input 
-                    type="text"
-                    placeholder="Type DELETE to confirm"
-                    value={deleteConfirmText}
-                    onChange={(e) => setDeleteConfirmText(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '2px solid #fca5a5',
-                      fontSize: '0.95rem',
-                      fontWeight: 700,
-                      color: '#0f172a',
-                      outline: 'none'
-                    }}
-                    autoFocus
-                  />
-                </div>
-              )}
-
-              {/* Footer Actions */}
-              <div style={{ padding: '12px 20px 20px', display: 'flex', gap: '10px', background: '#fafafa', borderTop: '1px solid #f1f5f9' }}>
-                {deleteStep === 1 ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTargetProperty(null)}
-                      style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteStep(2)}
-                      style={{ flex: 1.3, padding: '10px', borderRadius: '8px', border: 'none', background: '#e11d48', color: '#ffffff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
-                    >
-                      Proceed to Delete →
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteStep(1)}
-                      style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
-                    >
-                      ← Back
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleConfirmFinalDelete}
-                      disabled={deleteConfirmText.trim().toUpperCase() !== 'DELETE' || isDeletingProperty}
-                      style={{
-                        flex: 1.5,
-                        padding: '10px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        background: deleteConfirmText.trim().toUpperCase() === 'DELETE' ? '#dc2626' : '#fca5a5',
-                        color: '#ffffff',
-                        fontWeight: 700,
-                        fontSize: '0.85rem',
-                        cursor: deleteConfirmText.trim().toUpperCase() === 'DELETE' ? 'pointer' : 'not-allowed',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      {isDeletingProperty ? 'Deleting...' : 'Permanently Delete'}
-                    </button>
-                  </>
-                )}
-              </div>
             </motion.div>
           </div>
         )}

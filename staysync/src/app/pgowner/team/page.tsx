@@ -72,7 +72,7 @@ export default function PGOwnerTeamPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('staySync_rolePresets');
+      const saved = localStorage.getItem('a1hostels_rolePresets') || localStorage.getItem('staySync_rolePresets');
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -84,6 +84,53 @@ export default function PGOwnerTeamPage() {
   const [isAddingNewPreset, setIsAddingNewPreset] = useState(false);
   const [newPresetInput, setNewPresetInput] = useState('');
   const [customRoleTitle, setCustomRoleTitle] = useState('Manager');
+
+  const handleDeletePreset = (e: React.MouseEvent, presetName: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    // Check if any team member is assigned this role / preset
+    const isAssigned = (members || []).some((m: any) => 
+      (m.role && m.role.toLowerCase() === presetName.toLowerCase()) ||
+      (m.custom_role_title && m.custom_role_title.toLowerCase() === presetName.toLowerCase()) ||
+      (m.role_title && m.role_title.toLowerCase() === presetName.toLowerCase())
+    );
+
+    if (isAssigned) {
+      toast.error(`Cannot delete preset "${presetName}": It is currently assigned to active team member(s).`);
+      return;
+    }
+
+    const updated = rolePresets.filter(p => p !== presetName);
+    setRolePresets(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('a1hostels_rolePresets', JSON.stringify(updated));
+    }
+    if (role === presetName) {
+      setRole('Custom Role');
+      setCustomRoleTitle('');
+    }
+    toast.success(`Role preset "${presetName}" deleted.`);
+  };
+
+  const handleCreatePreset = () => {
+    const name = newPresetInput.trim();
+    if (!name) return;
+    if (rolePresets.some(p => p.toLowerCase() === name.toLowerCase())) {
+      toast.error(`Preset "${name}" already exists.`);
+      return;
+    }
+    const updated = [...rolePresets, name];
+    setRolePresets(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('a1hostels_rolePresets', JSON.stringify(updated));
+    }
+    setRole(name);
+    setCustomRoleTitle(name);
+    setNewPresetInput('');
+    setIsAddingNewPreset(false);
+    toast.success(`Role preset "${name}" added!`);
+  };
 
   const handleSavePermissions = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1371,33 +1418,14 @@ export default function PGOwnerTeamPage() {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            if (newPresetInput.trim()) {
-                              const name = newPresetInput.trim();
-                              const updated = Array.from(new Set([...rolePresets, name]));
-                              setRolePresets(updated);
-                              if (typeof window !== 'undefined') localStorage.setItem('staySync_rolePresets', JSON.stringify(updated));
-                              setRole('Custom Role');
-                              setCustomRoleTitle(name);
-                              setNewPresetInput('');
-                              setIsAddingNewPreset(false);
-                            }
+                            handleCreatePreset();
                           }
                         }}
+                        autoFocus
                       />
                       <button
                         type="button"
-                        onClick={() => {
-                          if (newPresetInput.trim()) {
-                            const name = newPresetInput.trim();
-                            const updated = Array.from(new Set([...rolePresets, name]));
-                            setRolePresets(updated);
-                            if (typeof window !== 'undefined') localStorage.setItem('staySync_rolePresets', JSON.stringify(updated));
-                            setRole('Custom Role');
-                            setCustomRoleTitle(name);
-                            setNewPresetInput('');
-                            setIsAddingNewPreset(false);
-                          }
-                        }}
+                        onClick={handleCreatePreset}
                         style={{ padding: '6px 12px', background: '#4F46E5', color: '#FFF', border: 'none', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}
                       >
                         Save
@@ -1439,15 +1467,7 @@ export default function PGOwnerTeamPage() {
                             <button
                               type="button"
                               title={`Delete ${r} preset`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const updated = rolePresets.filter(p => p !== r);
-                                setRolePresets(updated);
-                                if (typeof window !== 'undefined') localStorage.setItem('staySync_rolePresets', JSON.stringify(updated));
-                                if (role === r) {
-                                  setRole('Custom Role');
-                                }
-                              }}
+                              onClick={(e) => handleDeletePreset(e, r)}
                               style={{
                                 padding: '6px 6px',
                                 borderRadius: '0 20px 20px 0',

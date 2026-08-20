@@ -289,3 +289,133 @@ export async function saveWhatsAppBannerAction(params: { templateKey: 'welcome' 
     return { success: false, error: err.message };
   }
 }
+
+/**
+ * Server Action: Triggers daily automated WhatsApp rent reminders (Due Today, Overdue, Due Tomorrow).
+ */
+export async function runDailyAutomatedRemindersAction(force: boolean = false) {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayDateKey = today.toISOString().split('T')[0];
+    const currentMonth = today.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+    // Check system_settings to avoid duplicate runs on same day unless forced
+    const settingsDoc = await adminDb.collection('system_settings').doc('whatsapp_reminders').get();
+    const globalSettings = settingsDoc.exists ? settingsDoc.data() : null;
+
+    if (!force && globalSettings?.last_automated_run_date === todayDateKey) {
+      return { success: true, message: 'Automated reminders already executed for today', processedCount: 0 };
+    }
+
+    const paymentsSnap = await adminDb.collection('payments')
+      .where('status', '==', 'pending')
+      .get();
+
+    const tenantsSnap = await adminDb.collection('tenants').get();
+    const activeTenantsMap = new Map<string, any>();
+    tenantsSnap.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.status !== 'DELETED' && data.status !== 'ARCHIVED' && data.is_active !== false) {
+        activeTenantsMap.set(doc.id, { id: doc.id, ...data });
+        if (data.tenant_id) activeTenantsMap.set(data.tenant_id, { id: doc.id, ...data });
+      }
+    });
+
+    const tenantDuesMap = new Map<string, number>();
+    paymentsSnap.docs.forEach(pdoc => {
+      const data = pdoc.data();
+      const tId = data.tenant_id || data.tenantId;
+      if (tId) {
+        tenantDuesMap.set(tId, (tenantDuesMap.get(tId) || 0) + Number(data.amount || 0));
+      }
+    });
+
+    const processedTenantsToday = new Set<string>();
+    let sentCount = 0;
+
+    for (const pDoc of paymentsSnap.docs) {
+      const payment = pDoc.data();
+      const tenantId = payment.tenant_id || payment.tenantId;
+      const tenant = activeTenantsMap.get(tenantId);
+
+      if (!tenant || tenant.whatsappEnabled === false) continue;
+
+      const tenantUniqueId = tenant.id || tenant.tenant_id;
+      if (processedTenantsToday.has(tenantUniqueId)) continue;
+
+      const phone = (tenant.mobile || tenant.phone || payment.tenant_phone || '').replace(/\D/g, '').slice(-10);
+      if (!phone || phone.length < 10) continue;
+
+      // Determine due date
+      let targetDay = 5;
+      const moveInDateStr = tenant.move_in_date || payment.created_at;
+      if (moveInDateStr) {
+        const checkin = new Date(moveInDateStr);
+        if (!isNaN(checkin.getTime())) targetDay = checkin.getDate();
+      }
+
+      const targetDueDate = new Date(today.getFullYear(), today.getMonth(), targetDay);
+      targetDueDate.setHours(0, 0, 0, 0);
+
+      const diffTime = today.getTime() - targetDueDate.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      let statusType: 'STANDARD' | 'DUE_TODAY' | 'DUE_TOMORROW' | 'OVERDUE' = 'STANDARD';
+      let overdueDays = 0;
+
+      if (diffDays === 0) {
+        statusType = 'DUE_TODAY';
+      } else if (diffDays === -1) {
+        statusType = 'DUE_TOMORROW';
+      } else if (diffDays > 0) {
+        statusType = 'OVERDUE';
+        overdueDays = diffDays;
+      } else {
+        // Not due yet
+        continue;
+      }
+
+      processedTenantsToday.add(tenantUniqueId);
+
+      try {
+        const { resolveTenantRoomAndPendingDues } = await import('@/lib/whatsapp');
+        const precalcDues = tenantDuesMap.get(tenantUniqueId) || 0;
+        const roomInfo = await resolveTenantRoomAndPendingDues(tenantUniqueId, tenant, precalcDues);
+        const dueDateFormatted = targetDueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+        await sendRentReminderWithLink(
+          phone,
+          tenant.full_name || tenant.name || 'Resident',
+          Number(payment.amount || tenant.rent_amount || 0),
+          currentMonth,
+          pDoc.id,
+          roomInfo.hostelName || 'A1 Hostels',
+          statusType,
+          overdueDays,
+          {
+            tenantId: tenantUniqueId,
+            triggeredBy: 'daily_automated_reminders',
+            roomNumber: roomInfo.roomNumber,
+            dueDateStr: dueDateFormatted
+          }
+        );
+        sentCount++;
+      } catch (e) {
+        console.warn('Error sending automated reminder to tenant:', tenantUniqueId, e);
+      }
+    }
+
+    // Save execution timestamp
+    await adminDb.collection('system_settings').doc('whatsapp_reminders').set({
+      last_automated_run_date: todayDateKey,
+      last_automated_run_at: new Date().toISOString(),
+      last_automated_sent_count: sentCount
+    }, { merge: true });
+
+    return { success: true, processedCount: sentCount, message: `Dispatched ${sentCount} automated reminder(s)` };
+  } catch (error: any) {
+    console.error('runDailyAutomatedRemindersAction error:', error);
+    return { success: false, error: error.message };
+  }
+}

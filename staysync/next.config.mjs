@@ -2,18 +2,16 @@ import withPWAInit from "@ducanh2912/next-pwa";
 
 const withPWA = withPWAInit({
   dest: "public",
-  register: true,
-  skipWaiting: true,
-  disable: process.env.NODE_ENV === "development" && process.env.ENABLE_PWA !== "true",
-  cacheOnFrontEndNav: true,
-  workboxOptions: {
-    disableDevLogs: true,
-    navigateFallbackDenylist: [/^\/__/],
-  }
+  register: false,
+  skipWaiting: false,
+  disable: true, // Clean manual SW management in public/sw.js
+  cacheOnFrontEndNav: false,
+  reloadOnOnline: false,
 });
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   serverExternalPackages: ['firebase-admin'],
   experimental: {
     staleTimes: {

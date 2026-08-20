@@ -59,6 +59,8 @@ export default function NotificationsPage() {
     }
   };
 
+  const [generalNotifs, setGeneralNotifs] = useState<any[]>([]);
+
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -71,14 +73,15 @@ export default function NotificationsPage() {
   }, [router]);
 
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    const targetUid = currentUser?.uid;
+    if (!targetUid) return;
     
     // Dynamically import firestore functions to avoid client issues
     import('firebase/firestore').then(({ collection, query, where, onSnapshot }) => {
       
       // 1. Complaints Listener
       const cRef = collection(db, 'complaints');
-      const cQuery = query(cRef, where('owner_id', '==', currentUser.uid));
+      const cQuery = query(cRef, where('owner_id', '==', targetUid));
       const unsubComplaints = onSnapshot(cQuery, (snap) => {
         const arr: any[] = [];
         snap.forEach(doc => {
@@ -105,19 +108,23 @@ export default function NotificationsPage() {
 
       // 2. Payments Listener (Paid vs Pending Dues)
       const pRef = collection(db, 'payments');
-      const pQuery = query(pRef, where('owner_id', '==', currentUser.uid));
+      const pQuery = query(pRef, where('owner_id', '==', targetUid));
       const unsubPayments = onSnapshot(pQuery, (snap) => {
         const payArr: any[] = [];
         const dueArr: any[] = [];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
         snap.forEach(doc => {
           const d = doc.data();
           if (d.status === 'paid' || d.status === 'PAID') {
             const paidDate = d.payment_date || d.created_at ? new Date(d.payment_date || d.created_at) : new Date();
+            const collectorInfo = d.collected_by_name ? ` (Collected by: ${d.collected_by_name})` : '';
             payArr.push({
               id: `pay_${doc.id}`,
               type: 'payment',
-              title: `[${d.pg_name || 'Hostel'}] Fee Collected: ₹${(d.amount_paid || d.amount || 0).toLocaleString()}`,
-              message: `Payment received from ${d.tenant_name || 'Tenant'}`,
+              title: `[${d.pg_name || 'Hostel'}] Fee Collected: ₹${(d.amount_paid || d.amount || 0).toLocaleString('en-IN')}`,
+              message: `Payment received from ${d.tenant_name || 'Tenant'}${collectorInfo} via ${d.payment_method || 'UPI'}`,
               time: paidDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               link: '/pgowner/history',
               timestamp: paidDate.getTime(),
@@ -125,13 +132,30 @@ export default function NotificationsPage() {
               roomNumber: d.room_number,
             });
           } else if (d.status === 'pending') {
-            const dueDate = d.due_date ? new Date(d.due_date) : new Date();
+            const dueDate = d.due_date ? new Date(d.due_date) : (d.created_at ? new Date(d.created_at) : new Date());
+            dueDate.setHours(0, 0, 0, 0);
+            const diffDays = Math.ceil((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+            
+            let statusTitle = `Pending Dues: ₹${(d.amount || 0).toLocaleString('en-IN')}`;
+            let statusMsg = `Payment pending from ${d.tenant_name || 'Tenant'}`;
+            
+            if (diffDays === -1) {
+              statusTitle = `⏰ Due Tomorrow: ₹${(d.amount || 0).toLocaleString('en-IN')}`;
+              statusMsg = `${d.tenant_name || 'Tenant'} (Room ${d.room_number || 'N/A'}) has rent due tomorrow.`;
+            } else if (diffDays === 0) {
+              statusTitle = `⚠️ Due Today: ₹${(d.amount || 0).toLocaleString('en-IN')}`;
+              statusMsg = `${d.tenant_name || 'Tenant'} (Room ${d.room_number || 'N/A'}) has rent due today.`;
+            } else if (diffDays > 0) {
+              statusTitle = `🚨 Overdue (${diffDays}d): ₹${(d.amount || 0).toLocaleString('en-IN')}`;
+              statusMsg = `${d.tenant_name || 'Tenant'} (Room ${d.room_number || 'N/A'}) is overdue by ${diffDays} day(s).`;
+            }
+
             dueArr.push({
               id: `due_${doc.id}`,
               type: 'due',
-              title: `[${d.pg_name || 'Hostel'}] Pending Dues: ₹${(d.amount || 0).toLocaleString()}`,
-              message: `Payment pending from ${d.tenant_name || 'Tenant'}`,
-              time: dueDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              title: `[${d.pg_name || 'Hostel'}] ${statusTitle}`,
+              message: statusMsg,
+              time: dueDate.toLocaleDateString([], { day: 'numeric', month: 'short' }),
               link: '/pgowner/dues',
               timestamp: dueDate.getTime(),
               tenantName: d.tenant_name,
@@ -147,14 +171,41 @@ export default function NotificationsPage() {
         setLoading(false);
       });
 
-      // 3. Chat Listener
+      // 3. Notifications Collection Listener (Team Member Collections & System Alerts)
+      const nRef = collection(db, 'notifications');
+      const nQuery = query(nRef, where('owner_id', '==', targetUid));
+      const unsubNotifs = onSnapshot(nQuery, (snap) => {
+        const arr: any[] = [];
+        snap.forEach(doc => {
+          const d = doc.data();
+          const createdDate = d.created_at ? new Date(d.created_at) : new Date();
+          arr.push({
+            id: `notif_${doc.id}`,
+            type: d.type || 'payment',
+            title: d.title || 'Notification',
+            message: d.message || '',
+            time: createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            link: d.link || '/pgowner/history',
+            timestamp: createdDate.getTime(),
+            tenantName: d.tenant_name,
+            roomNumber: d.room_number,
+          });
+        });
+        setGeneralNotifs(arr);
+        setLoading(false);
+      }, (err) => {
+        if (err?.code !== 'permission-denied') console.warn('General notif listener:', err?.code);
+        setLoading(false);
+      });
+
+      // 4. Chat Listener
       const chatRef = collection(db, 'owner_messages');
-      const chatQuery = query(chatRef, where('ownerId', '==', currentUser.uid));
+      const chatQuery = query(chatRef, where('ownerId', '==', targetUid));
       const unsubChat = onSnapshot(chatQuery, (snap) => {
         const arr: any[] = [];
         snap.forEach(doc => {
           const d = doc.data();
-          if (d.sender !== currentUser.uid) { // Messages from tenants
+          if (d.sender !== targetUid) { // Messages from tenants
             const createdDate = d.timestamp ? new Date(d.timestamp) : new Date();
             arr.push({
               id: `chat_${doc.id}`,
@@ -179,12 +230,13 @@ export default function NotificationsPage() {
       return () => {
         unsubComplaints();
         unsubPayments();
+        unsubNotifs();
         unsubChat();
       };
     });
   }, [currentUser?.uid]);
 
-  const allNotifications = [...dueNotifs, ...paymentNotifs, ...complaintNotifs, ...chatNotifs]
+  const allNotifications = [...dueNotifs, ...paymentNotifs, ...generalNotifs, ...complaintNotifs, ...chatNotifs]
     .map(n => ({ ...n, read: readNotifIds.has(n.id) }))
     .sort((a, b) => b.timestamp - a.timestamp);
 

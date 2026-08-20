@@ -134,15 +134,17 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
 
     let unsubComplaints: (() => void) | null = null;
     let unsubPayments: (() => void) | null = null;
+    let unsubGeneralNotifs: (() => void) | null = null;
     let unsubTenants: (() => void) | null = null;
     let unsubRooms: (() => void) | null = null;
 
     let latestComplaints: any[] = [];
     let latestPayments: any[] = [];
+    let latestGeneral: any[] = [];
     let isInitialLoad = true;
 
     const combineNotifs = () => {
-      const merged = [...latestComplaints, ...latestPayments];
+      const merged = [...latestComplaints, ...latestPayments, ...latestGeneral];
       merged.sort((a, b) => b.timestamp - a.timestamp);
       setNotifications(merged);
     };
@@ -180,33 +182,57 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
         if (err?.code !== 'permission-denied') console.warn('Complaints notif listener:', err?.code);
       });
 
-      // 2. Fee Collected Listener
+      // 2. Fee Collected Listener & Pending Due Reminders
       const pRef = collection(db, 'payments');
-      const pQuery = query(pRef, where('owner_id', '==', targetOwnerId), where('status', '==', 'paid'), limit(15));
+      const pQuery = query(pRef, where('owner_id', '==', targetOwnerId), limit(25));
       unsubPayments = onSnapshot(pQuery, (snap) => {
         latestPayments = [];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
         snap.forEach(doc => {
           const d = doc.data();
-          if (d.status !== 'paid' && d.status !== 'PAID') return;
-          const paidDate = d.payment_date || d.created_at ? new Date(d.payment_date || d.created_at) : new Date();
-          const notifId = `pay_${doc.id}`;
-          const actorInfo = d.collected_by_name ? ` by ${d.collected_by_name}` : '';
-          const title = `[${d.pg_name || 'Hostel'}] Fee Collected: ₹${(d.amount_paid || d.amount || 0).toLocaleString()}`;
-          const body = `Payment received${actorInfo} from ${d.tenant_name || 'Tenant'} (${d.room_number ? 'Room ' + d.room_number : 'Rent'})`;
+          if (d.status === 'paid' || d.status === 'PAID') {
+            const paidDate = d.payment_date || d.created_at ? new Date(d.payment_date || d.created_at) : new Date();
+            const notifId = `pay_${doc.id}`;
+            const actorInfo = d.collected_by_name ? ` by ${d.collected_by_name}` : '';
+            const title = `[${d.pg_name || 'Hostel'}] Fee Collected: ₹${(d.amount_paid || d.amount || 0).toLocaleString('en-IN')}`;
+            const body = `Payment received${actorInfo} from ${d.tenant_name || 'Tenant'} (${d.room_number ? 'Room ' + d.room_number : 'Rent'}) via ${d.payment_method || 'UPI'}`;
 
-          latestPayments.push({
-            id: notifId,
-            type: 'payment',
-            title,
-            message: body,
-            time: paidDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            link: '/pgowner/history',
-            timestamp: paidDate.getTime()
-          });
+            latestPayments.push({
+              id: notifId,
+              type: 'payment',
+              title,
+              message: body,
+              time: paidDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              link: '/pgowner/history',
+              timestamp: paidDate.getTime()
+            });
 
-          // Trigger Mobile Notification Bar alert for fee collected
-          if (!isInitialLoad) {
-            triggerPWANotification(notifId, title, body, 'payment', '/pgowner/history');
+            if (!isInitialLoad) {
+              triggerPWANotification(notifId, title, body, 'payment', '/pgowner/history');
+            }
+          } else if (d.status === 'pending') {
+            const dueDate = d.due_date ? new Date(d.due_date) : (d.created_at ? new Date(d.created_at) : new Date());
+            dueDate.setHours(0, 0, 0, 0);
+            const diffDays = Math.ceil((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === -1 || diffDays === 0) {
+              const notifId = `due_${doc.id}`;
+              const isTomorrow = diffDays === -1;
+              const title = `[${d.pg_name || 'Hostel'}] ${isTomorrow ? '⏰ Rent Due Tomorrow' : '⚠️ Rent Due Today'}: ₹${(d.amount || 0).toLocaleString('en-IN')}`;
+              const body = `${d.tenant_name || 'Tenant'} (${d.room_number ? 'Room ' + d.room_number : 'Rent'}) is due ${isTomorrow ? 'tomorrow' : 'today'}.`;
+
+              latestPayments.push({
+                id: notifId,
+                type: 'due',
+                title,
+                message: body,
+                time: isTomorrow ? 'Tomorrow' : 'Today',
+                link: '/pgowner/dues',
+                timestamp: dueDate.getTime()
+              });
+            }
           }
         });
         combineNotifs();
@@ -214,7 +240,38 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
         if (err?.code !== 'permission-denied') console.warn('Payments notif listener:', err?.code);
       });
 
-      // 3. Tenants Added / Edited Listener
+      // 3. Notifications Collection Listener (Team Member Collections & Staff Alerts)
+      const nRef = collection(db, 'notifications');
+      const nQuery = query(nRef, where('owner_id', '==', targetOwnerId), limit(15));
+      unsubGeneralNotifs = onSnapshot(nQuery, (snap) => {
+        latestGeneral = [];
+        snap.forEach(doc => {
+          const d = doc.data();
+          const createdDate = d.created_at ? new Date(d.created_at) : new Date();
+          const notifId = `notif_${doc.id}`;
+          const title = d.title || 'Notification';
+          const body = d.message || '';
+
+          latestGeneral.push({
+            id: notifId,
+            type: d.type || 'payment',
+            title,
+            message: body,
+            time: createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            link: d.link || '/pgowner/history',
+            timestamp: createdDate.getTime()
+          });
+
+          if (!isInitialLoad) {
+            triggerPWANotification(notifId, title, body, d.type || 'payment', d.link || '/pgowner/history');
+          }
+        });
+        combineNotifs();
+      }, (err) => {
+        if (err?.code !== 'permission-denied') console.warn('General notifs listener:', err?.code);
+      });
+
+      // 4. Tenants Added / Edited Listener
       const tRef = collection(db, 'tenants');
       const tQuery = query(tRef, where('owner_id', '==', targetOwnerId), limit(10));
       unsubTenants = onSnapshot(tQuery, (snap) => {
@@ -238,7 +295,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
         if (err?.code !== 'permission-denied') console.warn('Tenants notif listener:', err?.code);
       });
 
-      // 4. Room Settings Added / Modified Listener
+      // 5. Room Settings Added / Modified Listener
       const rRef = collection(db, 'rooms');
       const rQuery = query(rRef, where('owner_id', '==', targetOwnerId), limit(10));
       unsubRooms = onSnapshot(rQuery, (snap) => {
@@ -273,6 +330,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     return () => {
       if (unsubComplaints) unsubComplaints();
       if (unsubPayments) unsubPayments();
+      if (unsubGeneralNotifs) unsubGeneralNotifs();
       if (unsubTenants) unsubTenants();
       if (unsubRooms) unsubRooms();
     };
@@ -452,7 +510,9 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
             localStorage.removeItem('isLoggedIn');
             localStorage.removeItem('userRole');
             localStorage.removeItem('userUid');
-            router.replace('/login');
+            const p = typeof window !== 'undefined' ? (window.matchMedia('(display-mode: standalone)').matches ? 'PWA' : 'WEB_BROWSER') : 'WEB_BROWSER';
+            const loginTarget = p !== 'WEB_BROWSER' ? '/moblogin' : '/login';
+            router.replace(loginTarget);
           }
         }, 3000);
         return () => clearTimeout(authSettleTimeout);
@@ -460,7 +520,9 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('isLoggedIn');
         localStorage.removeItem('userRole');
         localStorage.removeItem('userUid');
-        router.replace('/login');
+        const p = typeof window !== 'undefined' ? (window.matchMedia('(display-mode: standalone)').matches ? 'PWA' : 'WEB_BROWSER') : 'WEB_BROWSER';
+        const loginTarget = p !== 'WEB_BROWSER' ? '/moblogin' : '/login';
+        router.replace(loginTarget);
       }
     }
 
@@ -485,7 +547,8 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.error(e);
     }
-    window.location.href = '/login';
+    const p = typeof window !== 'undefined' ? (window.matchMedia('(display-mode: standalone)').matches ? 'PWA' : 'WEB_BROWSER') : 'WEB_BROWSER';
+    window.location.href = p !== 'WEB_BROWSER' ? '/moblogin' : '/login';
   };
 
   const handlePropertySwitch = (pgId: string) => {
