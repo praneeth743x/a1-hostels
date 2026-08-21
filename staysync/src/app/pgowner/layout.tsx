@@ -18,7 +18,6 @@ import { requestNotificationPermission, triggerPWANotification } from '@/lib/pwa
 import styles from './pgowner.module.css';
 import drawerStyles from './drawer.module.css';
 import AccessDeniedCard from '@/components/AccessDeniedCard';
-import { SplashScreen } from '@/components/SplashScreen';
 import { NavigationSkeleton } from '@/components/NavigationSkeleton';
 
 
@@ -52,32 +51,12 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     navTracer.mark('t11_pageCommitted', `Completed navigation to: ${pathname}`);
   }, [pathname]);
 
-  const lastNavTimeRef = useRef<{ path: string; time: number }>({ path: '', time: 0 });
-
-  const handlePointerDown = useCallback((targetPath: string) => {
-    if (targetPath !== pathname && targetPath !== navigatingTo) {
-      setNavigatingTo(targetPath);
-    }
-  }, [pathname, navigatingTo]);
-
   const handleNavClick = useCallback((targetPath: string) => {
-    const now = Date.now();
-    if (lastNavTimeRef.current.path === targetPath && now - lastNavTimeRef.current.time < 250) {
-      return;
-    }
-    lastNavTimeRef.current = { path: targetPath, time: now };
-    
-    // Only set optimistic state if we are actually navigating to a new path
     if (targetPath !== pathname && targetPath !== navigatingTo) {
       setNavigatingTo(targetPath);
     }
-
     navTracer.startNavigation(targetPath);
-    
-    // Defer closing mobile drawer slightly (150ms) to allow Link click event to fire
-    setTimeout(() => {
-      setIsMobileDrawerOpen(false);
-    }, 150);
+    setIsMobileDrawerOpen(false);
   }, [pathname, navigatingTo]);
 
   // Non-blocking idle route prefetching for instant native zero-latency transitions
@@ -429,26 +408,25 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
       }
       rpcCall('registerDevice', currentUser.uid, deviceId, deviceName).catch(console.error);
 
-      // Real-time Firestore session listener on THIS device
+      // Real-time Firestore session listener on THIS device (check for explicit revocation)
       const deviceRef = doc(db, 'users', currentUser.uid, 'devices', deviceId);
-      let hasExisted = false;
       unbindDeviceDoc = onSnapshot(
         deviceRef, 
         (snapshot) => {
           if (snapshot.exists()) {
-            hasExisted = true;
-          } else if (hasExisted) {
-            console.warn('Session revoked from another device');
-            clearUserCache();
-            localStorage.clear();
-            sessionStorage.clear();
-            auth.signOut().then(() => {
-              window.location.href = '/';
-            });
+            const data = snapshot.data();
+            if (data?.revoked === true) {
+              console.warn('Session explicitly revoked from another device');
+              clearUserCache();
+              localStorage.clear();
+              sessionStorage.clear();
+              auth.signOut().then(() => {
+                window.location.href = '/';
+              });
+            }
           }
         },
         (error) => {
-          // Suppress expected security rule fallback gracefully
           if (error?.code !== 'permission-denied') {
             console.warn('Device session status:', error?.code);
           }
@@ -499,30 +477,23 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
         }
       }
     } else if (authStatus === 'UNAUTHENTICATED') {
-      // Only redirect if localStorage doesn't indicate a recent login.
-      // After a fresh Google sign-in, the user navigates here and the HostelContext
-      // may briefly report UNAUTHENTICATED before onAuthStateChanged fires.
-      const hasRecentSession = localStorage.getItem('isLoggedIn') === 'true' && localStorage.getItem('userUid');
+      const hasRecentSession = typeof window !== 'undefined' && localStorage.getItem('isLoggedIn') === 'true' && localStorage.getItem('userUid');
       if (hasRecentSession) {
-        // Wait briefly for Firebase auth to settle before giving up
         const authSettleTimeout = setTimeout(() => {
-          if (!currentUser) {
+          // Double-check: auth may have settled by now (iOS Safari can be slow)
+          if (!auth.currentUser && !localStorage.getItem('userUid')) {
             localStorage.removeItem('isLoggedIn');
             localStorage.removeItem('userRole');
             localStorage.removeItem('userUid');
-            const p = typeof window !== 'undefined' ? (window.matchMedia('(display-mode: standalone)').matches ? 'PWA' : 'WEB_BROWSER') : 'WEB_BROWSER';
-            const loginTarget = p !== 'WEB_BROWSER' ? '/moblogin' : '/login';
-            router.replace(loginTarget);
+            router.replace('/login');
           }
-        }, 3000);
+        }, 8000);
         return () => clearTimeout(authSettleTimeout);
       } else {
         localStorage.removeItem('isLoggedIn');
         localStorage.removeItem('userRole');
         localStorage.removeItem('userUid');
-        const p = typeof window !== 'undefined' ? (window.matchMedia('(display-mode: standalone)').matches ? 'PWA' : 'WEB_BROWSER') : 'WEB_BROWSER';
-        const loginTarget = p !== 'WEB_BROWSER' ? '/moblogin' : '/login';
-        router.replace(loginTarget);
+        router.replace('/login');
       }
     }
 
@@ -749,7 +720,6 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                 prefetch={true}
                 onMouseEnter={() => routePrefetcher.prefetchSingle(router, item.path)}
                 onTouchStart={() => routePrefetcher.prefetchSingle(router, item.path)}
-                onPointerDown={() => handlePointerDown(item.path)}
                 className={drawerStyles.drawerMenuItem}
                 style={{ 
                   textDecoration: 'none',
@@ -1220,7 +1190,6 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                         href={`${routePrefix}/dashboard`} 
                         onMouseEnter={() => routePrefetcher.prefetchSingle(router, `${routePrefix}/dashboard`)}
                         onTouchStart={() => routePrefetcher.prefetchSingle(router, `${routePrefix}/dashboard`)}
-                        onPointerDown={() => handleNavClick(`${routePrefix}/dashboard`)}
                         onClick={() => handleNavClick(`${routePrefix}/dashboard`)}
                         className={`${styles.desktopTab} ${currentPath.includes('/dashboard') || currentPath === '/pgowner' || currentPath === '/teammember' ? styles.activeTab : ''}`}
                       >
@@ -1233,7 +1202,6 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                         href={`${routePrefix}/tenants`} 
                         onMouseEnter={() => routePrefetcher.prefetchSingle(router, `${routePrefix}/tenants`)}
                         onTouchStart={() => routePrefetcher.prefetchSingle(router, `${routePrefix}/tenants`)}
-                        onPointerDown={() => handleNavClick(`${routePrefix}/tenants`)}
                         onClick={() => handleNavClick(`${routePrefix}/tenants`)}
                         className={`${styles.desktopTab} ${currentPath.includes('/tenants') ? styles.activeTab : ''}`}
                       >
@@ -1246,7 +1214,6 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                         href={`${routePrefix}/rooms`} 
                         onMouseEnter={() => routePrefetcher.prefetchSingle(router, `${routePrefix}/rooms`)}
                         onTouchStart={() => routePrefetcher.prefetchSingle(router, `${routePrefix}/rooms`)}
-                        onPointerDown={() => handleNavClick(`${routePrefix}/rooms`)}
                         onClick={() => handleNavClick(`${routePrefix}/rooms`)}
                         className={`${styles.desktopTab} ${currentPath.includes('/rooms') ? styles.activeTab : ''}`}
                       >
@@ -1259,7 +1226,6 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                         href={`${routePrefix}/dues`} 
                         onMouseEnter={() => routePrefetcher.prefetchSingle(router, `${routePrefix}/dues`)}
                         onTouchStart={() => routePrefetcher.prefetchSingle(router, `${routePrefix}/dues`)}
-                        onPointerDown={() => handleNavClick(`${routePrefix}/dues`)}
                         onClick={() => handleNavClick(`${routePrefix}/dues`)}
                         className={`${styles.desktopTab} ${currentPath.includes('/dues') ? styles.activeTab : ''}`}
                       >
@@ -1272,7 +1238,6 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                         href={`${routePrefix}/history`} 
                         onMouseEnter={() => routePrefetcher.prefetchSingle(router, `${routePrefix}/history`)}
                         onTouchStart={() => routePrefetcher.prefetchSingle(router, `${routePrefix}/history`)}
-                        onPointerDown={() => handleNavClick(`${routePrefix}/history`)}
                         onClick={() => handleNavClick(`${routePrefix}/history`)}
                         className={`${styles.desktopTab} ${currentPath.includes('/history') ? styles.activeTab : ''}`}
                       >
@@ -1607,7 +1572,6 @@ const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
                       href={item.href}
                       onMouseEnter={() => routePrefetcher.prefetchSingle(router, item.href)}
                       onTouchStart={() => routePrefetcher.prefetchSingle(router, item.href)}
-                      onPointerDown={() => handleNavClick(item.href)}
                       onClick={() => handleNavClick(item.href)}
                       className={`${styles.bottomNavItem} ${isMatch ? styles.active : ''}`}
                     >

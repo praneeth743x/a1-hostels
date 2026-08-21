@@ -751,15 +751,6 @@ export default function RoomsManager() {
                                                 <span className={styles.extraFeeTag}>+₹{extra} extra</span>
                                               )}
                                             </div>
-                                            <button
-                                              className={styles.manageChargesBtn}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleOpenChargeModal(t);
-                                              }}
-                                            >
-                                              Manage Charges
-                                            </button>
                                           </div>
                                           <div className={styles.tenantFeeRow}>
                                             <div className={styles.feeBlock}>

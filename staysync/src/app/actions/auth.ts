@@ -211,34 +211,52 @@ export async function getResolvedRole(uid: string, email: string): Promise<strin
     if (cleanEmail === '25r21a05e2@mlrit.ac.in' || cleanEmail === 'admin@raliving.com') return 'super_admin';
 
     // 1. Check team_members collection by exact email first
-    const teamQuery = await adminDb.collection('team_members').where('email', '==', cleanEmail).get();
-    if (!teamQuery.empty) {
-      await autoProvisionTeamMember(cleanEmail, uid);
-      return 'team_member';
+    if (cleanEmail) {
+      const teamQuery = await adminDb.collection('team_members').where('email', '==', cleanEmail).get();
+      if (!teamQuery.empty) {
+        if (uid) await autoProvisionTeamMember(cleanEmail, uid);
+        return 'team_member';
+      }
     }
 
     // 2. Check user_profiles by UID (PG Owner)
-    const ownerUidDoc = await adminDb.collection('user_profiles').doc(uid).get();
-    if (ownerUidDoc.exists && ownerUidDoc.data()?.role === 'pg_owner') {
-      return 'pg_owner';
+    if (uid) {
+      const ownerUidDoc = await adminDb.collection('user_profiles').doc(uid).get();
+      if (ownerUidDoc.exists) {
+        const data = ownerUidDoc.data();
+        if (data?.role === 'super_admin') return 'super_admin';
+        if (data?.role === 'team_member') return 'team_member';
+        if (data?.role === 'tenant') return 'tenant';
+        return data?.role || 'pg_owner';
+      }
     }
 
     // 3. Check user_profiles by email (PG Owner)
-    const ownerEmailQuery = await adminDb.collection('user_profiles').where('email', '==', cleanEmail).where('role', '==', 'pg_owner').get();
-    if (!ownerEmailQuery.empty) {
-      return 'pg_owner';
+    if (cleanEmail) {
+      const ownerEmailQuery = await adminDb.collection('user_profiles').where('email', '==', cleanEmail).get();
+      if (!ownerEmailQuery.empty) {
+        const data = ownerEmailQuery.docs[0].data();
+        if (data?.role === 'super_admin') return 'super_admin';
+        if (data?.role === 'team_member') return 'team_member';
+        if (data?.role === 'tenant') return 'tenant';
+        return data?.role || 'pg_owner';
+      }
     }
 
     // 4. Check Tenants by email
-    const tenantEmailQuery = await adminDb.collection('tenants').where('email', '==', cleanEmail).get();
-    if (!tenantEmailQuery.empty) {
-      return 'tenant';
+    if (cleanEmail) {
+      const tenantEmailQuery = await adminDb.collection('tenants').where('email', '==', cleanEmail).get();
+      if (!tenantEmailQuery.empty) {
+        return 'tenant';
+      }
     }
 
     // 5. Check Tenants by UID
-    const tenantUidDoc = await adminDb.collection('tenants').doc(uid).get();
-    if (tenantUidDoc.exists) {
-      return 'tenant';
+    if (uid) {
+      const tenantUidDoc = await adminDb.collection('tenants').doc(uid).get();
+      if (tenantUidDoc.exists) {
+        return 'tenant';
+      }
     }
 
     return null;
@@ -262,44 +280,46 @@ export async function getLoginAuthMeta(uid: string, email: string) {
 
     // Parallel checks across Collections
     const [teamSnap, ownerDoc, ownerEmailSnap, tenantEmailSnap, tenantUidDoc] = await Promise.all([
-      adminDb.collection('team_members').where('email', '==', cleanEmail).get(),
+      cleanEmail ? adminDb.collection('team_members').where('email', '==', cleanEmail).get() : Promise.resolve({ empty: true, docs: [] }),
       uid ? adminDb.collection('user_profiles').doc(uid).get() : Promise.resolve(null),
-      adminDb.collection('user_profiles').where('email', '==', cleanEmail).get(),
-      adminDb.collection('tenants').where('email', '==', cleanEmail).get(),
+      cleanEmail ? adminDb.collection('user_profiles').where('email', '==', cleanEmail).get() : Promise.resolve({ empty: true, docs: [] }),
+      cleanEmail ? adminDb.collection('tenants').where('email', '==', cleanEmail).get() : Promise.resolve({ empty: true, docs: [] }),
       uid ? adminDb.collection('tenants').doc(uid).get() : Promise.resolve(null),
     ]);
 
     // 1. Team Member check
     if (!teamSnap.empty) {
-      const tData = teamSnap.docs[0].data();
+      const tData = (teamSnap as any).docs[0].data();
       if (tData.status === 'Suspended' || tData.status === 'disabled' || tData.status === 'INACTIVE' || tData.is_active === false) {
         return { success: false, exists: false, isSuspended: true, role: 'team_member', error: 'Invalid credentials.' };
       }
-      autoProvisionTeamMember(cleanEmail, uid).catch(console.error);
+      if (uid) autoProvisionTeamMember(cleanEmail, uid).catch(console.error);
       return { success: true, exists: true, isInitialized: true, role: 'team_member' };
     }
 
     // 2. PG Owner check (by UID)
-    if (ownerDoc?.exists && ownerDoc.data()?.role === 'pg_owner') {
+    if (ownerDoc?.exists) {
       const data = ownerDoc.data();
       if (data?.status === 'Suspended' || data?.status === 'disabled' || data?.status === 'INACTIVE' || data?.is_active === false) {
         return { success: false, exists: false, isSuspended: true, role: 'pg_owner', error: 'Invalid credentials.' };
       }
-      return { success: true, exists: true, isInitialized: data?.accountInitialized ?? true, role: 'pg_owner' };
+      const role = data?.role === 'super_admin' ? 'super_admin' : data?.role === 'team_member' ? 'team_member' : data?.role === 'tenant' ? 'tenant' : (data?.role || 'pg_owner');
+      return { success: true, exists: true, isInitialized: data?.accountInitialized ?? true, role };
     }
 
     // 3. PG Owner check (by email)
     if (!ownerEmailSnap.empty) {
-      const data = ownerEmailSnap.docs[0].data();
+      const data = (ownerEmailSnap as any).docs[0].data();
       if (data?.status === 'Suspended' || data?.status === 'disabled' || data?.status === 'INACTIVE' || data?.is_active === false) {
         return { success: false, exists: false, isSuspended: true, role: 'pg_owner', error: 'Invalid credentials.' };
       }
-      return { success: true, exists: true, isInitialized: data?.accountInitialized ?? true, role: 'pg_owner' };
+      const role = data?.role === 'super_admin' ? 'super_admin' : data?.role === 'team_member' ? 'team_member' : data?.role === 'tenant' ? 'tenant' : (data?.role || 'pg_owner');
+      return { success: true, exists: true, isInitialized: data?.accountInitialized ?? true, role };
     }
 
     // 4. Tenant check (by email)
     if (!tenantEmailSnap.empty) {
-      const data = tenantEmailSnap.docs[0].data();
+      const data = (tenantEmailSnap as any).docs[0].data();
       if (data?.status === 'Suspended' || data?.status === 'disabled' || data?.status === 'INACTIVE' || data?.is_active === false) {
         return { success: false, exists: false, isSuspended: true, role: 'tenant', error: 'Invalid credentials.' };
       }

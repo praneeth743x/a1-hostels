@@ -5,20 +5,32 @@ import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import { revalidatePath } from 'next/cache';
 import { isTenantActiveForBusiness } from '@/lib/repository';
 import { getTenantPaymentStatus } from '@/lib/paymentStatus';
+import { 
+  parseMoneyToPaise, 
+  formatPaiseToINR, 
+  paiseToRupees, 
+  rupeesToPaise, 
+  calculateTenantFinancialState, 
+  allocatePaymentFIFO, 
+  verifyFinancialInvariants,
+  FinancialCharge
+} from '@/lib/financialEngine';
 
 export async function resolveEffectiveOwnerId(userId: string) {
   try {
     const doc = await adminDb.collection('user_profiles').doc(userId).get();
     if (doc.exists) {
       const data = doc.data();
-      if (data?.owner_id) {
-        return { ownerId: data.owner_id, isTeamMember: data?.role === 'team_member' };
-      }
-      if (data?.role === 'team_member' && Array.isArray(data?.assigned_properties) && data.assigned_properties.length > 0) {
-        const propDoc = await adminDb.collection('properties').doc(data.assigned_properties[0]).get();
-        const pData = propDoc.exists ? propDoc.data() : null;
-        if (pData?.owner_id) {
-          return { ownerId: pData.owner_id, isTeamMember: true };
+      if (data?.role === 'team_member') {
+        if (data?.owner_id) {
+          return { ownerId: data.owner_id, isTeamMember: true };
+        }
+        if (Array.isArray(data?.assigned_properties) && data.assigned_properties.length > 0) {
+          const propDoc = await adminDb.collection('properties').doc(data.assigned_properties[0]).get();
+          const pData = propDoc.exists ? propDoc.data() : null;
+          if (pData?.owner_id) {
+            return { ownerId: pData.owner_id, isTeamMember: true };
+          }
         }
       }
     }
@@ -32,20 +44,10 @@ export async function getInitialAppData(ownerId: string, selectedPgId: string | 
   try {
     const { ownerId: effectiveOwnerId } = await resolveEffectiveOwnerId(ownerId);
 
-    let propsSnap = await adminDb.collection('properties').where('owner_id', '==', effectiveOwnerId).get();
-    let properties: any[] = propsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    if (properties.length === 0 && selectedPgId) {
-      const pDoc = await adminDb.collection('properties').doc(selectedPgId).get();
-      if (pDoc.exists) {
-        properties = [{ id: pDoc.id, ...pDoc.data() }];
-      }
-    }
-
-    if (properties.length === 0) {
-      const allPropsSnap = await adminDb.collection('properties').limit(50).get();
-      properties = allPropsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    }
+    const propsSnap = await adminDb.collection('properties').where('owner_id', '==', effectiveOwnerId).get();
+    const properties: any[] = propsSnap.docs
+      .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+      .filter((p: any) => p.owner_id === effectiveOwnerId && p.is_active !== false && p.status !== 'INACTIVE' && p.status !== 'DELETED');
 
     if (properties.length === 0) {
       return {
@@ -92,9 +94,26 @@ export async function getInitialAppData(ownerId: string, selectedPgId: string | 
         };
       });
 
-    const rawPayments = paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const dues = rawPayments.filter((p: any) => p.status === 'pending' || p.status === 'overdue');
-    const payments = rawPayments.filter((p: any) => p.status === 'paid' || p.status === 'completed' || p.status === 'success');
+    const rawPayments = paymentsSnap.docs.map(d => ({ id: d.id, payment_id: d.id, ...d.data() }));
+    const dues = rawPayments.filter((p: any) => p.status === 'pending' || p.status === 'overdue' || p.status === 'settled');
+
+    // Collect all charge IDs that were settled/paid by a payment receipt
+    const allocatedChargeIds = new Set<string>();
+    rawPayments.forEach((p: any) => {
+      if (Array.isArray(p.allocated_charges)) {
+        p.allocated_charges.forEach((alloc: any) => {
+          if (alloc.chargeId) allocatedChargeIds.add(alloc.chargeId);
+        });
+      }
+    });
+
+    const payments = rawPayments.filter((p: any) => {
+      if (p.status === 'settled' || p.status === 'pending' || p.status === 'overdue') return false;
+      const isPaid = p.status === 'paid' || p.status === 'completed' || p.status === 'success' || p.status === 'reversed';
+      if (!isPaid) return false;
+      if (allocatedChargeIds.has(p.id) || allocatedChargeIds.has(p.payment_id)) return false;
+      return true;
+    });
 
     const expenses = expensesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const foodMenu = foodMenuDoc.exists ? foodMenuDoc.data() : null;
@@ -418,11 +437,13 @@ export async function updateHostelPropertyFull(
 export async function getProperties(ownerId: string) {
   try {
     const { ownerId: effectiveOwnerId } = await resolveEffectiveOwnerId(ownerId);
-    let snapshot = await adminDb.collection('properties')
+    const snapshot = await adminDb.collection('properties')
       .where('owner_id', '==', effectiveOwnerId)
       .get();
     
-    let data = snapshot.docs.map(doc => doc.data());
+    let data = snapshot.docs
+      .map(doc => doc.data())
+      .filter(p => p.owner_id === effectiveOwnerId && p.is_active !== false && p.status !== 'INACTIVE' && p.status !== 'DELETED');
     data.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
     // Fetch real metrics for each property
@@ -662,18 +683,16 @@ export async function getPropertyMap(pgId: string) {
 export async function getPropertiesWithRooms(ownerId: string) {
   try {
     const { ownerId: effectiveOwnerId } = await resolveEffectiveOwnerId(ownerId);
-    let propsSnap = await adminDb.collection('properties')
+    const propsSnap = await adminDb.collection('properties')
       .where('owner_id', '==', effectiveOwnerId)
       .get();
-      
-    if (propsSnap.empty) {
-      propsSnap = await adminDb.collection('properties').get();
-    }
       
     if (propsSnap.empty) return { success: true, data: [] };
     const properties = propsSnap.docs
       .map(doc => doc.data())
-      .filter(p => p.is_active !== false && p.status !== 'INACTIVE' && p.status !== 'DELETED');
+      .filter(p => p.owner_id === effectiveOwnerId && p.is_active !== false && p.status !== 'INACTIVE' && p.status !== 'DELETED');
+    
+    if (properties.length === 0) return { success: true, data: [] };
     
     // Sort properties descending by created_at to perfectly match getTenants
     properties.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
@@ -760,68 +779,26 @@ export async function addTenant(data: {
       cleanEmail ? adminAuth.getUserByEmail(cleanEmail).catch(() => null) : Promise.resolve(null)
     ]);
 
-    // 1. Strict Phone Duplicate Check across active tenants
+    // 1. Check duplicate active tenant in the same property
     if (tenantPhoneSnap && !tenantPhoneSnap.empty) {
       const hasActivePhoneTenant = tenantPhoneSnap.docs.some(doc => {
         const d = doc.data();
-        return d.is_active !== false && d.status !== 'Inactive';
+        return d.is_active !== false && d.status === 'Active' && d.pg_id === data.pgId;
       });
       if (hasActivePhoneTenant) {
-        return { success: false, error: `A tenant with phone number ${cleanDigits} already exists.` };
+        return { success: false, error: `An active tenant with phone number ${cleanDigits} already exists in this hostel.` };
       }
     }
 
-    // 2. Strict Email Duplicate Check across active tenants
-    if (cleanEmail && tenantEmailSnap && !tenantEmailSnap.empty) {
-      const hasActiveEmailTenant = tenantEmailSnap.docs.some(doc => {
-        const d = doc.data();
-        return d.is_active !== false && d.status !== 'Inactive';
-      });
-      if (hasActiveEmailTenant) {
-        return { success: false, error: `A tenant with email address ${cleanEmail} already exists.` };
-      }
-    }
+    // 2. Prevent adding registered PG Owner or Super Admin accounts as a tenant
+    const isOwnerOrAdmin = [
+      ...(profilePhoneSnap?.docs || []), 
+      ...(profileMobileSnap?.docs || []), 
+      ...(profileEmailSnap?.docs || [])
+    ].some(d => d.data()?.role === 'pg_owner' || d.data()?.role === 'super_admin');
 
-    // 3. Strict Phone Duplicate Check across user_profiles & team_members
-    if ((profilePhoneSnap && !profilePhoneSnap.empty) || (profileMobileSnap && !profileMobileSnap.empty)) {
-      return { success: false, error: `A user profile with phone number ${cleanDigits} already exists.` };
-    }
-    if (teamPhoneSnap && !teamPhoneSnap.empty) {
-      return { success: false, error: `A team member with phone number ${cleanDigits} already exists.` };
-    }
-
-    // 4. Strict Email Duplicate Check across user_profiles
-    if (cleanEmail && profileEmailSnap && !profileEmailSnap.empty) {
-      return { success: false, error: `A user profile with email address ${cleanEmail} already exists.` };
-    }
-
-    // 5. Strict Firebase Auth Account Checks (with Orphan Cleanup)
-    if (authPhoneUser) {
-      const hasAssociatedRecord = 
-        (tenantPhoneSnap && !tenantPhoneSnap.empty) || 
-        (profilePhoneSnap && !profilePhoneSnap.empty) || 
-        (profileMobileSnap && !profileMobileSnap.empty) || 
-        (teamPhoneSnap && !teamPhoneSnap.empty);
-
-      if (hasAssociatedRecord) {
-        return { success: false, error: `An active account with phone number ${formattedPhone} already exists.` };
-      } else {
-        // Orphaned Auth user from previously deleted tenant: clean up
-        await adminAuth.deleteUser(authPhoneUser.uid).catch(() => {});
-      }
-    }
-
-    if (authEmailUser) {
-      const hasAssociatedRecord = 
-        (cleanEmail && tenantEmailSnap && !tenantEmailSnap.empty) || 
-        (cleanEmail && profileEmailSnap && !profileEmailSnap.empty);
-
-      if (hasAssociatedRecord) {
-        return { success: false, error: `An active account with email address ${cleanEmail} already exists.` };
-      } else {
-        // Orphaned Auth user from previously deleted tenant: clean up
-        await adminAuth.deleteUser(authEmailUser.uid).catch(() => {});
-      }
+    if (isOwnerOrAdmin) {
+      return { success: false, error: `Phone number or email belongs to a registered PG Owner or Super Admin account.` };
     }
 
     const tenantRef = adminDb.collection('tenants').doc();
@@ -1033,44 +1010,46 @@ export async function updateTenantBasicDetails(tenantId: string, data: {
 export async function getTenants(ownerId: string, selectedPgId: string | null = null) {
   try {
     const { ownerId: effectiveOwnerId } = await resolveEffectiveOwnerId(ownerId);
-    let propsSnap = await adminDb.collection('properties').where('owner_id', '==', effectiveOwnerId).get();
-    if (propsSnap.empty) {
-      propsSnap = await adminDb.collection('properties').where('owner_id', '==', ownerId).get();
-    }
-    if (propsSnap.empty) {
-      propsSnap = await adminDb.collection('properties').get();
-    }
+    const propsSnap = await adminDb.collection('properties').where('owner_id', '==', effectiveOwnerId).get();
+    if (propsSnap.empty) return { success: true, data: [] };
     
-    const props = propsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+    const props = propsSnap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() as any }))
+      .filter(p => p.owner_id === effectiveOwnerId && p.is_active !== false && p.status !== 'INACTIVE' && p.status !== 'DELETED');
+    
+    if (props.length === 0) return { success: true, data: [] };
+
     props.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     
     let pgIds = props.map((p: any) => p.pg_id || p.id).filter(Boolean);
     if (selectedPgId && selectedPgId !== 'all' && selectedPgId !== 'ALL') {
       const matched = props.filter((p: any) => (p.pg_id || p.id) === selectedPgId).map((p: any) => p.pg_id || p.id);
-      pgIds = matched.length > 0 ? matched : [selectedPgId];
+      pgIds = matched;
     }
+
+    if (pgIds.length === 0) return { success: true, data: [] };
 
     const tenantMap = new Map<string, any>();
 
-    // 1. Fetch by pg_id
-    if (pgIds.length > 0) {
-      if (pgIds.length <= 10) {
-        const tenantsSnap = await adminDb.collection('tenants').where('pg_id', 'in', pgIds).get();
-        tenantsSnap.docs.forEach(d => tenantMap.set(d.id, { id: d.id, ...d.data() }));
-      } else {
-        for (const id of pgIds) {
-          const tSnap = await adminDb.collection('tenants').where('pg_id', '==', id).get();
-          tSnap.docs.forEach(d => tenantMap.set(d.id, { id: d.id, ...d.data() }));
+    // 1. Fetch strictly by pg_ids belonging to this owner
+    if (pgIds.length <= 10) {
+      const tenantsSnap = await adminDb.collection('tenants').where('pg_id', 'in', pgIds).get();
+      tenantsSnap.docs.forEach(d => {
+        const tData = d.data();
+        if (tData.status !== 'DELETED') {
+          tenantMap.set(d.id, { id: d.id, ...tData });
         }
+      });
+    } else {
+      for (const id of pgIds) {
+        const tSnap = await adminDb.collection('tenants').where('pg_id', '==', id).get();
+        tSnap.docs.forEach(d => {
+          const tData = d.data();
+          if (tData.status !== 'DELETED') {
+            tenantMap.set(d.id, { id: d.id, ...tData });
+          }
+        });
       }
-    }
-
-    // 2. Direct owner_id lookup fallback to never miss tenants on live site
-    const directOwnerSnap = await adminDb.collection('tenants').where('owner_id', '==', effectiveOwnerId).get();
-    directOwnerSnap.docs.forEach(d => tenantMap.set(d.id, { id: d.id, ...d.data() }));
-    if (ownerId !== effectiveOwnerId) {
-      const altOwnerSnap = await adminDb.collection('tenants').where('owner_id', '==', ownerId).get();
-      altOwnerSnap.docs.forEach(d => tenantMap.set(d.id, { id: d.id, ...d.data() }));
     }
 
     let tenants = Array.from(tenantMap.values());
@@ -1360,7 +1339,7 @@ export async function getTenantById(tenantId: string) {
 }
 
 
-export async function updateRoomDetails(roomId: string, totalBeds: number, extraFee: number) {
+export async function updateRoomDetails(roomId: string, totalBeds: number, extraFee: number, extraChargesArray?: any[]) {
   try {
     const roomRef = adminDb.collection('rooms').doc(roomId);
     const roomSnap = await roomRef.get();
@@ -1372,10 +1351,16 @@ export async function updateRoomDetails(roomId: string, totalBeds: number, extra
       difference = extraFee - oldExtraFee;
     }
 
-    await roomRef.update({
+    const updatePayload: any = {
       total_beds: totalBeds,
       extra_fee: extraFee
-    });
+    };
+
+    if (extraChargesArray) {
+      updatePayload.extra_charges = extraChargesArray;
+    }
+
+    await roomRef.update(updatePayload);
 
     if (difference !== 0) {
       // Find tenants in this room
@@ -1478,20 +1463,19 @@ export async function addTenantOneTimeCharge(pgId: string, tenantId: string, amo
 export async function getPendingDues(ownerId: string, pgId?: string | null) {
   try {
     const { ownerId: effectiveOwnerId } = await resolveEffectiveOwnerId(ownerId);
-    let propsSnap = await adminDb.collection('properties')
+    const propsSnap = await adminDb.collection('properties')
       .where('owner_id', '==', effectiveOwnerId)
       .get();
       
-    if (propsSnap.empty) {
-      propsSnap = await adminDb.collection('properties').get();
-    }
+    if (propsSnap.empty) return { success: true, data: [] };
       
     let pgIds = propsSnap.docs
       .map(doc => doc.data())
-      .filter(p => p.is_active !== false && p.status !== 'INACTIVE')
+      .filter(p => p.owner_id === effectiveOwnerId && p.is_active !== false && p.status !== 'INACTIVE' && p.status !== 'DELETED')
       .map(p => p.pg_id || p.id);
+
     if (pgId) {
-      pgIds = [pgId];
+      pgIds = pgIds.filter(id => id === pgId);
     }
     
     if (pgIds.length === 0) return { success: true, data: [] };
@@ -1528,13 +1512,29 @@ export async function getPendingDues(ownerId: string, pgId?: string | null) {
     const rooms = roomsSnap.docs.map(doc => doc.data());
 
     const enrichedPayments = payments.map(p => {
-      const tenant = tenants.find(t => t.tenant_id === p.tenant_id) || {};
-      const room = rooms.find(r => r.room_id === tenant.room_id) || {};
+      const tenant = tenants.find(t => (t.tenant_id || t.id) === p.tenant_id) || {};
+      const room = rooms.find(r => (r.room_id || r.id) === (tenant.room_id || p.room_id)) || {};
+      const origPaise = parseMoneyToPaise(p.original_amount !== undefined ? p.original_amount : p.amount);
+      const paidPaise = parseMoneyToPaise(p.amount_paid || 0);
+      const remPaise = p.pending_balance_paise !== undefined 
+        ? parseMoneyToPaise(p.pending_balance_paise)
+        : p.pending_balance !== undefined 
+          ? parseMoneyToPaise(p.pending_balance) 
+          : Math.max(0, origPaise - paidPaise);
+
       return {
         ...p,
-        tenant_name: tenant.full_name || 'Unknown',
-        tenant_phone: tenant.mobile || '',
-        room_number: room.room_number || 'N/A',
+        amount: paiseToRupees(remPaise),
+        amount_paise: remPaise,
+        original_amount: paiseToRupees(origPaise),
+        original_amount_paise: origPaise,
+        amount_paid: paiseToRupees(paidPaise),
+        amount_paid_paise: paidPaise,
+        pending_balance: paiseToRupees(remPaise),
+        pending_balance_paise: remPaise,
+        tenant_name: tenant.full_name || tenant.name || 'Tenant',
+        tenant_phone: tenant.mobile || tenant.phone || '',
+        room_number: room.room_number || tenant.room_number || 'N/A',
         move_in_date: tenant.move_in_date || ''
       };
     });
@@ -1547,20 +1547,39 @@ export async function getPendingDues(ownerId: string, pgId?: string | null) {
 
 export async function collectFIFOPayment(
   tenantId: string, 
-  totalAmount: number, 
+  totalAmount: number | string, 
   method: string, 
   pgId: string, 
   selectedPaymentIds?: string[], 
   collectorUid?: string, 
   collectedByRole?: string, 
-  discountAmount: number = 0
+  discountAmount: number = 0,
+  idempotencyKey?: string
 ) {
   try {
-    let remainingToCollect = totalAmount;
+    const amountPaise = parseMoneyToPaise(totalAmount);
+    if (amountPaise <= 0) {
+      return { success: false, error: 'Payment amount must be greater than zero.' };
+    }
 
-    // Fetch tenant details for payment snapshot
-    const tenantSnap = await adminDb.collection('tenants').doc(tenantId).get();
-    const tenantData = tenantSnap.exists ? (tenantSnap.data() as any) : null;
+    const idempotencyId = idempotencyKey || `idemp_${tenantId}_${amountPaise}_${Date.now()}`;
+    const idempRef = adminDb.collection('idempotency_keys').doc(idempotencyId);
+
+    // Check idempotency cache first
+    const idempDoc = await idempRef.get();
+    if (idempDoc.exists) {
+      const idempData = idempDoc.data();
+      if (idempData?.status === 'completed') {
+        return { success: true, message: 'Payment already processed (idempotent)', paymentId: idempData.paymentId };
+      }
+    }
+
+    // Resolve tenant details & collector
+    const tenantDoc = await adminDb.collection('tenants').doc(tenantId).get();
+    if (!tenantDoc.exists) {
+      return { success: false, error: 'Tenant record not found.' };
+    }
+    const tenantData = tenantDoc.data() as any;
 
     let snapshotTenantName = tenantData?.full_name || tenantData?.name || 'Tenant';
     let snapshotRoomNum = tenantData?.room_number || tenantData?.room || 'N/A';
@@ -1572,8 +1591,9 @@ export async function collectFIFOPayment(
     }
 
     let targetOwnerId = tenantData?.owner_id || '';
-    if (pgId || tenantData?.pg_id) {
-      const pDoc = await adminDb.collection('properties').doc(pgId || tenantData?.pg_id).get();
+    const effectivePgId = pgId || tenantData?.pg_id || '';
+    if (effectivePgId) {
+      const pDoc = await adminDb.collection('properties').doc(effectivePgId).get();
       if (pDoc.exists) {
         const pData = pDoc.data();
         if (!snapshotPgName || snapshotPgName === 'A1 Hostels') snapshotPgName = pData?.name || snapshotPgName;
@@ -1581,10 +1601,9 @@ export async function collectFIFOPayment(
       }
     }
 
-    // Resolve Collector Name & Role
+    // Resolve Collector
     let collectorName = 'PG Staff';
     let collectorRole = collectedByRole || 'Staff';
-
     if (collectorUid) {
       try {
         const [profSnap, memberSnap] = await Promise.all([
@@ -1605,377 +1624,196 @@ export async function collectFIFOPayment(
       }
     }
 
-    // 1. Fetch all pending payments for the tenant
-    const pendingSnap = await adminDb.collection('payments')
-      .where('tenant_id', '==', tenantId)
-      .where('status', 'in', ['pending', 'overdue'])
-      .get();
-    const paidDocRefs: any[] = [];
-    
-    if (!pendingSnap.empty) {
-      let pendingPayments = pendingSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
-      
-      // Inject virtual selected charges that aren't in the DB
-      if (Array.isArray(selectedPaymentIds) && selectedPaymentIds.length > 0) {
-        if (selectedPaymentIds.includes(`virtual-deposit-${tenantId}`)) {
-           pendingPayments.push({
-             id: `virtual-deposit-${tenantId}`,
-             payment_id: `virtual-deposit-${tenantId}`,
-             tenant_id: tenantId,
-             amount: Number(tenantData?.security_deposit || tenantData?.securityDeposit || 0),
-             type: 'security_deposit',
-             description: 'Security Deposit',
-             is_virtual: true
-           });
-        }
-        if (selectedPaymentIds.includes(`virtual-rent-${tenantId}`)) {
-           pendingPayments.push({
-             id: `virtual-rent-${tenantId}`,
-             payment_id: `virtual-rent-${tenantId}`,
-             tenant_id: tenantId,
-             amount: Number(tenantData?.rent_amount || tenantData?.rent || 0),
-             type: 'monthly_rent',
-             description: 'Monthly Rent',
-             is_virtual: true
-           });
-        }
+    // Atomic Database Transaction for Ledger Consistency
+    const newPaymentDocRef = adminDb.collection('payments').doc();
+    const auditLogDocRef = adminDb.collection('financial_audit_logs').doc();
 
-        const filtered = pendingPayments.filter(p => selectedPaymentIds.includes(p.payment_id || p.id));
-        if (filtered.length > 0) pendingPayments = filtered;
-      }
-
-      // Sort them by oldest first based on created_at or due date logic
-      pendingPayments.sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-
-      // If collecting 0 rupees (waived or 0 rupee entry): mark pending charges as paid with 0 amount_paid
-      if (totalAmount === 0) {
-        for (const payment of pendingPayments) {
-          const isVirtual = payment.is_virtual || payment.id?.startsWith('virtual-');
-          const paymentRef = isVirtual ? adminDb.collection('payments').doc() : adminDb.collection('payments').doc(payment.payment_id || payment.id);
-          
-          if (isVirtual) {
-            await paymentRef.set({
-              payment_id: paymentRef.id,
-              tenant_id: tenantId,
-              pg_id: pgId || tenantData?.pg_id,
-              owner_id: targetOwnerId,
-              type: payment.type || 'monthly_rent',
-              description: payment.description || 'Rent Payment',
-              amount: payment.amount,
-              original_amount: payment.amount,
-              status: 'paid',
-              amount_paid: 0,
-              payment_method: method || 'Cash',
-              payment_date: new Date().toISOString(),
-              collected_by: collectorName,
-              collected_by_name: collectorName,
-              collected_by_role: collectorRole,
-              collected_by_uid: collectorUid || '',
-              tenant_name: payment.tenant_name || snapshotTenantName,
-              room_number: payment.room_number || snapshotRoomNum,
-              pg_name: payment.pg_name || snapshotPgName,
-              created_at: new Date().toISOString()
-            });
-            if (payment.type === 'security_deposit') {
-              await adminDb.collection('tenants').doc(tenantId).update({ security_deposit_paid: true });
-            }
-          } else {
-            await paymentRef.update({
-              status: 'paid',
-              amount_paid: 0,
-              payment_method: method || 'Cash',
-              payment_date: new Date().toISOString(),
-              collected_by: collectorName,
-              collected_by_name: collectorName,
-              collected_by_role: collectorRole,
-              collected_by_uid: collectorUid || '',
-              tenant_name: payment.tenant_name || snapshotTenantName,
-              room_number: payment.room_number || snapshotRoomNum,
-              pg_name: payment.pg_name || snapshotPgName
-            });
-          }
-          paidDocRefs.push(paymentRef);
-        }
-      } else {
-        // Iterate and apply payment FIFO
-        for (const payment of pendingPayments) {
-          if (remainingToCollect <= 0) break;
-
-          const isVirtual = payment.is_virtual || payment.id?.startsWith('virtual-');
-          const paymentRef = isVirtual ? adminDb.collection('payments').doc() : adminDb.collection('payments').doc(payment.payment_id || payment.id);
-          
-          // CRITICAL: originalChargeAmount is the total original price of the charge (e.g. 5,500)
-          const originalChargeAmount = Number(payment.original_amount || payment.amount || 0);
-          const previousPaid = Number(payment.amount_paid || payment.paid_amount || 0);
-          
-          // Current outstanding due on this specific charge
-          const amountDue = payment.pending_balance !== undefined 
-            ? Number(payment.pending_balance) 
-            : Math.max(0, originalChargeAmount - previousPaid);
-
-          if (amountDue <= 0) continue;
-
-          const payTowardsThis = Math.min(remainingToCollect, amountDue);
-          const newTotalPaid = previousPaid + payTowardsThis;
-          const remAmount = Math.max(0, originalChargeAmount - newTotalPaid);
-          const isNowFullyPaid = remAmount <= 0;
-
-          if (isVirtual) {
-            // Virtual doc being paid
-            if (isNowFullyPaid) {
-              await paymentRef.set({
-                payment_id: paymentRef.id,
-                tenant_id: tenantId,
-                pg_id: pgId || tenantData?.pg_id,
-                owner_id: targetOwnerId,
-                type: payment.type || 'monthly_rent',
-                description: payment.description || 'Rent Payment',
-                amount: originalChargeAmount,
-                original_amount: originalChargeAmount,
-                status: 'paid',
-                amount_paid: originalChargeAmount,
-                pending_balance: 0,
-                payment_method: method || 'UPI',
-                payment_date: new Date().toISOString(),
-                collected_by: collectorName,
-                collected_by_name: collectorName,
-                collected_by_role: collectorRole,
-                collected_by_uid: collectorUid || '',
-                tenant_name: payment.tenant_name || snapshotTenantName,
-                room_number: payment.room_number || snapshotRoomNum,
-                pg_name: payment.pg_name || snapshotPgName,
-                created_at: new Date().toISOString()
-              });
-
-              if (payment.type === 'security_deposit') {
-                await adminDb.collection('tenants').doc(tenantId).update({ security_deposit_paid: true });
-              }
-
-              paidDocRefs.push(paymentRef);
-            } else {
-              // Partial payment on virtual charge:
-              // 1. Create the persistent pending document with remaining due
-              await paymentRef.set({
-                payment_id: paymentRef.id,
-                tenant_id: tenantId,
-                pg_id: pgId || tenantData?.pg_id,
-                owner_id: targetOwnerId,
-                type: payment.type || 'monthly_rent',
-                description: payment.description || 'Rent Payment',
-                amount: remAmount,
-                original_amount: originalChargeAmount,
-                status: 'pending',
-                amount_paid: newTotalPaid,
-                pending_balance: remAmount,
-                payment_method: method || 'UPI',
-                payment_date: new Date().toISOString(),
-                collected_by: collectorName,
-                collected_by_name: collectorName,
-                collected_by_role: collectorRole,
-                collected_by_uid: collectorUid || '',
-                tenant_name: payment.tenant_name || snapshotTenantName,
-                room_number: payment.room_number || snapshotRoomNum,
-                pg_name: payment.pg_name || snapshotPgName,
-                created_at: new Date().toISOString()
-              });
-
-              // 2. Create the paid receipt document for transaction history
-              const receiptRef = adminDb.collection('payments').doc();
-              await receiptRef.set({
-                payment_id: receiptRef.id,
-                pg_id: pgId || tenantData?.pg_id || '',
-                owner_id: targetOwnerId,
-                tenant_id: tenantId,
-                amount: payTowardsThis,
-                amount_paid: payTowardsThis,
-                original_amount: originalChargeAmount,
-                status: 'paid',
-                month: payment.month || new Date().toLocaleString('default', { month: 'long' }),
-                description: `Partial payment for ${payment.description || payment.type || 'Rent'}`,
-                type: payment.type || 'monthly_rent',
-                payment_method: method || 'UPI',
-                payment_date: new Date().toISOString(),
-                created_at: new Date().toISOString(),
-                collected_by: collectorName,
-                collected_by_name: collectorName,
-                collected_by_role: collectorRole,
-                collected_by_uid: collectorUid || '',
-                tenant_name: payment.tenant_name || snapshotTenantName,
-                room_number: payment.room_number || snapshotRoomNum,
-                pg_name: payment.pg_name || snapshotPgName,
-                pending_balance: remAmount
-              });
-              paidDocRefs.push(receiptRef);
-            }
-          } else {
-            // Real document in payments collection
-            if (isNowFullyPaid) {
-              // Mark fully paid
-              await paymentRef.update({
-                status: 'paid',
-                amount: originalChargeAmount,
-                amount_paid: originalChargeAmount,
-                pending_balance: 0,
-                payment_method: method || 'UPI',
-                payment_date: new Date().toISOString(),
-                collected_by: collectorName,
-                collected_by_name: collectorName,
-                collected_by_role: collectorRole,
-                collected_by_uid: collectorUid || '',
-                tenant_name: payment.tenant_name || snapshotTenantName,
-                room_number: payment.room_number || snapshotRoomNum,
-                pg_name: payment.pg_name || snapshotPgName
-              });
-              paidDocRefs.push(paymentRef);
-            } else {
-              // Partial payment on existing pending document:
-              // 1. Update the pending document's remaining amount & balance (KEEP status: 'pending' so it stays in dues!)
-              await paymentRef.update({
-                status: 'pending',
-                amount: remAmount,
-                amount_paid: newTotalPaid,
-                pending_balance: remAmount,
-                payment_method: method || 'UPI',
-                last_payment_date: new Date().toISOString(),
-                collected_by: collectorName,
-                collected_by_name: collectorName,
-                collected_by_role: collectorRole,
-                collected_by_uid: collectorUid || ''
-              });
-
-              // 2. Create EXACTLY ONE receipt document representing this collection transaction for payment history
-              const receiptRef = adminDb.collection('payments').doc();
-              await receiptRef.set({
-                payment_id: receiptRef.id,
-                pg_id: pgId || tenantData?.pg_id || '',
-                owner_id: targetOwnerId,
-                tenant_id: tenantId,
-                amount: payTowardsThis,
-                amount_paid: payTowardsThis,
-                original_amount: originalChargeAmount,
-                status: 'paid',
-                month: payment.month || new Date().toLocaleString('default', { month: 'long' }),
-                description: `Partial payment for ${payment.description || payment.type || 'Rent'}`,
-                type: payment.type || 'monthly_rent',
-                payment_method: method || 'UPI',
-                payment_date: new Date().toISOString(),
-                created_at: new Date().toISOString(),
-                collected_by: collectorName,
-                collected_by_name: collectorName,
-                collected_by_role: collectorRole,
-                collected_by_uid: collectorUid || '',
-                tenant_name: payment.tenant_name || snapshotTenantName,
-                room_number: payment.room_number || snapshotRoomNum,
-                pg_name: payment.pg_name || snapshotPgName,
-                pending_balance: remAmount
-              });
-              paidDocRefs.push(receiptRef);
-            }
-          }
-
-          remainingToCollect -= payTowardsThis;
-        }
-      }
-    }
-
-    // 2. If remainingToCollect > 0 (advance payment):
-    if (remainingToCollect > 0) {
-      const targetPgId = pgId || tenantData?.pg_id || '';
-
-      const now = new Date();
-      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const shortMonthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-      const paidSnap = await adminDb.collection('payments')
+    const transactionResult = await adminDb.runTransaction(async (t) => {
+      // 1. Read ALL charges (pending, overdue, settled) for this tenant inside transaction to compute correct outstanding
+      const chargesQuery = adminDb.collection('payments')
         .where('tenant_id', '==', tenantId)
-        .where('status', '==', 'paid')
-        .get();
+        .where('status', 'in', ['pending', 'overdue', 'settled']);
+      
+      const chargesSnap = await t.get(chargesQuery);
+      
+      const allCharges = chargesSnap.docs.map(d => ({
+        id: d.id,
+        payment_id: d.id,
+        ref: d.ref,
+        ...(d.data() as any)
+      }));
 
-      let targetMonth = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+      // 2. Fetch all paid payments for tenant to compute pre-transaction financial state
+      const paidQuery = adminDb.collection('payments')
+        .where('tenant_id', '==', tenantId)
+        .where('status', '==', 'paid');
+      const paidSnap = await t.get(paidQuery);
+      const rawPaid = paidSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      if (!paidSnap.empty) {
-        const paidDocs = paidSnap.docs.map(d => d.data());
-        paidDocs.sort((a, b) => new Date(b.created_at || b.payment_date || 0).getTime() - new Date(a.created_at || a.payment_date || 0).getTime());
-        const lastMonthStr = paidDocs[0]?.month;
+      // Compute the TRUE global outstanding balance before this payment
+      const beforeState = calculateTenantFinancialState(tenantData, allCharges, rawPaid);
 
-        if (lastMonthStr) {
-          const monthClean = lastMonthStr.split(' ')[0];
-          let foundIdx = monthNames.findIndex(m => m.toLowerCase() === monthClean.toLowerCase());
-          if (foundIdx === -1) {
-            foundIdx = shortMonthNames.findIndex(m => m.toLowerCase() === monthClean.toLowerCase());
-          }
-
-          if (foundIdx !== -1) {
-            const nextIdx = (foundIdx + 1) % 12;
-            let year = now.getFullYear();
-            if (nextIdx === 0 && foundIdx === 11) {
-              year += 1;
-            }
-            targetMonth = `${monthNames[nextIdx]} ${year}`;
-          }
+      // Filter charges to be allocated (only pending/overdue, further filtered by selectedPaymentIds if specified)
+      let rawChargesToAllocate = allCharges.filter(c => c.status === 'pending' || c.status === 'overdue');
+      if (Array.isArray(selectedPaymentIds) && selectedPaymentIds.length > 0) {
+        const filtered = rawChargesToAllocate.filter(c => selectedPaymentIds.includes(c.id) || selectedPaymentIds.includes(c.payment_id));
+        if (filtered.length > 0) {
+          rawChargesToAllocate = filtered;
         }
       }
 
-      const advanceRef = adminDb.collection('payments').doc();
-      await advanceRef.set({
-        payment_id: advanceRef.id,
-        pg_id: targetPgId,
-        owner_id: targetOwnerId,
+      // 3. Allocate payment FIFO strictly in integer paise
+      const financialCharges: FinancialCharge[] = rawChargesToAllocate.map(c => ({
+        chargeId: c.id,
+        tenantId,
+        pgId: effectivePgId,
+        type: (c.type || 'monthly_rent'),
+        description: c.description || 'Rent',
+        amountPaise: parseMoneyToPaise(c.original_amount !== undefined ? c.original_amount : c.amount),
+        paidPaise: parseMoneyToPaise(c.amount_paid || 0),
+        dueDate: c.due_date || new Date().toISOString(),
+        status: (c.status || 'pending'),
+        createdAt: c.created_at || new Date().toISOString()
+      }));
+
+      const allocationResult = allocatePaymentFIFO(amountPaise, financialCharges);
+
+      // 4. Update each charge in transaction
+      for (const alloc of allocationResult.allocated) {
+        const chargeDoc = rawChargesToAllocate.find(c => c.id === alloc.chargeId);
+        if (!chargeDoc) continue;
+
+        const originalPaise = parseMoneyToPaise(chargeDoc.original_amount !== undefined ? chargeDoc.original_amount : chargeDoc.amount);
+        const newPaidPaise = parseMoneyToPaise(chargeDoc.amount_paid || 0) + alloc.amountPaise;
+        const newRemainingPaise = alloc.remainingPaise;
+
+        if (alloc.isFullyPaid) {
+          t.update(chargeDoc.ref, {
+            status: 'settled',
+            is_settled: true,
+            amount: paiseToRupees(originalPaise),
+            amount_paid: paiseToRupees(originalPaise),
+            amount_paise: originalPaise,
+            amount_paid_paise: originalPaise,
+            pending_balance: 0,
+            pending_balance_paise: 0,
+            payment_method: method || 'UPI',
+            payment_date: new Date().toISOString(),
+            last_payment_date: new Date().toISOString(),
+            settled_at: new Date().toISOString(),
+            last_payment_id: newPaymentDocRef.id,
+            collected_by: collectorName,
+            collected_by_name: collectorName,
+            collected_by_role: collectorRole,
+            collected_by_uid: collectorUid || ''
+          });
+        } else {
+          t.update(chargeDoc.ref, {
+            status: 'pending',
+            is_settled: false,
+            amount: paiseToRupees(newRemainingPaise),
+            amount_paid: paiseToRupees(newPaidPaise),
+            amount_paise: newRemainingPaise,
+            amount_paid_paise: newPaidPaise,
+            original_amount: paiseToRupees(originalPaise),
+            original_amount_paise: originalPaise,
+            pending_balance: paiseToRupees(newRemainingPaise),
+            pending_balance_paise: newRemainingPaise,
+            last_payment_date: new Date().toISOString(),
+            last_payment_id: newPaymentDocRef.id,
+            collected_by: collectorName,
+            collected_by_name: collectorName,
+            collected_by_role: collectorRole,
+            collected_by_uid: collectorUid || ''
+          });
+        }
+      }
+
+      // 5. Create immutable Payment Receipt Document
+      const paymentDate = new Date().toISOString();
+      const amountRupees = paiseToRupees(amountPaise);
+      const afterOutstandingPaise = Math.max(0, beforeState.outstandingPaise - amountPaise);
+
+      t.set(newPaymentDocRef, {
+        payment_id: newPaymentDocRef.id,
+        idempotency_key: idempotencyId,
         tenant_id: tenantId,
-        amount: remainingToCollect,
-        amount_paid: remainingToCollect,
-        original_amount: tenantData?.rent_amount || remainingToCollect,
+        pg_id: effectivePgId,
+        owner_id: targetOwnerId,
+        amount: amountRupees,
+        amount_paid: amountRupees,
+        amount_paise: amountPaise,
+        original_amount: amountRupees,
         status: 'paid',
-        month: targetMonth,
+        is_payment_receipt: true,
         payment_method: method || 'UPI',
-        payment_date: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        is_advance: true,
-        description: `Rent Payment (${targetMonth})`,
+        payment_date: paymentDate,
+        created_at: paymentDate,
+        month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
+        description: `Payment of ${formatPaiseToINR(amountPaise)} (${method || 'UPI'})`,
         type: 'monthly_rent',
+        allocated_charges: allocationResult.allocated,
+        advance_paise: allocationResult.advancePaise,
         collected_by: collectorName,
         collected_by_name: collectorName,
         collected_by_role: collectorRole,
         collected_by_uid: collectorUid || '',
         tenant_name: snapshotTenantName,
         room_number: snapshotRoomNum,
-        pg_name: snapshotPgName
+        pg_name: snapshotPgName,
+        pending_balance: paiseToRupees(afterOutstandingPaise),
+        pending_balance_paise: afterOutstandingPaise
       });
-      paidDocRefs.push(advanceRef);
-    }
 
-    // 3. Compute remaining pending dues for this tenant
-    const remainingPendingSnap = await adminDb.collection('payments')
-      .where('tenant_id', '==', tenantId)
-      .where('status', '==', 'pending')
-      .get();
-    const totalRemainingPending = remainingPendingSnap.docs.reduce((sum, d) => {
-      const data = d.data();
-      const orig = Number(data.original_amount || data.amount || 0);
-      const paid = Number(data.amount_paid || 0);
-      const rem = data.pending_balance !== undefined ? Number(data.pending_balance) : Math.max(0, orig - paid);
-      return sum + rem;
-    }, 0);
+      // 6. Write Financial Audit Log
+      t.set(auditLogDocRef, {
+        log_id: auditLogDocRef.id,
+        tenant_id: tenantId,
+        pg_id: effectivePgId,
+        owner_id: targetOwnerId,
+        action: 'PAYMENT_COLLECTED',
+        payment_id: newPaymentDocRef.id,
+        idempotency_key: idempotencyId,
+        amount_paise: amountPaise,
+        amount_rupees: amountRupees,
+        before_outstanding_paise: beforeState.outstandingPaise,
+        after_outstanding_paise: afterOutstandingPaise,
+        payment_method: method || 'UPI',
+        performed_by_name: collectorName,
+        performed_by_uid: collectorUid || '',
+        timestamp: paymentDate
+      });
 
-    // Atomically stamp pending_balance on paid transaction docs
-    if (paidDocRefs.length > 0) {
-      const batchUpdate = adminDb.batch();
-      for (const ref of paidDocRefs) {
-        batchUpdate.update(ref, { pending_balance: totalRemainingPending });
-      }
-      await batchUpdate.commit();
-    }
+      // 7. Store Idempotency Key
+      t.set(idempRef, {
+        idempotencyKey: idempotencyId,
+        paymentId: newPaymentDocRef.id,
+        tenantId,
+        amountPaise,
+        status: 'completed',
+        timestamp: paymentDate,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      });
 
-    // 4. Send Real-time Notification to PG Owner Portal
-    if (targetOwnerId && totalAmount > 0) {
+      return {
+        paymentId: newPaymentDocRef.id,
+        amountRupees,
+        amountPaise,
+        afterOutstandingPaise
+      };
+    });
+
+    // Send real-time notification
+    if (targetOwnerId && amountPaise > 0) {
       try {
         await adminDb.collection('notifications').add({
           owner_id: targetOwnerId,
-          pg_id: pgId || tenantData?.pg_id || '',
+          pg_id: effectivePgId,
           type: 'payment',
-          title: `[${snapshotPgName}] Fee Collected: ₹${totalAmount.toLocaleString('en-IN')}`,
-          message: `${collectorName} collected ₹${totalAmount.toLocaleString('en-IN')} from ${snapshotTenantName} (${snapshotRoomNum ? 'Room ' + snapshotRoomNum : 'Rent'}) via ${method || 'UPI'}.`,
-          amount: totalAmount,
+          title: `[${snapshotPgName}] Fee Collected: ${formatPaiseToINR(amountPaise)}`,
+          message: `${collectorName} collected ${formatPaiseToINR(amountPaise)} from ${snapshotTenantName} (${snapshotRoomNum ? 'Room ' + snapshotRoomNum : 'Rent'}) via ${method || 'UPI'}.`,
+          amount: paiseToRupees(amountPaise),
+          amount_paise: amountPaise,
           tenant_id: tenantId,
           tenant_name: snapshotTenantName,
           room_number: snapshotRoomNum,
@@ -1991,10 +1829,107 @@ export async function collectFIFOPayment(
 
     revalidatePath('/pgowner/dues');
     revalidatePath('/pgowner/history');
-    return { success: true };
+    revalidatePath('/pgowner/dashboard');
+    return { success: true, data: transactionResult };
   } catch (err: any) {
     console.error('Error in collectFIFOPayment:', err);
     return { success: false, error: err.message || 'Payment collection failed.' };
+  }
+}
+
+export async function reversePayment(paymentId: string, reason: string = 'Payment reversal', reversedByUid?: string) {
+  try {
+    const paymentRef = adminDb.collection('payments').doc(paymentId);
+    const paymentDoc = await paymentRef.get();
+    if (!paymentDoc.exists) {
+      return { success: false, error: 'Payment transaction not found.' };
+    }
+
+    const paymentData = paymentDoc.data() as any;
+    if (paymentData.status === 'reversed') {
+      return { success: false, error: 'This payment has already been reversed.' };
+    }
+
+    const reversedAt = new Date().toISOString();
+    const amountPaise = parseMoneyToPaise(paymentData.amount_paid !== undefined ? paymentData.amount_paid : paymentData.amount);
+
+    // Resolve performer
+    let reversedByName = 'PG Owner';
+    if (reversedByUid) {
+      const profDoc = await adminDb.collection('user_profiles').doc(reversedByUid).get().catch(() => null);
+      if (profDoc?.exists) {
+        reversedByName = profDoc.data()?.full_name || profDoc.data()?.name || reversedByName;
+      }
+    }
+
+    const auditRef = adminDb.collection('financial_audit_logs').doc();
+
+    await adminDb.runTransaction(async (t) => {
+      // 1. Mark payment as reversed
+      t.update(paymentRef, {
+        status: 'reversed',
+        is_reversed: true,
+        reversal_info: {
+          reversedAt,
+          reversedBy: reversedByName,
+          reversedByUid: reversedByUid || '',
+          reason
+        },
+        updated_at: reversedAt
+      });
+
+      // 2. If payment had allocated charges, restore remaining balance on those charges
+      if (Array.isArray(paymentData.allocated_charges)) {
+        for (const alloc of paymentData.allocated_charges) {
+          if (!alloc.chargeId) continue;
+          const chargeRef = adminDb.collection('payments').doc(alloc.chargeId);
+          const cDoc = await t.get(chargeRef);
+          if (cDoc.exists) {
+            const cData = cDoc.data() as any;
+            const currentPaidPaise = parseMoneyToPaise(cData.amount_paid || 0);
+            const restoredPaidPaise = Math.max(0, currentPaidPaise - alloc.amountPaise);
+            const originalPaise = parseMoneyToPaise(cData.original_amount !== undefined ? cData.original_amount : cData.amount);
+            const newRemainingPaise = Math.max(0, originalPaise - restoredPaidPaise);
+
+            t.update(chargeRef, {
+              status: newRemainingPaise > 0 ? 'pending' : 'settled',
+              is_settled: newRemainingPaise === 0,
+              amount: paiseToRupees(newRemainingPaise),
+              amount_paid: paiseToRupees(restoredPaidPaise),
+              amount_paise: newRemainingPaise,
+              amount_paid_paise: restoredPaidPaise,
+              pending_balance: paiseToRupees(newRemainingPaise),
+              pending_balance_paise: newRemainingPaise,
+              updated_at: reversedAt
+            });
+          }
+        }
+      }
+
+      // 3. Write Audit Log
+      t.set(auditRef, {
+        log_id: auditRef.id,
+        tenant_id: paymentData.tenant_id,
+        pg_id: paymentData.pg_id,
+        owner_id: paymentData.owner_id,
+        action: 'PAYMENT_REVERSED',
+        payment_id: paymentId,
+        amount_paise: amountPaise,
+        amount_rupees: paiseToRupees(amountPaise),
+        reason,
+        performed_by_name: reversedByName,
+        performed_by_uid: reversedByUid || '',
+        timestamp: reversedAt
+      });
+    });
+
+    revalidatePath('/pgowner/dues');
+    revalidatePath('/pgowner/history');
+    revalidatePath('/pgowner/dashboard');
+    return { success: true, message: 'Payment successfully reversed and balance restored.' };
+  } catch (err: any) {
+    console.error('Error in reversePayment:', err);
+    return { success: false, error: err.message || 'Failed to reverse payment.' };
   }
 }
 
@@ -2106,21 +2041,21 @@ export async function getPaymentHistory(uid: string, activePgId: string | null =
     const { ownerId: effectiveOwnerId } = await resolveEffectiveOwnerId(uid);
     let pgIds: string[] = [];
     let propertiesData: any[] = [];
+
+    const propsSnap = await adminDb.collection('properties')
+      .where('owner_id', '==', effectiveOwnerId)
+      .get();
+    
+    if (propsSnap.empty) return { success: true, data: [] };
+
+    propertiesData = propsSnap.docs
+      .map(doc => doc.data())
+      .filter(p => p.owner_id === effectiveOwnerId && p.is_active !== false && p.status !== 'INACTIVE' && p.status !== 'DELETED');
+    
+    pgIds = propertiesData.map(p => p.pg_id || p.id);
+
     if (activePgId) {
-      pgIds = [activePgId];
-      const pSnap = await adminDb.collection('properties').doc(activePgId).get();
-      if (pSnap.exists) propertiesData = [pSnap.data()];
-    } else {
-      let propsSnap = await adminDb.collection('properties')
-        .where('owner_id', '==', effectiveOwnerId)
-        .get();
-      if (propsSnap.empty) {
-        propsSnap = await adminDb.collection('properties').get();
-      }
-      propertiesData = propsSnap.docs
-        .map(doc => doc.data())
-        .filter(p => p.is_active !== false && p.status !== 'INACTIVE');
-      pgIds = propertiesData.map(p => p.pg_id || p.id);
+      pgIds = pgIds.filter(id => id === activePgId);
     }
 
     if (pgIds.length === 0) return { success: true, data: [] };
@@ -2161,8 +2096,16 @@ export async function getPaymentHistory(uid: string, activePgId: string | null =
       const tenant = tenants.find(t => (t.tenant_id || t.id) === p.tenant_id) || {};
       const room = rooms.find(r => (r.room_id || r.id) === (tenant.room_id || p.room_id)) || {};
       const property = propertiesData.find(prop => (prop.pg_id || prop.id) === p.pg_id) || {};
+      const amtPaise = parseMoneyToPaise(p.amount_paid !== undefined ? p.amount_paid : p.amount);
+      const origPaise = parseMoneyToPaise(p.original_amount !== undefined ? p.original_amount : p.amount);
+
       return {
         ...p,
+        amount: paiseToRupees(amtPaise),
+        amount_paid: paiseToRupees(amtPaise),
+        amount_paise: amtPaise,
+        original_amount: paiseToRupees(origPaise),
+        original_amount_paise: origPaise,
         tenant_name: p.tenant_name || tenant.full_name || tenant.name || 'Tenant',
         room_number: p.room_number || room.room_number || tenant.room_number || tenant.room || 'N/A',
         pg_name: p.pg_name || property.name || tenant.pg_name || 'A1 Hostels'

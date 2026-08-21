@@ -17,6 +17,12 @@ import { PERMISSIONS } from '@/permissions';
 import { useHostelData } from '@/hooks/useHostelData';
 import { perfLogger } from '@/lib/perfLogger';
 import { SelectHostelPrompt } from '@/components/SelectHostelPrompt';
+import { 
+  parseMoneyToPaise, 
+  formatPaiseToINR, 
+  paiseToRupees, 
+  calculateTenantFinancialState 
+} from '@/lib/financialEngine';
 
 export default function PropertyAnalytics() {
   const router = useRouter();
@@ -133,13 +139,29 @@ export default function PropertyAnalytics() {
   const chartData = useMemo(() => {
     if (!storePayments) return [];
     
-    // First, filter payments by the selected period
-    const relevantPayments = storePayments.filter((p:any) => isDateMatch(p.created_at) && (p.status === 'paid' || p.status === 'PAID'));
+    // Identify all charge IDs that were settled/paid by a payment receipt
+    const allocatedChargeIds = new Set<string>();
+    storePayments.forEach((p: any) => {
+      if (Array.isArray(p.allocated_charges)) {
+        p.allocated_charges.forEach((alloc: any) => {
+          if (alloc.chargeId) allocatedChargeIds.add(alloc.chargeId);
+        });
+      }
+    });
+
+    // First, filter payments by the selected period (excluding settled charges and duplicate allocated docs)
+    const relevantPayments = storePayments.filter((p: any) => {
+      const id = p.payment_id || p.id;
+      if (p.status === 'settled' || p.status === 'pending' || p.status === 'overdue') return false;
+      if (id && allocatedChargeIds.has(id)) return false;
+      const isPaid = p.status === 'paid' || p.status === 'PAID' || p.status === 'completed';
+      return isPaid && isDateMatch(p.payment_date || p.created_at);
+    });
     
     const groupedData: Record<string, number> = {};
 
     relevantPayments.forEach((p: any) => {
-      const date = new Date(p.created_at);
+      const date = new Date(p.payment_date || p.created_at);
       let key = '';
 
       if (filterType === 'yearly') {
@@ -150,7 +172,8 @@ export default function PropertyAnalytics() {
         key = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       }
 
-      groupedData[key] = (groupedData[key] || 0) + p.amount;
+      const amt = Number(p.amount_paid !== undefined ? p.amount_paid : p.amount) || 0;
+      groupedData[key] = (groupedData[key] || 0) + amt;
     });
 
     const now = new Date();
@@ -293,42 +316,56 @@ export default function PropertyAnalytics() {
 
   // Dynamic KPI Calculation based on Time Picker
   const filteredKpi = useMemo(() => {
-    let collected = 0;
-    let overdue = 0;
-    const defaulters = new Set();
-    
+    let collectedPaise = 0;
+    let overduePaise = 0;
+    const defaulters = new Set<string>();
+
+    // Identify all charge IDs that were settled/paid by a payment receipt
+    const allocatedChargeIds = new Set<string>();
     if (storePayments && Array.isArray(storePayments)) {
       storePayments.forEach((p: any) => {
-        if (p.status === 'paid' || p.status === 'PAID') {
-          if (isDateMatch(p.payment_date || p.created_at)) {
-            collected += Number(p.amount) || 0;
-          }
+        if (Array.isArray(p.allocated_charges)) {
+          p.allocated_charges.forEach((alloc: any) => {
+            if (alloc.chargeId) allocatedChargeIds.add(alloc.chargeId);
+          });
         }
       });
     }
 
-    const duesList = storeDues && Array.isArray(storeDues) ? storeDues : [];
-    const now = new Date();
-    const isCurrentFilterPeriod = (() => {
-      if (filterType === 'monthly') {
-        const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        return filterValue === currentMonthStr;
-      }
-      return false;
-    })();
-
-    duesList.forEach((p: any) => {
-      if (p.status === 'pending' || p.status === 'overdue' || p.status === 'PENDING') {
-        const itemDate = p.created_at || p.payment_date || p.due_date;
-        if (isCurrentFilterPeriod || !itemDate || isDateMatch(itemDate)) {
-          overdue += Number(p.amount) || 0;
-          if (p.tenant_id || p.tenantId) defaulters.add(p.tenant_id || p.tenantId);
-        }
+    const genuinePayments = (storePayments && Array.isArray(storePayments))
+      ? storePayments.filter((p: any) => {
+          const id = p.payment_id || p.id;
+          if (p.status === 'settled' || p.status === 'pending' || p.status === 'overdue') return false;
+          if (id && allocatedChargeIds.has(id)) return false;
+          return p.status === 'paid' || p.status === 'PAID' || p.status === 'completed';
+        })
+      : [];
+    
+    genuinePayments.forEach((p: any) => {
+      if (isDateMatch(p.payment_date || p.created_at)) {
+        collectedPaise += parseMoneyToPaise(p.amount_paid !== undefined ? p.amount_paid : p.amount);
       }
     });
 
-    return { collected, overdue, overdueCount: defaulters.size };
-  }, [storePayments, storeDues, filterType, filterValue, isDateMatch]);
+    const duesList = storeDues && Array.isArray(storeDues) ? storeDues : [];
+    const tenantsList = storeTenants && Array.isArray(storeTenants) ? storeTenants : [];
+
+    // Calculate tenant-level financial state to get exact outstanding dues
+    tenantsList.forEach((t: any) => {
+      const state = calculateTenantFinancialState(t, duesList, genuinePayments);
+      if (state.outstandingPaise > 0) {
+        overduePaise += state.outstandingPaise;
+        const tid = t.tenant_id || t.id;
+        if (tid) defaulters.add(tid);
+      }
+    });
+
+    return { 
+      collected: paiseToRupees(collectedPaise), 
+      overdue: paiseToRupees(overduePaise), 
+      overdueCount: defaulters.size 
+    };
+  }, [storePayments, storeDues, storeTenants, filterType, filterValue, isDateMatch]);
 
   const activeAnalytics = {
     dashboardTitle: selectedProperty?.name || "Hostel Dashboard",

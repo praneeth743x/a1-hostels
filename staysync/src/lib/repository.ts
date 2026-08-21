@@ -116,13 +116,6 @@ export async function getActiveHostels(ownerId: string): Promise<any[]> {
     }
   }
 
-  if (snapshot.empty) {
-    const allProps = await adminDb.collection('properties').get();
-    if (!allProps.empty) {
-      snapshot = allProps;
-    }
-  }
-
   if (snapshot.empty) return [];
 
   let hostels = snapshot.docs

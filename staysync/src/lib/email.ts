@@ -177,3 +177,58 @@ export async function sendPasswordResetHTMLMail(
     return false;
   }
 }
+
+export async function sendPGOwnerDeletionConfirmationEmail(
+  adminEmail: string,
+  ownerName: string,
+  ownerEmail: string,
+  token: string,
+  totalHostels: number = 0,
+  totalTenants: number = 0
+) {
+  const confirmUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/confirm-delete?type=pg_owner&token=${token}`;
+
+  const mailOptions = {
+    from: `"A1 Hostels" <${process.env.EMAIL_USER}>`,
+    to: adminEmail,
+    subject: `⚠️ Confirm PG Owner Permanent Deletion: ${ownerName} - A1 Hostels`,
+    html: `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 30px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f1f5f9;">
+        <div style="text-align: center; margin-bottom: 25px;">
+          <h1 style="color: #4F46E5; margin: 0; font-size: 24px; font-weight: 700;">A1 Hostels</h1>
+          <p style="color: #64748b; font-size: 14px; margin-top: 5px;">Super Admin Security Center</p>
+        </div>
+
+        <h2 style="color: #d93025; font-size: 20px; margin-bottom: 15px;">Confirm PG Owner Permanent Deletion</h2>
+        <p style="color: #475569; font-size: 15px; line-height: 1.6;">Hello Super Admin,</p>
+        <p style="color: #475569; font-size: 15px; line-height: 1.6;">A request was made to <strong>PERMANENTLY AND IRREVERSIBLY</strong> delete the following PG Owner account and ALL associated database records:</p>
+        <ul style="background: #fef2f2; padding: 18px 30px; border-radius: 8px; border: 1px solid #fecaca; color: #991b1b; line-height: 1.8; font-size: 15px; list-style-type: none;">
+          <li><strong>• PG Owner Name:</strong> ${ownerName}</li>
+          <li><strong>• Owner Email:</strong> ${ownerEmail}</li>
+          <li><strong>• Associated Hostels:</strong> ${totalHostels}</li>
+          <li><strong>• Associated Tenants:</strong> ${totalTenants}</li>
+          <li><strong>• Cascaded Data:</strong> All rooms, active tenants, tenant auth accounts, payments, dues, complaints, notices, team members, and expenses will be permanently wiped from Firestore and Firebase Authentication.</li>
+        </ul>
+        <p style="color: #475569; font-size: 15px; line-height: 1.6;">To authorize and execute this permanent deletion, please click the confirmation button below:</p>
+        <div style="text-align: center; margin: 25px 0;">
+          <a href="${confirmUrl}" style="display: inline-block; padding: 14px 28px; background-color: #d93025; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 15px; box-shadow: 0 4px 14px rgba(217, 48, 37, 0.35);">Confirm Permanent Deletion</a>
+        </div>
+        <p style="color: #94a3b8; font-size: 13px; margin-top: 20px; line-height: 1.5;"><em>If you did not request this, please ignore this email. This security link expires in <strong>5 minutes</strong>.</em></p>
+        <p style="color: #94a3b8; font-size: 13px; text-align: center; margin-top: 25px;">&copy; ${new Date().getFullYear()} A1 Hostels. All rights reserved.</p>
+      </div>
+    `,
+  };
+
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn("EMAIL_USER or EMAIL_PASS not set. Skipping real email send. Confirmation URL:", confirmUrl);
+    return true; 
+  }
+
+  try {
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error("Error sending PG Owner deletion confirmation email:", error);
+    return false;
+  }
+}

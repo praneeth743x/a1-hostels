@@ -47,7 +47,7 @@ const sortFloorsAndRoomsAscending = (floors: any[]) => {
 export default function MyHostelsPage() {
   const confirm = useConfirm();
   const router = useRouter();
-  const { switchHostel, refreshProperties, properties: storeProperties, selectedPgId } = useHostel();
+  const { switchHostel, refreshProperties, properties: storeProperties, selectedPgId, userProfile } = useHostel();
   const [isLoading, setIsLoading] = useState(false);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [properties, setProperties] = useState<any[]>(storeProperties || []);
@@ -163,7 +163,7 @@ export default function MyHostelsPage() {
       toast.error("Please type DELETE to confirm.");
       return;
     }
-    const ownerEmail = auth.currentUser?.email || (typeof window !== 'undefined' ? localStorage.getItem('userEmail') : '') || '';
+    const ownerEmail = userProfile?.email || auth.currentUser?.email || (typeof window !== 'undefined' ? localStorage.getItem('userEmail') : '') || '';
     if (!ownerEmail) {
       toast.error("Owner email not found. Please re-login.");
       return;

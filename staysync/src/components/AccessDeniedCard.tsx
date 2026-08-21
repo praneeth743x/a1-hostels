@@ -210,6 +210,12 @@ export default function AccessDeniedCard({
           {(currentRole === 'pg_owner' || currentRole === 'owner' || currentRole === 'team_member') && (
             <Link
               href="/pgowner/dashboard"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('userRole', currentRole === 'team_member' ? 'team_member' : 'pg_owner');
+                  localStorage.setItem('isLoggedIn', 'true');
+                }
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',

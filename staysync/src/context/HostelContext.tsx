@@ -354,7 +354,9 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setUserProfile(res.data);
         setAppState('userProfile', res.data);
         if (typeof window !== 'undefined') {
-          if (res.data.role) localStorage.setItem('userRole', res.data.role);
+          const finalRole = res.data.role || (res.data.is_owner ? 'pg_owner' : 'pg_owner');
+          localStorage.setItem('userRole', finalRole);
+          if (res.data.email) localStorage.setItem('userEmail', res.data.email);
           if (res.data.permissions) localStorage.setItem('cachedUserPermissions', JSON.stringify(res.data.permissions));
         }
       }
@@ -436,6 +438,11 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (cancelled) return;
       setAuthStatus((prev) => {
         if (prev === 'BOOTING' || prev === 'RESTORE_AUTH') {
+          const hasLocalSession = typeof window !== 'undefined' && localStorage.getItem('isLoggedIn') === 'true';
+          if (hasLocalSession) {
+            console.warn('Auth initialization taking time, keeping session active...');
+            return prev;
+          }
           console.warn('Auth initialization timed out. Forcing UNAUTHENTICATED state.');
           setCurrentUser(null);
           setUserProfile(null);
@@ -443,13 +450,12 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         return prev;
       });
-    }, 5000);
+    }, 10000);
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (cancelled) return;
       if (fallbackTimeout) { clearTimeout(fallbackTimeout); fallbackTimeout = null; }
       if (user) {
-        // Cancel any pending null-user timeout
         if (nullUserTimeout) { clearTimeout(nullUserTimeout); nullUserTimeout = null; }
         perfLogger.trace(`STARTUP STATE: RESTORE_AUTH -> READY (instant, background init queued)`);
         
@@ -485,23 +491,23 @@ export const HostelProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         initializeAuth(user.uid);
       } else {
-        // No user from onAuthStateChanged.
-        // During mobile redirect sign-in, onAuthStateChanged fires null BEFORE 
-        // getRedirectResult resolves. Wait briefly to let the Global redirect handler
-        // process the result (it sets authStatus to VALIDATE_SESSION).
         if (nullUserTimeout) clearTimeout(nullUserTimeout);
         nullUserTimeout = setTimeout(() => {
           if (cancelled) return;
-          // Only set UNAUTHENTICATED if no other handler has already changed the status
           setAuthStatus((prev) => {
             if (prev === 'VALIDATE_SESSION' || prev === 'READY') return prev;
+            const hasLocalSession = typeof window !== 'undefined' && localStorage.getItem('isLoggedIn') === 'true' && localStorage.getItem('userUid');
+            if (hasLocalSession) {
+              // Still restoring session
+              return prev;
+            }
             perfLogger.trace('STARTUP STATE: RESTORE_AUTH -> UNAUTHENTICATED');
             setCurrentUser(null);
             setUserProfile(null);
             return 'UNAUTHENTICATED';
           });
           if (unsubProfileListener) unsubProfileListener();
-        }, 1500);
+        }, 5000);
       }
     });
 

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Plus, Camera, X, Building2, MoreVertical, Filter, Users, ChevronRight, ChevronLeft, Save, CheckCircle2, Menu, Bell, BedDouble, IndianRupee, Home, Calendar, AlertTriangle, AlertCircle, User, Phone, Mail, Briefcase, PhoneCall } from 'lucide-react';
 import { FloatingInput } from '@/components/FloatingInput';
@@ -18,6 +18,7 @@ import { CustomSelect } from '@/components/CustomSelect';
 import { useHostelData, notifyHostelDataChanged } from '@/hooks/useHostelData';
 import { useHostel } from '@/context/HostelContext';
 import { AvatarImage } from '@/components/AvatarImage';
+import { rpcCall } from '@/lib/rpc';
 
 const getNextUnpaidMonthAndDate = (t: any, tenantPaidPayments: any[]) => {
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -80,18 +81,15 @@ const getNextUnpaidMonthAndDate = (t: any, tenantPaidPayments: any[]) => {
   };
 };
 
-export default function TenantDirectory() {
+function TenantDirectoryContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterHostel, setFilterHostel] = useState('all');
   const [tenantStatusFilter, setTenantStatusFilter] = useState('Active');
   const [showModal, setShowModal] = useState(false);
 
-  const [ownerId, setOwnerId] = useState<string | null>(null);
-  const [properties, setProperties] = useState<any[]>([]);
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  const { selectedPgId: contextPgId } = useHostel();
+  const { selectedPgId: contextPgId, properties: contextProperties, userProfile } = useHostel();
   const activePgId = searchParams.get('pgId') || (filterHostel !== 'all' ? filterHostel : contextPgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('activePgId') : null));
   const { data: hostelData, isLoading } = useHostelData(activePgId);
 
@@ -228,12 +226,14 @@ export default function TenantDirectory() {
   const [isSaving, setIsSaving] = useState(false);
   const [openingTenantId, setOpeningTenantId] = useState<string | null>(null);
 
-
+  const effectivePgId = selectedPg || (activePgId && activePgId !== 'all' ? activePgId : '') || (contextPgId && contextPgId !== 'all' ? contextPgId : '') || (contextProperties && contextProperties.length > 0 ? (contextProperties[0].pg_id || contextProperties[0].id) : '');
+  const { data: modalHostelData } = useHostelData(effectivePgId);
+  const targetHostelData = (effectivePgId === activePgId ? hostelData : modalHostelData) || hostelData;
 
   useEffect(() => {
-    if (activePgId && selectedRoom && hostelData) {
-      const r = hostelData.rooms?.find((room: any) => room.room_id === selectedRoom || room.id === selectedRoom);
-      const prop = hostelData.property;
+    if (effectivePgId && selectedRoom && targetHostelData) {
+      const r = targetHostelData.rooms?.find((room: any) => room.room_id === selectedRoom || room.id === selectedRoom);
+      const prop = targetHostelData.property;
       if (r) {
         const directPrice = r.price || r.rent || r.monthly_rent;
         if (directPrice) {
@@ -251,16 +251,24 @@ export default function TenantDirectory() {
         }
       }
     }
-  }, [selectedRoom, activePgId, hostelData]);
+  }, [selectedRoom, effectivePgId, targetHostelData]);
 
   const [previews, setPreviews] = useState<Record<string, string>>({});
 
   const handleAddTenant = async (e: React.FormEvent) => {
     e.preventDefault();
-    const currentOwnerId = ownerId || auth.currentUser?.uid;
-    const currentPgId = activePgId;
-    if (!currentOwnerId || !currentPgId || !selectedRoom) {
-      alert("Please select a Hostel and Room.");
+    const currentOwnerId = userProfile?.owner_id || userProfile?.uid || auth.currentUser?.uid || (typeof localStorage !== 'undefined' ? localStorage.getItem('userUid') : '');
+    const currentPgId = effectivePgId;
+    if (!currentOwnerId) {
+      alert("Unable to determine account owner. Please refresh and try again.");
+      return;
+    }
+    if (!currentPgId) {
+      alert("Please select a Hostel.");
+      return;
+    }
+    if (!selectedRoom) {
+      alert("Please select a Room.");
       return;
     }
     if (!phone.trim() || phone.replace(/\D/g, '').length < 10) {
@@ -271,105 +279,120 @@ export default function TenantDirectory() {
     setIsSaving(true);
     setUploadProgress('Saving tenant...');
 
-    // Hardware-accelerated 10ms Canvas image compression
-    const compressFast = (file: File): Promise<Blob> => {
-      if (file.size <= 300 * 1024) return Promise.resolve(file);
-      return new Promise((resolve) => {
-        const img = new Image();
-        const url = URL.createObjectURL(file);
-        img.onload = () => {
-          URL.revokeObjectURL(url);
-          const canvas = document.createElement('canvas');
-          const maxDim = 800;
-          let w = img.width, h = img.height;
-          if (w > maxDim || h > maxDim) {
-            if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
-            else { w = Math.round((w * maxDim) / h); h = maxDim; }
+    try {
+      // Hardware-accelerated Canvas image compression with safety fallback
+      const compressFast = (file: File): Promise<Blob> => {
+        if (file.size <= 300 * 1024) return Promise.resolve(file);
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => resolve(file), 1200);
+          try {
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            img.onload = () => {
+              clearTimeout(timeout);
+              URL.revokeObjectURL(url);
+              const canvas = document.createElement('canvas');
+              const maxDim = 800;
+              let w = img.width, h = img.height;
+              if (w > maxDim || h > maxDim) {
+                if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+                else { w = Math.round((w * maxDim) / h); h = maxDim; }
+              }
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              ctx?.drawImage(img, 0, 0, w, h);
+              canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', 0.7);
+            };
+            img.onerror = () => {
+              clearTimeout(timeout);
+              URL.revokeObjectURL(url);
+              resolve(file);
+            };
+            img.src = url;
+          } catch {
+            clearTimeout(timeout);
+            resolve(file);
           }
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, w, h);
-          canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', 0.7);
-        };
-        img.onerror = () => {
-          URL.revokeObjectURL(url);
-          resolve(file);
-        };
-        img.src = url;
-      });
-    };
-
-    const uploadFile = async (file: File, path: string) => {
-      try {
-        const blobToUpload = await compressFast(file);
-        const storageRef = ref(storage, path);
-        const uploadPromise = uploadBytes(storageRef, blobToUpload);
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2500));
-        await Promise.race([uploadPromise, timeoutPromise]);
-        return await getDownloadURL(storageRef);
-      } catch (err) {
-        console.warn('Fast upload skipped file', err);
-        return '';
-      }
-    };
-
-    let documentUrls: any = {};
-    const keysToUpload = Object.keys(documents).filter(key => documents[key] instanceof File);
-
-    if (keysToUpload.length > 0) {
-      try {
-        const uploadTasks = keysToUpload.map(async (key) => {
-          const file = documents[key];
-          const path = `tenants/${currentOwnerId}/${Date.now()}_${key}.jpg`;
-          const url = await uploadFile(file, path);
-          return { key, url };
         });
+      };
 
-        const results = await Promise.all(uploadTasks);
-        results.forEach(({ key, url }) => {
-          if (url) documentUrls[key] = url;
-        });
-      } catch (error: any) {
-        console.warn("Upload finished with warnings:", error);
+      const uploadFile = async (file: File, path: string) => {
+        try {
+          const blobToUpload = await compressFast(file);
+          const storageRef = ref(storage, path);
+          const uploadPromise = uploadBytes(storageRef, blobToUpload);
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2500));
+          await Promise.race([uploadPromise, timeoutPromise]);
+          return await getDownloadURL(storageRef);
+        } catch (err) {
+          console.warn('Fast upload skipped file', err);
+          return '';
+        }
+      };
+
+      let documentUrls: any = {};
+      const keysToUpload = Object.keys(documents).filter(key => documents[key] instanceof File);
+
+      if (keysToUpload.length > 0) {
+        try {
+          const uploadTasks = keysToUpload.map(async (key) => {
+            const file = documents[key];
+            const path = `tenants/${currentOwnerId}/${Date.now()}_${key}.jpg`;
+            const url = await uploadFile(file, path);
+            return { key, url };
+          });
+
+          const results = await Promise.all(uploadTasks);
+          results.forEach(({ key, url }) => {
+            if (url) documentUrls[key] = url;
+          });
+        } catch (error: any) {
+          console.warn("Upload finished with warnings:", error);
+        }
       }
-    }
-    
-    const res = await addTenant({ 
-      ownerId: currentOwnerId, 
-      pgId: currentPgId, 
-      roomId: selectedRoom, 
-      fullName, 
-      phone, 
-      email: tenantEmail,
-      parentPhone, 
-      workStatus, 
-      moveInDate: moveInDate ? moveInDate.toISOString() : new Date().toISOString(),
-      rentAmount: rentAmount === '' ? 0 : Math.round(Number(rentAmount)),
-      securityDeposit: securityDeposit === '' ? 0 : Math.round(Number(securityDeposit)),
-      openingPendingFee: hasOldPendingFee && openingPendingFee !== '' ? Math.round(Number(openingPendingFee)) : 0,
-      openingBalanceDueDate: hasOldPendingFee && moveInDate ? moveInDate.toISOString() : undefined,
-      documents: documentUrls
-    });
-    
-    if (res.success && res.data) {
-      notifyHostelDataChanged(currentPgId);
       
-      if (returnUrl) {
-        router.push(returnUrl);
+      const res = await rpcCall('addTenant', { 
+        ownerId: currentOwnerId, 
+        pgId: currentPgId, 
+        roomId: selectedRoom, 
+        fullName, 
+        phone, 
+        email: tenantEmail,
+        parentPhone, 
+        workStatus, 
+        moveInDate: moveInDate ? moveInDate.toISOString() : new Date().toISOString(),
+        rentAmount: rentAmount === '' ? 0 : Math.round(Number(rentAmount)),
+        securityDeposit: securityDeposit === '' ? 0 : Math.round(Number(securityDeposit)),
+        openingPendingFee: hasOldPendingFee && openingPendingFee !== '' ? Math.round(Number(openingPendingFee)) : 0,
+        openingBalanceDueDate: hasOldPendingFee && moveInDate ? moveInDate.toISOString() : undefined,
+        documents: documentUrls
+      });
+      
+      if (res?.success) {
+        notifyHostelDataChanged(currentPgId);
+        
+        if (returnUrl) {
+          router.push(returnUrl);
+        } else {
+          setShowModal(false);
+        }
+        setFullName(''); setPhone(''); setTenantEmail(''); setParentPhone(''); setMoveInDate(null);
+        setRentAmount(''); setSecurityDeposit(''); setOpeningPendingFee(''); setHasOldPendingFee(false);
+        setDocuments({ facePicture: null, govtFront: null, govtBack: null, collegeFront: null, collegeBack: null, empFront: null, empBack: null });
+        setPreviews({});
+        setUploadProgress('');
+        router.refresh();
       } else {
-        setShowModal(false);
+        alert("Failed to add tenant: " + (res?.error || "Unknown error"));
       }
-      setFullName(''); setPhone(''); setTenantEmail(''); setParentPhone(''); setMoveInDate(null);
-      setRentAmount(''); setSecurityDeposit(''); setOpeningPendingFee(''); setHasOldPendingFee(false);
-      setDocuments({ facePicture: null, govtFront: null, govtBack: null, collegeFront: null, collegeBack: null, empFront: null, empBack: null });
-      setPreviews({});
+    } catch (err: any) {
+      console.error("Error adding tenant:", err);
+      alert("Failed to add tenant: " + (err?.message || "An unexpected error occurred. Please try again."));
+    } finally {
+      setIsSaving(false);
       setUploadProgress('');
-      router.refresh();
-    } else {
-      alert("Failed to add tenant: " + (res.error || "Unknown error"));
     }
-    setIsSaving(false);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
@@ -381,7 +404,7 @@ export default function TenantDirectory() {
   };
 
   const currentRooms = React.useMemo(() => {
-    const rooms = [...(hostelData?.rooms || [])];
+    const rooms = [...(targetHostelData?.rooms || [])];
     return rooms.sort((a: any, b: any) => {
       // 1. Sort by floor number
       const floorA = parseInt(String(a.floor || '0').replace(/[^0-9]/g, ''), 10) || 0;
@@ -401,7 +424,7 @@ export default function TenantDirectory() {
       
       return String(a.room_number || '').localeCompare(String(b.room_number || ''), undefined, { numeric: true, sensitivity: 'base' });
     });
-  }, [hostelData?.rooms]);
+  }, [targetHostelData?.rooms]);
 
   const filteredTenants = React.useMemo(() => {
     return displayTenantsList.filter((t: any) => {
@@ -825,42 +848,65 @@ export default function TenantDirectory() {
                     <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#4338ca' }}>Allocate Room</span>
                   </div>
 
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
-                      Choose Room <span style={{ color: '#ef4444' }}>*</span>
-                    </label>
-                    <CustomSelect 
-                      searchable
-                      value={selectedRoom}
-                      onChange={setSelectedRoom}
-                      options={currentRooms.map((r: any) => {
-                        const tenantsList = hostelData?.tenants || [];
-                        const occupiedCount = tenantsList.filter((t: any) => (t.status === 'Active' || t.is_active !== false) && (t.room === r.room_number || t.room_id === r.room_id || t.room_id === r.id)).length;
-                        const totalBeds = r.total_beds || r.beds || 1;
-                        
-                        return { 
-                          value: r.room_id || r.id, 
-                          disabled: occupiedCount >= totalBeds,
-                          searchKey: String(r.room_number || r.num || ''),
-                          label: (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingRight: '8px' }}>
-                              <span style={{ fontWeight: 600 }}>{r.floor ? `${r.floor} - ` : ''}Room {r.room_number} {occupiedCount >= totalBeds ? '(Full)' : ''}</span>
-                              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                {Array.from({ length: totalBeds }).map((_, i) => (
-                                  <BedDouble 
-                                    key={i} 
-                                    size={14} 
-                                    color={i < occupiedCount ? "#ef4444" : "#10b981"} 
-                                  />
-                                ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {contextProperties && contextProperties.length > 1 && (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                          Choose Hostel <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <CustomSelect 
+                          value={effectivePgId}
+                          onChange={(val: any) => {
+                            setSelectedPg(val);
+                            setSelectedRoom('');
+                          }}
+                          options={contextProperties.map((p: any) => ({
+                            value: p.pg_id || p.id,
+                            label: p.name || 'Hostel'
+                          }))}
+                          placeholder="Select a hostel"
+                          icon={<Building2 size={15} color="#94a3b8" />}
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                        Choose Room <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <CustomSelect 
+                        searchable
+                        value={selectedRoom}
+                        onChange={setSelectedRoom}
+                        options={currentRooms.map((r: any) => {
+                          const tenantsList = targetHostelData?.tenants || [];
+                          const occupiedCount = tenantsList.filter((t: any) => (t.status === 'Active' || t.is_active !== false) && (t.room === r.room_number || t.room_id === r.room_id || t.room_id === r.id)).length;
+                          const totalBeds = r.total_beds || r.beds || 1;
+                          
+                          return { 
+                            value: r.room_id || r.id, 
+                            disabled: occupiedCount >= totalBeds,
+                            searchKey: String(r.room_number || r.num || ''),
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingRight: '8px' }}>
+                                <span style={{ fontWeight: 600 }}>{r.floor ? `${r.floor} - ` : ''}Room {r.room_number} {occupiedCount >= totalBeds ? '(Full)' : ''}</span>
+                                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                  {Array.from({ length: totalBeds }).map((_, i) => (
+                                    <BedDouble 
+                                      key={i} 
+                                      size={14} 
+                                      color={i < occupiedCount ? "#ef4444" : "#10b981"} 
+                                    />
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          ) 
-                        };
-                      })}
-                      placeholder="Select a room"
-                      icon={<Home size={15} color="#94a3b8" />}
-                    />
+                            ) 
+                          };
+                        })}
+                        placeholder="Select a room"
+                        icon={<Home size={15} color="#94a3b8" />}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1251,5 +1297,13 @@ export default function TenantDirectory() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function TenantDirectory() {
+  return (
+    <Suspense fallback={null}>
+      <TenantDirectoryContent />
+    </Suspense>
   );
 }

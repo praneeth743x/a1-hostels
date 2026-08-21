@@ -5,32 +5,51 @@ import {
   MessageSquare, Save, AlertTriangle, Clock, RefreshCw, 
   Plus, Minus, CreditCard
 } from 'lucide-react';
-import { getWhatsAppReminderSettings, updateWhatsAppReminderSettings } from '@/app/actions/superadmin';
+import { rpcCall } from '@/lib/rpc';
 import { toast } from 'react-hot-toast';
 import styles from './whatsappRules.module.css';
 
+interface WhatsAppRulesSettings {
+  dueDayReminder: boolean;
+  overdueFirstReminderDays: number;
+  overdueReminderFrequencyDays: number;
+  tenantPaymentsEnabled: boolean;
+}
+
 export default function WhatsAppRulesPage() {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   
-  const [settings, setSettings] = useState({
-    dueDayReminder: true,
-    overdueFirstReminderDays: 1,
-    overdueReminderFrequencyDays: 3,
-    tenantPaymentsEnabled: true
+  const [settings, setSettings] = useState<WhatsAppRulesSettings>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('cached_whatsapp_rules');
+      if (cached) {
+        try { return JSON.parse(cached); } catch (e) {}
+      }
+    }
+    return {
+      dueDayReminder: true,
+      overdueFirstReminderDays: 1,
+      overdueReminderFrequencyDays: 3,
+      tenantPaymentsEnabled: true
+    };
   });
 
   useEffect(() => {
     async function loadSettings() {
       try {
-        const res = await getWhatsAppReminderSettings();
-        if (res.success && res.data) {
-          setSettings({
-            dueDayReminder: res.data.dueDayReminder ?? true,
+        const res = await rpcCall('getWhatsAppReminderSettings');
+        if (res?.success && res?.data) {
+          const loaded: WhatsAppRulesSettings = {
+            dueDayReminder: res.data.dueDayReminder !== false,
             overdueFirstReminderDays: res.data.overdueFirstReminderDays ?? 1,
             overdueReminderFrequencyDays: res.data.overdueReminderFrequencyDays ?? 3,
-            tenantPaymentsEnabled: res.data.tenantPaymentsEnabled ?? true
-          });
+            tenantPaymentsEnabled: res.data.tenantPaymentsEnabled !== false
+          };
+          setSettings(loaded);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('cached_whatsapp_rules', JSON.stringify(loaded));
+          }
         }
       } catch (err) {
         console.error("Failed to load settings:", err);
@@ -43,17 +62,20 @@ export default function WhatsAppRulesPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    const res = await updateWhatsAppReminderSettings(settings);
+    const res = await rpcCall('updateWhatsAppReminderSettings', settings);
     setSaving(false);
-    if (res.success) {
+    if (res?.success) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('cached_whatsapp_rules', JSON.stringify(settings));
+      }
       toast.success("WhatsApp Reminder Rules saved!");
     } else {
-      toast.error("Failed to save rules: " + res.error);
+      toast.error("Failed to save rules: " + (res?.error || 'Unknown error'));
     }
   };
 
   const adjustValue = (key: 'overdueFirstReminderDays' | 'overdueReminderFrequencyDays', delta: number, min = 1, max = 30) => {
-    setSettings(prev => ({
+    setSettings((prev: WhatsAppRulesSettings) => ({
       ...prev,
       [key]: Math.min(max, Math.max(min, (prev[key] || 1) + delta))
     }));
@@ -241,8 +263,11 @@ export default function WhatsAppRulesPage() {
                   const val = e.target.checked;
                   const updated = { ...settings, tenantPaymentsEnabled: val };
                   setSettings(updated);
-                  const res = await updateWhatsAppReminderSettings(updated);
-                  if (res.success) {
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('cached_whatsapp_rules', JSON.stringify(updated));
+                  }
+                  const res = await rpcCall('updateWhatsAppReminderSettings', updated);
+                  if (res?.success) {
                     toast.success(val ? "Tenant payments ENABLED" : "Tenant payments LOCKED");
                   } else {
                     toast.error("Failed to save setting");

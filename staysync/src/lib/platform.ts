@@ -26,9 +26,7 @@ export function getPlatform(): PlatformType {
   // 2. Installed PWA / Standalone Mode Detection
   const isPwaStandalone = 
     window.matchMedia('(display-mode: standalone)').matches ||
-    window.matchMedia('(display-mode: fullscreen)').matches ||
-    window.matchMedia('(display-mode: minimal-ui)').matches ||
-    (navigator as any).standalone === true; // iOS Safari PWA fallback
+    (navigator as any).standalone === true; // iOS Safari Home Screen PWA fallback
 
   if (isPwaStandalone) {
     return 'PWA';

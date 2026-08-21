@@ -37,12 +37,29 @@ interface OwnerData {
 
 export default function PGOwnersPage() {
   const router = useRouter();
-  const [owners, setOwners] = useState<OwnerData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [owners, setOwners] = useState<OwnerData[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('cached_superadmin_owners');
+      if (cached) {
+        try { return JSON.parse(cached); } catch (e) {}
+      }
+    }
+    return [];
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return !localStorage.getItem('cached_superadmin_owners');
+    }
+    return true;
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [expandedOwnerId, setExpandedOwnerId] = useState<string | null>(null);
+  
+  // Delete Owner States
+  const [deletingOwner, setDeletingOwner] = useState<OwnerData | null>(null);
+  const [isSendingDeleteEmail, setIsSendingDeleteEmail] = useState(false);
   
   // Edit Owner States
   const [editingOwner, setEditingOwner] = useState<OwnerData | null>(null);
@@ -160,10 +177,12 @@ export default function PGOwnersPage() {
 
   const fetchOwnersData = async () => {
     try {
-      setIsLoading(true);
       const res = await rpcCall('getOwners');
       if (res?.success && res?.data) {
         setOwners(res.data as OwnerData[]);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('cached_superadmin_owners', JSON.stringify(res.data));
+        }
       }
     } catch (err) {
       console.error("Error fetching owners:", err);
@@ -175,6 +194,31 @@ export default function PGOwnersPage() {
   useEffect(() => {
     fetchOwnersData();
   }, []);
+
+  const handleOpenDelete = (owner: OwnerData, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeletingOwner(owner);
+  };
+
+  const handleConfirmDeleteRequest = async () => {
+    if (!deletingOwner) return;
+    setIsSendingDeleteEmail(true);
+    try {
+      const adminEmail = typeof window !== 'undefined' ? (localStorage.getItem('userEmail') || 'admin@raliving.com') : 'admin@raliving.com';
+      const res = await rpcCall('requestPGOwnerDeletion', deletingOwner.id, adminEmail);
+      if (res?.success) {
+        toast.success(res.message || "Confirmation email sent! Please check your email to complete deletion.");
+        setDeletingOwner(null);
+      } else {
+        toast.error(`Failed to send confirmation email: ${res?.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      console.error("Error requesting deletion:", err);
+      toast.error(err.message || "Failed to initiate deletion");
+    } finally {
+      setIsSendingDeleteEmail(false);
+    }
+  };
 
   const toggleStatus = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -597,6 +641,27 @@ export default function PGOwnersPage() {
                           >
                             {owner.status === 'active' ? <Power size={16} /> : <PowerOff size={16} />}
                             <span>{owner.status === 'active' ? 'Active' : 'Disabled'}</span>
+                          </button>
+                          <button
+                            onClick={(e) => handleOpenDelete(owner, e)}
+                            title="Permanently Delete PG Owner"
+                            type="button"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '8px 12px',
+                              borderRadius: '10px',
+                              background: '#fef2f2',
+                              color: '#dc2626',
+                              border: '1px solid #fecaca',
+                              fontWeight: 600,
+                              fontSize: '0.82rem',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <Trash2 size={15} /> Delete
                           </button>
                         </div>
                       </td>
@@ -1139,6 +1204,98 @@ export default function PGOwnersPage() {
                 <AnimatedButton type="submit" form="landing-settings-form" isLoading={isSavingLanding} style={{ background: 'linear-gradient(135deg, #d97706, #b45309)', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem' }}>
                   Save Settings
                 </AnimatedButton>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Delete PG Owner Confirmation Modal */}
+        {deletingOwner && (
+          <div className={styles.modalOverlay} onClick={() => setDeletingOwner(null)}>
+            <motion.div 
+              className={styles.modalCard}
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              style={{ maxWidth: '520px', borderTop: '4px solid #ef4444' }}
+            >
+              <div className={styles.modalHeader}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Trash2 size={20} />
+                  </div>
+                  <div>
+                    <h2 className={styles.modalTitle} style={{ color: '#dc2626' }}>Delete PG Owner</h2>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>Permanent & Irreversible Deletion</p>
+                  </div>
+                </div>
+                <button onClick={() => setDeletingOwner(null)} className={styles.modalCloseBtn} type="button">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className={styles.modalBody} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p style={{ fontSize: '0.92rem', color: '#334155', lineHeight: 1.5, margin: 0 }}>
+                  You are about to permanently delete <strong>{deletingOwner.name}</strong> ({deletingOwner.email}).
+                </p>
+
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', padding: '14px 16px' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#991b1b', marginBottom: '6px' }}>
+                    ⚠️ Cascading Deletion Notice:
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.82rem', color: '#b91c1c', lineHeight: 1.5 }}>
+                    <li>All <strong>{deletingOwner.hostels || 0} hostels</strong> and rooms will be wiped.</li>
+                    <li>All <strong>{deletingOwner.tenants || 0} tenants</strong>, auth accounts, & profiles will be deleted.</li>
+                    <li>All dues, payments, notices, expenses, complaints, and team accounts will be erased from the database.</li>
+                  </ul>
+                </div>
+
+                <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+                  For security, a <strong>confirmation link</strong> will be sent to your admin email. Clicking the link will execute the permanent deletion.
+                </p>
+              </div>
+
+              <div className={styles.modalFooter}>
+                <button 
+                  onClick={() => setDeletingOwner(null)} 
+                  className={styles.modalCancelBtn} 
+                  type="button"
+                  disabled={isSendingDeleteEmail}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteRequest}
+                  disabled={isSendingDeleteEmail}
+                  style={{
+                    background: '#dc2626',
+                    color: 'white',
+                    border: 'none',
+                    padding: '10px 20px',
+                    borderRadius: '10px',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    cursor: isSendingDeleteEmail ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)'
+                  }}
+                >
+                  {isSendingDeleteEmail ? (
+                    <>
+                      <div style={{ width: 16, height: 16, border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                      <span>Sending Confirmation Email...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail size={16} />
+                      <span>Send Confirmation Email</span>
+                    </>
+                  )}
+                </button>
               </div>
             </motion.div>
           </div>

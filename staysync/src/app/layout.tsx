@@ -62,6 +62,14 @@ export default function RootLayout({
               }
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
+                  
+                  // Completely disable mouse wheel inside number inputs to prevent accidental changes
+                  window.addEventListener('wheel', function(event) {
+                    if (event.target && event.target.type === 'number') {
+                      event.preventDefault();
+                    }
+                  }, { passive: false, capture: true });
+
                   const isCapacitor = typeof window !== 'undefined' && 
                     (window.Capacitor !== undefined || 
                     (window.parent && window.parent.Capacitor !== undefined) || 

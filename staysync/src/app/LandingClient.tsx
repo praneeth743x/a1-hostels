@@ -438,11 +438,8 @@ export default function LandingClient({ initialSettings, initialHostels }: Landi
 
   const activeVariant = getTransitionVariants(selectedTransition);
 
-  const isLoggedIn = isMounted ? (localStorage.getItem('isLoggedIn') === 'true') : false;
-  const isExplicitLoggedOut = isMounted ? (sessionStorage.getItem('loggedOut') === 'true') : false;
-  const shouldShowLandingPage = isMounted && platform === 'WEB_BROWSER' && (!isLoggedIn || isExplicitLoggedOut);
-
-  if (!shouldShowLandingPage) {
+  // In installed PWA or Android App, show splash screen while redirecting to mobile login or portal
+  if (isMounted && platform !== 'WEB_BROWSER') {
     return <SplashScreen />;
   }
 

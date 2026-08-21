@@ -30,6 +30,12 @@ import { IndianRupee, X, XCircle } from 'lucide-react';
 
 import { markPaymentPaid, recordPartialPayment, getTenants, collectUpcomingPayment, collectFIFOPayment, getPaymentHistory, updateTenantStatus } from '@/app/actions/pgowner';
 import { rpcCall } from '@/lib/rpc';
+import { 
+  parseMoneyToPaise, 
+  formatPaiseToINR, 
+  paiseToRupees, 
+  calculateTenantFinancialState 
+} from '@/lib/financialEngine';
 
 import { CustomSelect } from '@/components/CustomSelect';
 import { PaymentSuccessModal } from '@/components/PaymentSuccessModal';
@@ -84,157 +90,70 @@ const sortDuesList = (list: any[]) => {
 };
 
 const processDuesData = (rawPendingData: any[], rawTenantsData: any[], rawPaidData: any[] = []) => {
-  const allPendingDocs = [...(rawPendingData || [])];
-  
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const tenantsList = rawTenantsData || [];
+  if (tenantsList.length === 0) return [];
 
-  const groupedMap = new Map<string, any>();
-  
-  const tenantsMap = new Map<string, any>();
-  (rawTenantsData || []).forEach((t: any) => {
+  const duesList: any[] = [];
+
+  tenantsList.forEach((t: any) => {
     const tid = t.id || t.tenant_id;
-    if (tid) tenantsMap.set(tid, t);
-  });
+    if (!tid) return;
 
-  (rawTenantsData || []).forEach((t: any) => {
-    const depositVal = Number(t.security_deposit ?? t.securityDeposit ?? 0);
-    if (depositVal > 0 && t.security_deposit_paid !== true) {
-      const tid = t.id || t.tenant_id;
-      const tenantPossibleIds = new Set([tid, t.mobile].filter(Boolean));
-      
-      const tenantPaidDocs = (rawPaidData || []).filter((pd: any) => tenantPossibleIds.has(pd.tenant_id));
-      const totalPaidDeposit = tenantPaidDocs
-        .filter((pd: any) => pd.type === 'security_deposit' || pd.type === 'security-deposit' || pd.type === 'deposit' || pd.description?.toLowerCase().includes('security deposit') || pd.description?.toLowerCase().includes('deposit'))
-        .reduce((acc: number, pd: any) => acc + (Number(pd.amount_paid || pd.amount) || 0), 0);
-
-      const totalPaidAll = tenantPaidDocs.reduce((acc: number, pd: any) => acc + (Number(pd.amount_paid || pd.amount) || 0), 0);
-      const tenantPendingDocs = allPendingDocs.filter((vp: any) => tenantPossibleIds.has(vp.tenant_id));
-
-      const hasPaidDeposit = t.security_deposit_paid === true || 
-        (totalPaidDeposit >= depositVal) || 
-        (totalPaidAll >= depositVal && tenantPendingDocs.length === 0);
-
-      const hasPendingDeposit = tenantPendingDocs.some((vp: any) => 
-        vp.type === 'security_deposit' || vp.type === 'security-deposit' || vp.type === 'deposit' || vp.description?.toLowerCase().includes('security deposit')
-      );
-
-      if (!hasPaidDeposit && !hasPendingDeposit) {
-        const remainingDeposit = Math.max(0, depositVal - totalPaidDeposit);
-        if (remainingDeposit > 0) {
-          allPendingDocs.push({
-            payment_id: `virtual-deposit-${tid}`,
-            pg_id: t.pg_id,
-            tenant_id: tid,
-            amount: remainingDeposit,
-            original_amount: depositVal,
-            status: 'pending',
-            type: 'security_deposit',
-            month: new Date(t.move_in_date || t.created_at || Date.now()).toLocaleString('default', { month: 'long' }),
-            description: 'Security Deposit',
-            created_at: t.move_in_date || t.created_at || new Date().toISOString(),
-            is_virtual: true
-          });
-        }
-      }
-    }
-
-    // NEW: Centralized virtual rent generation based on payment status
-    const tid = t.id || t.tenant_id;
-    const paymentInfo = getTenantPaymentStatus(t, rawPendingData || [], rawPaidData || []);
-    if (paymentInfo.isVirtual && (paymentInfo.status === 'OVERDUE' || paymentInfo.status === 'CRITICAL' || paymentInfo.status === 'DUE_TODAY')) {
-      const baseRent = Number(t.rent_amount || t.monthly_rent || t.rent || 0);
-      const rentAmount = paymentInfo.virtualRentRemaining !== undefined ? paymentInfo.virtualRentRemaining : baseRent;
-      allPendingDocs.push({
-        payment_id: `virtual-rent-${tid}`,
-        pg_id: t.pg_id,
-        tenant_id: tid,
-        amount: rentAmount,
-        original_amount: baseRent,
-          status: 'pending',
-          type: 'monthly_rent',
-          month: paymentInfo.virtualMonth,
-          description: `Monthly Rent (${paymentInfo.virtualMonth})`,
-          created_at: new Date().toISOString(),
-          due_date: paymentInfo.dueDate ? paymentInfo.dueDate.toISOString() : new Date().toISOString(),
-          is_virtual: true
-        });
-    }
-  });
-
-  if (allPendingDocs.length === 0) return [];
-
-  allPendingDocs.forEach((p: any) => {
-    const tenantId = p.tenant_id || p.tenantId;
-    const tenant = tenantsMap.get(tenantId);
+    const state = calculateTenantFinancialState(t, rawPendingData || [], rawPaidData || []);
     
-    const facePicture = p.facePicture || p.face_picture || tenant?.face_picture || tenant?.facePicture || tenant?.documents?.photo || tenant?.documents?.facePicture || tenant?.documents?.photo_url || tenant?.avatar || tenant?.photo_url || tenant?.photoUrl || null;
-    
-    const tenantStatus = tenant ? (tenant.is_active === false || tenant.status === 'Vacated' || tenant.status === 'VACATED' ? 'Vacated' : (tenant.status === 'notice_period' || tenant.status === 'Notice Period' ? 'Notice Period' : (tenant.status === 'PAUSED' || tenant.status === 'Paused' ? 'Paused' : 'Active'))) : 'Unknown';
-    
-    let dueDate: Date;
-    if (p.due_date) {
-      dueDate = new Date(p.due_date);
-    } else {
-      const createdAt = new Date(p.created_at || Date.now());
-      dueDate = new Date(createdAt);
-      let targetDay = 5;
-      if (p.move_in_date || tenant?.move_in_date) {
-        const checkin = new Date(p.move_in_date || tenant?.move_in_date);
-        if (!isNaN(checkin.getTime())) targetDay = checkin.getDate();
-      }
-      dueDate.setDate(targetDay);
-    }
-    dueDate.setHours(0, 0, 0, 0);
+    // Only show tenants with positive outstanding balance
+    if (state.outstandingPaise <= 0) return;
 
-    const diffTime = today.getTime() - dueDate.getTime();
-    const dueDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const amount = p.pending_balance !== undefined 
-      ? Number(p.pending_balance) 
-      : Math.max(0, Number(p.amount || 0) - Number(p.amount_paid || 0));
+    const tenantStatus = t.is_active === false || t.status === 'Vacated' || t.status === 'VACATED' ? 'Vacated' : (t.status === 'notice_period' || t.status === 'Notice Period' ? 'Notice Period' : (t.status === 'PAUSED' || t.status === 'Paused' ? 'Paused' : 'Active'));
+    const isPaused = tenantStatus === 'Paused';
+    const isVacated = tenantStatus === 'Vacated';
 
-    if (amount <= 0) return; // Skip fully settled charges
+    const facePicture = t.face_picture || t.facePicture || t.documents?.photo || t.documents?.facePicture || t.documents?.photo_url || t.avatar || t.photo_url || t.photoUrl || null;
 
-    if (!groupedMap.has(tenantId)) {
-      groupedMap.set(tenantId, {
-        tenant_id: tenantId,
-        tenant_name: p.tenant_name || tenant?.full_name || tenant?.name || 'Tenant',
-        tenant_phone: p.tenant_phone || tenant?.mobile || tenant?.phone || '',
-        room_number: p.room_number || tenant?.room_number || tenant?.room || 'N/A',
-        tenantStatus,
-        isPaused: tenantStatus === 'Paused',
-        isVacated: tenantStatus === 'Vacated',
-        facePicture,
-        totalAmount: 0,
-        oldestDueDays: dueDays,
-        charges: []
-      });
-    }
+    const charges = state.charges
+      .filter(c => c.remainingPaise > 0)
+      .map(c => ({
+        ...c,
+        id: c.chargeId,
+        payment_id: c.chargeId,
+        amount: paiseToRupees(c.remainingPaise),
+        amount_paise: c.remainingPaise,
+        original_amount: paiseToRupees(c.amountPaise),
+        original_amount_paise: c.amountPaise,
+        amount_paid: paiseToRupees(c.paidPaise),
+        amount_paid_paise: c.paidPaise,
+        dueDays: c.dueDays,
+        isOverdue: c.isOverdue,
+        month: c.billingPeriod || c.description
+      }));
 
-    const group = groupedMap.get(tenantId);
-    group.totalAmount += amount;
-    if (dueDays > group.oldestDueDays) {
-      group.oldestDueDays = dueDays;
-    }
-    if (!group.facePicture && facePicture) {
-      group.facePicture = facePicture;
-    }
-    group.charges.push({ ...p, amount, dueDays });
+    if (charges.length === 0) return;
+
+    const outstandingRupees = paiseToRupees(state.outstandingPaise);
+    const oldestDueDays = state.daysOverdue;
+
+    duesList.push({
+      tenant_id: tid,
+      tenant_name: t.full_name || t.name || 'Tenant',
+      tenant_phone: t.mobile || t.phone || '',
+      room_number: t.room_number || t.room || 'N/A',
+      tenantStatus,
+      isPaused,
+      isVacated,
+      facePicture,
+      totalAmount: outstandingRupees,
+      amount: outstandingRupees,
+      amount_paise: state.outstandingPaise,
+      oldestDueDays,
+      dueDays: oldestDueDays,
+      isOverdue: oldestDueDays > 0,
+      payment_id: tid,
+      month: charges.length > 1 ? `${charges.length} Pending Charges` : charges[0]?.month || 'Rent',
+      charges
+    });
   });
 
-  const processed = Array.from(groupedMap.values()).map(g => {
-    g.charges.sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-    return {
-      ...g,
-      amount: g.totalAmount,
-      dueDays: g.oldestDueDays,
-      isOverdue: g.oldestDueDays > 0,
-      payment_id: g.tenant_id,
-      month: g.charges.length > 1 ? `${g.charges.length} Pending Charges` : g.charges[0]?.month || 'Unknown'
-    };
-  });
-
-  return sortDuesList(processed);
+  return sortDuesList(duesList);
 };
 
 function DuesPageContent() {
@@ -482,14 +401,10 @@ function DuesPageContent() {
     const tenantId = due.tenant_id || due.payment_id;
     if (remindingTenantId) return; // prevent double-click
 
-    const isRemindEligible = due.isOverdue || due.dueDays === 0 || due.dueDays === -1;
-    if (!isRemindEligible) {
-      return;
-    }
-
     if (!due.tenant_phone) {
+      alert("Tenant does not have a valid mobile number recorded.");
       setRemindFailedId(tenantId);
-      setTimeout(() => setRemindFailedId(null), 2000);
+      setTimeout(() => setRemindFailedId(null), 2500);
       return;
     }
 
@@ -512,10 +427,10 @@ function DuesPageContent() {
 
       const res = await sendRentReminderAction(
         due.tenant_phone,
-        due.tenant_name,
+        due.tenant_name || 'Tenant',
         due.amount,
         due.month || 'this month',
-        due.payment_id,
+        due.payment_id || `INV-${Date.now().toString().slice(-6)}`,
         statusType,
         overdueDays,
         due.room_number || 'N/A',
@@ -525,14 +440,16 @@ function DuesPageContent() {
 
       if (res.success) {
         setRemindedTenantId(tenantId);
-        setTimeout(() => setRemindedTenantId(null), 2500);
+        setTimeout(() => setRemindedTenantId(null), 3000);
       } else {
+        alert("Failed to send WhatsApp reminder: " + (res.error || 'Please check number in Meta manager.'));
         setRemindFailedId(tenantId);
-        setTimeout(() => setRemindFailedId(null), 2500);
+        setTimeout(() => setRemindFailedId(null), 3000);
       }
-    } catch {
+    } catch (err: any) {
+      alert("Failed to send WhatsApp reminder: " + (err.message || 'Please try again.'));
       setRemindFailedId(tenantId);
-      setTimeout(() => setRemindFailedId(null), 2500);
+      setTimeout(() => setRemindFailedId(null), 3000);
     } finally {
       setRemindingTenantId(null);
     }
@@ -607,7 +524,14 @@ function DuesPageContent() {
     }
 
     setIsCollecting(true);
-    const finalCollected = typeof collectedAmount === 'number' ? collectedAmount : due.amount;
+    const amountPaise = parseMoneyToPaise(collectedAmount !== '' ? collectedAmount : due.amount);
+    if (amountPaise <= 0) {
+      alert("Please enter a valid amount greater than zero.");
+      setIsCollecting(false);
+      return;
+    }
+
+    const finalCollectedRupees = paiseToRupees(amountPaise);
     const pgId = tenants.find(t => t.tenant_id === due.tenant_id)?.pg_id || localStorage.getItem('activePgId') || '';
 
     try {
@@ -630,8 +554,9 @@ function DuesPageContent() {
       }
 
       const selectedPaymentIds = selectedIndices.map(idx => due.charges?.[idx]?.payment_id || due.charges?.[idx]?.id).filter(Boolean);
+      const idempotencyKey = `idemp_${due.tenant_id}_${amountPaise}_${Date.now()}`;
 
-      const res = await rpcCall('collectFIFOPayment', due.tenant_id, finalCollected, paymentMethod, pgId, selectedPaymentIds, collectorUid, 'Owner', 0);
+      const res = await rpcCall('collectFIFOPayment', due.tenant_id, finalCollectedRupees, paymentMethod, pgId, selectedPaymentIds, collectorUid, 'Owner', 0, idempotencyKey);
 
       if (res?.success) {
         setExpandedCardId(null);
@@ -640,7 +565,7 @@ function DuesPageContent() {
         if (ownerId) fetchDues(ownerId);
         notifyHostelDataChanged(pgId);
         setSuccessModalData({
-          amount: finalCollected || 0,
+          amount: finalCollectedRupees,
           tenantName: due.tenant_name || due.full_name || 'Tenant',
           roomNumber: due.room_number || due.room || '',
           paymentMethod: paymentMethod,
@@ -660,10 +585,9 @@ function DuesPageContent() {
     e.preventDefault();
     if (isCollecting) return;
 
-    const currentCollected = typeof collectedAmount === 'number' ? collectedAmount : 0;
-
-    if (currentCollected < 0) {
-      alert("Please enter a valid non-negative amount.");
+    const amountPaise = parseMoneyToPaise(collectedAmount);
+    if (amountPaise <= 0) {
+      alert("Please enter a valid amount greater than zero.");
       return;
     }
 
@@ -673,8 +597,8 @@ function DuesPageContent() {
     }
 
     setIsCollecting(true);
+    const amountToCollectRupees = paiseToRupees(amountPaise);
     const pgId = tenants.find(t => t.tenant_id === due.tenant_id)?.pg_id || localStorage.getItem('activePgId') || '';
-    const amountToCollect = collectedAmount === '' ? 0 : collectedAmount;
 
     try {
       const collectorUid = auth.currentUser?.uid || '';
@@ -696,8 +620,9 @@ function DuesPageContent() {
       }
 
       const selectedPaymentIds = selectedIndices.map(idx => due.charges?.[idx]?.payment_id || due.charges?.[idx]?.id).filter(Boolean);
+      const idempotencyKey = `idemp_${due.tenant_id}_${amountPaise}_${Date.now()}`;
 
-      const res = await rpcCall('collectFIFOPayment', due.tenant_id, amountToCollect, paymentMethod, pgId, selectedPaymentIds, collectorUid, 'Owner', 0);
+      const res = await rpcCall('collectFIFOPayment', due.tenant_id, amountToCollectRupees, paymentMethod, pgId, selectedPaymentIds, collectorUid, 'Owner', 0, idempotencyKey);
 
       if (res?.success) {
         setExpandedCardId(null);
@@ -706,7 +631,7 @@ function DuesPageContent() {
         if (ownerId) fetchDues(ownerId);
         notifyHostelDataChanged(pgId);
         setSuccessModalData({
-          amount: amountToCollect || 0,
+          amount: amountToCollectRupees,
           tenantName: due.tenant_name || due.full_name || 'Tenant',
           roomNumber: due.room_number || due.room || '',
           paymentMethod: paymentMethod,
@@ -1328,17 +1253,10 @@ function DuesPageContent() {
                   {!due.isFullyPaid && (
                     <div className={styles.cardBottom}>
                       <button 
-                        className={`${styles.remindBtn} ${!isRemindEligible ? styles.remindLocked : ''} ${remindedTenantId === (due.tenant_id || due.payment_id) ? styles.remindSuccess : ''} ${remindFailedId === (due.tenant_id || due.payment_id) ? styles.remindFailed : ''}`}
-                        onClick={() => isRemindEligible && handleRemind(due)}
-                        disabled={!isRemindEligible || remindingTenantId === (due.tenant_id || due.payment_id)}
-                        style={{
-                          opacity: isRemindEligible ? 1 : 0.55,
-                          cursor: isRemindEligible ? 'pointer' : 'not-allowed',
-                          background: isRemindEligible ? undefined : '#f1f5f9',
-                          color: isRemindEligible ? undefined : '#64748b',
-                          border: isRemindEligible ? undefined : '1px solid #cbd5e1'
-                        }}
-                        title={!isRemindEligible ? 'Reminder is locked until due date' : undefined}
+                        className={`${styles.remindBtn} ${remindedTenantId === (due.tenant_id || due.payment_id) ? styles.remindSuccess : ''} ${remindFailedId === (due.tenant_id || due.payment_id) ? styles.remindFailed : ''}`}
+                        onClick={() => handleRemind(due)}
+                        disabled={remindingTenantId === (due.tenant_id || due.payment_id)}
+                        title={!due.tenant_phone ? 'No phone number' : 'Send WhatsApp Reminder'}
                       >
                         {remindingTenantId === (due.tenant_id || due.payment_id) ? (
                           <>
@@ -1371,11 +1289,6 @@ function DuesPageContent() {
                             <XCircle size={15} />
                             {!due.tenant_phone ? 'No Phone' : 'Failed'}
                           </motion.div>
-                        ) : !isRemindEligible ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Lock size={14} color="#64748b" />
-                            <span>Locked</span>
-                          </div>
                         ) : (
                           <>
                             <WhatsappIcon size={15} fill="#25D366" />

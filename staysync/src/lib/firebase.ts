@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, setPersistence, indexedDBLocalPersistence } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -16,9 +16,11 @@ console.log("🔥 Firebase Config Loaded. API Key:", firebaseConfig.apiKey === "
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 export const auth = getAuth(app);
-// Explicitly set persistence to LOCAL (survives browser restarts) - client only
+// Explicitly set persistence to browserLocalPersistence (IndexedDB + LocalStorage fallback for iOS Safari)
 if (typeof window !== 'undefined') {
-  setPersistence(auth, indexedDBLocalPersistence).catch(console.error);
+  setPersistence(auth, browserLocalPersistence).catch(() => {
+    setPersistence(auth, indexedDBLocalPersistence).catch(console.error);
+  });
 }
 
 export const db = getFirestore(app);

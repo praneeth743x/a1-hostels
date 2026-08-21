@@ -131,19 +131,26 @@ export default function MobileLoginPage() {
       if (!roleStr) {
         const fetchedRole = await rpcCall('getResolvedRole', userId, userEmail);
 
-        if (!fetchedRole || (typeof fetchedRole === 'object' && fetchedRole.error)) {
-          throw new Error((typeof fetchedRole === 'object' && fetchedRole.error) || "Role not found. Please contact support.");
+        if (fetchedRole && typeof fetchedRole === 'string') {
+          roleStr = fetchedRole;
+        } else if (fetchedRole && typeof fetchedRole === 'object' && !fetchedRole.error) {
+          roleStr = fetchedRole.role;
         }
-
-        roleStr = typeof fetchedRole === 'string' ? fetchedRole : fetchedRole.role;
       }
 
-      const finalRole = roleStr || 'tenant';
+      if (!roleStr) {
+        const meta = await rpcCall('getLoginAuthMeta', userId, userEmail);
+        if (meta?.role) {
+          roleStr = meta.role;
+        }
+      }
+
+      const finalRole = roleStr || 'pg_owner';
       localStorage.setItem('isLoggedIn', 'true');
       localStorage.setItem('userUid', userId);
       localStorage.setItem('userRole', finalRole);
 
-      const target = finalRole === 'super_admin' ? '/superadmin/owners' : finalRole === 'team_member' ? '/teammember/dashboard' : finalRole === 'pg_owner' ? '/pgowner/dashboard' : '/tenant';
+      const target = finalRole === 'super_admin' ? '/superadmin/owners' : finalRole === 'team_member' ? '/teammember/dashboard' : finalRole === 'tenant' ? '/tenant' : '/pgowner/dashboard';
       
       try {
         router.replace(target);
@@ -154,7 +161,7 @@ export default function MobileLoginPage() {
         if (typeof window !== 'undefined' && window.location.pathname === '/moblogin') {
           window.location.href = target;
         }
-      }, 300);
+      }, 200);
     } catch (e: any) {
       console.error("Failed to fetch role:", e);
       setError(e.message || "Failed to resolve user role.");
@@ -175,13 +182,8 @@ export default function MobileLoginPage() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       
-      const isWebView = typeof navigator !== 'undefined' && 
-        ((navigator.userAgent || '').toLowerCase().includes('wv') || 
-         (navigator.userAgent || '').toLowerCase().includes('fbav') || 
-         (navigator.userAgent || '').toLowerCase().includes('instagram'));
-      const isCapacitor = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
-      
-      let user;
+      const isCapacitor = typeof window !== 'undefined' && Boolean((window as any).Capacitor || (window as any).isNativeApp);
+      let user: any = null;
       
       if (isCapacitor) {
         // Native Google Sign-In using Capacitor plugin
@@ -196,17 +198,21 @@ export default function MobileLoginPage() {
         const credential = GoogleAuthProvider.credential(idToken);
         const webResult = await signInWithCredential(auth, credential);
         user = webResult.user;
-      } else if (isWebView) {
-        // In-app WebViews (FB/Instagram/etc.): Use Redirect since popups are blocked/disabled
-        await signInWithRedirect(auth, provider);
-        return; // Execution stops here as browser redirects
       } else {
-        // All web browsers (Desktop Chrome/Safari, Mobile Chrome/Safari, PWA Standalone): Use Popup for better UX
-        const result = await signInWithPopup(auth, provider);
-        user = result.user;
+        try {
+          const result = await signInWithPopup(auth, provider);
+          user = result.user;
+        } catch (popupErr: any) {
+          if (popupErr?.code === 'auth/popup-blocked' || popupErr?.code === 'auth/cancelled-popup-request') {
+            console.log("Popup blocked on mobile/iOS Safari, switching to redirect...");
+            await signInWithRedirect(auth, provider);
+            return;
+          }
+          throw popupErr;
+        }
       }
 
-      if (!user.email) throw new Error("Google account must have an email.");
+      if (!user?.email) throw new Error("Google account must have an email.");
 
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem('loggedOut');
@@ -315,7 +321,7 @@ export default function MobileLoginPage() {
     }
   };
 
-  if (isLoadingAuth || (showSplash && !redirectFired) || (authStatus === 'READY' && currentUser)) {
+  if (!loading && (showSplash && !redirectFired)) {
     return <SplashScreen />;
   }
 

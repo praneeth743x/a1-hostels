@@ -17,6 +17,12 @@ import { sendManualTenantNotificationAction, toggleTenantWhatsAppAction } from '
 import { AvatarImage } from '@/components/AvatarImage';
 import { useHostel } from '@/context/HostelContext';
 import { notifyHostelDataChanged } from '@/hooks/useHostelData';
+import { 
+  parseMoneyToPaise, 
+  formatPaiseToINR, 
+  paiseToRupees, 
+  calculateTenantFinancialState 
+} from '@/lib/financialEngine';
 
 export default function TenantDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const confirm = useConfirm();
@@ -119,26 +125,27 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
   const [isSubmittingCharge, setIsSubmittingCharge] = useState(false);
 
   const handleRecordPaymentSubmit = async () => {
-    if (!addPaymentAmount || Number(addPaymentAmount) <= 0) {
+    const amountPaise = parseMoneyToPaise(addPaymentAmount);
+    if (amountPaise <= 0) {
       toast.error("Please enter a valid payment amount.");
       return;
     }
     setIsSubmittingPayment(true);
     const collectorUid = currentUser?.uid || '';
-    const collectorName = userProfile?.full_name || userProfile?.name || currentUser?.displayName || 'Staff';
-
-    const amount = Number(addPaymentAmount);
+    const amountRupees = paiseToRupees(amountPaise);
+    const idempotencyKey = `idemp_${resolvedParams.id}_${amountPaise}_${Date.now()}`;
 
     try {
       const res = await rpcCall('collectFIFOPayment', 
         resolvedParams.id, 
-        amount, 
+        amountRupees, 
         addPaymentMethod, 
         tenant.pg_id, 
         selectedDueId ? [selectedDueId] : undefined, 
         collectorUid, 
         userProfile?.role || 'Owner', 
-        0
+        0,
+        idempotencyKey
       );
 
       if (res?.success) {
@@ -146,7 +153,7 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
         setAddPaymentAmount('');
         setAddPaymentNotes('');
         setSelectedDueId(null);
-        toast.success(`₹${amount.toLocaleString('en-IN')} payment recorded successfully!`);
+        toast.success(`₹${amountRupees.toLocaleString('en-IN')} payment recorded successfully!`);
         loadPaymentsAndLogs();
         notifyHostelDataChanged();
       } else {
@@ -466,53 +473,34 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
     load();
   }, [resolvedParams.id]);
 
-  let rentStatus = 'Pending';
-  const isVacated = tenant?.is_active === false || tenant?.status === 'vacated' || tenant?.status === 'VACATED';
-
-  const allPendingDues = useMemo(() => {
-    const pending = [...tenantDues].filter((d: any) => d.status === 'pending');
-    
-    if (tenant) {
-      const depositVal = Number(tenant.security_deposit ?? tenant.deposit ?? tenant.advance ?? 0);
-      if (depositVal > 0 && tenant.security_deposit_paid !== true) {
-        const totalPaidDeposit = (paymentHistory || [])
-          .filter((pd: any) => pd.type === 'security_deposit' || pd.type === 'security-deposit' || pd.type === 'deposit')
-          .reduce((acc: number, pd: any) => acc + (Number(pd.amount_paid || pd.amount || 0)), 0);
-        
-        const hasPendingDepositInDues = pending.some((d: any) => d.type === 'security_deposit' || d.type === 'security-deposit' || d.type === 'deposit');
-        
-        if (!hasPendingDepositInDues) {
-          const remainingDeposit = Math.max(0, depositVal - totalPaidDeposit);
-          if (remainingDeposit > 0) {
-            pending.push({
-              payment_id: `virtual-deposit-${tenant.id || tenant.pg_id}`,
-              amount: remainingDeposit,
-              original_amount: depositVal,
-              paid_amount: 0,
-              status: 'pending',
-              type: 'security_deposit',
-              created_at: tenant.move_in_date || tenant.created_at || Date.now(),
-              is_virtual: true
-            });
-          }
-        }
-      }
-    }
-    return pending;
+  const financialState = useMemo(() => {
+    if (!tenant) return null;
+    return calculateTenantFinancialState(tenant, tenantDues || [], paymentHistory || []);
   }, [tenant, tenantDues, paymentHistory]);
 
-  const presentDueAmount = allPendingDues.reduce((sum: number, p: any) => sum + Math.max(0, Number(p.amount || 0) - Number(p.paid_amount || 0)), 0);
+  const presentDueAmount = financialState ? paiseToRupees(financialState.outstandingPaise) : 0;
+  const isVacated = tenant?.is_active === false || tenant?.status === 'vacated' || tenant?.status === 'VACATED';
+  const rentStatus = isVacated || presentDueAmount === 0 
+    ? 'Paid' 
+    : (financialState?.charges.some(c => c.paidPaise > 0) ? 'Partial' : 'Pending');
 
-  if (isVacated || presentDueAmount === 0) {
-    rentStatus = 'Paid';
-  } else if (paymentHistory && paymentHistory.length > 0) {
-    const currentMonthStr = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
-    const hasPaidCurrentMonth = paymentHistory.some((p: any) => p.month === currentMonthStr && p.status === 'paid');
-    const hasPartialCurrentMonth = paymentHistory.some((p: any) => p.month === currentMonthStr && p.is_partial);
-    
-    if (hasPaidCurrentMonth) rentStatus = 'Paid';
-    else if (hasPartialCurrentMonth) rentStatus = 'Partial';
-  }
+  const allPendingDues = useMemo(() => {
+    if (!financialState) return [];
+    return financialState.charges
+      .filter(c => c.remainingPaise > 0)
+      .map(c => ({
+        ...c,
+        payment_id: c.chargeId,
+        id: c.chargeId,
+        amount: paiseToRupees(c.remainingPaise),
+        original_amount: paiseToRupees(c.amountPaise),
+        paid_amount: paiseToRupees(c.paidPaise),
+        status: 'pending',
+        type: c.type,
+        created_at: c.createdAt,
+        month: c.billingPeriod || c.description
+      }));
+  }, [financialState]);
 
   const combinedTimeline = useMemo(() => {
     const events: any[] = [];
@@ -1792,7 +1780,7 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
                         </h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           {pendingList.map((p, idx) => {
-                            const title = p.description || (p.type === 'security_deposit' || p.type === 'security-deposit' ? 'Security Deposit' : `Monthly Rent (${p.month || 'Current'})`);
+                            const title = p.description || (p.type === 'security_deposit' ? 'Security Deposit' : `Monthly Rent (${p.month || 'Current'})`);
                             const amt = Number(p.amount || 0);
                             return (
                               <div key={idx} style={{ background: '#ffffff', border: '1px solid #fee2e2', borderRadius: '10px', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
@@ -1801,7 +1789,7 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
                                     {title}
                                   </div>
                                   <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
-                                    Due Date: {new Date(p.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    Due Date: {new Date((p as any).due_date || p.dueDate || p.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                                   </div>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1812,7 +1800,7 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
                                     type="button"
                                     onClick={() => {
                                       setAddPaymentAmount(String(amt));
-                                      if (p.type === 'security_deposit' || p.type === 'security-deposit') setAddPaymentCategory('security-deposit');
+                                      if (p.type === 'security_deposit') setAddPaymentCategory('security-deposit');
                                       else setAddPaymentCategory('rent');
                                       if (p.month) setAddPaymentMonth(p.month);
                                       setSelectedDueId(p.payment_id || p.id);

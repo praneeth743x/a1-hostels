@@ -21,27 +21,30 @@ export default function SuperAdminLayout({
   const router = useRouter();
   const [optimisticPath, setOptimisticPath] = useState<string | null>(null);
   
-  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean | null>(null);
-  const [isVerifying, setIsVerifying] = useState<boolean>(true);
-  const [logoUrl, setLogoUrl] = useState<string>('/himalaya_logo.png');
+  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('userRole') === 'super_admin' ? true : null;
+    }
+    return null;
+  });
+  const [isVerifying, setIsVerifying] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('userRole') === 'super_admin' ? false : true;
+    }
+    return true;
+  });
+  const [logoUrl, setLogoUrl] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('cachedLogoUrl') || '/himalaya_logo.png';
+    }
+    return '/himalaya_logo.png';
+  });
 
   useEffect(() => {
     setOptimisticPath(null);
   }, [pathname]);
 
   useEffect(() => {
-    // Fast-path local storage check on client mount
-    if (typeof window !== 'undefined') {
-      const cachedLogo = localStorage.getItem('cachedLogoUrl');
-      if (cachedLogo) setLogoUrl(cachedLogo);
-
-      const cachedRole = localStorage.getItem('userRole');
-      if (cachedRole === 'super_admin') {
-        setIsSuperAdmin(true);
-        setIsVerifying(false);
-      }
-    }
-
     // Fetch website logo from system_settings
     getDoc(doc(db, 'system_settings', 'landing')).then((snap) => {
       if (snap.exists() && snap.data()?.logoUrl) {
@@ -51,8 +54,26 @@ export default function SuperAdminLayout({
       }
     }).catch(() => {});
 
+    let nullUserGraceTimeout: NodeJS.Timeout | null = null;
     const unsub = onAuthStateChanged(auth, async (user) => {
+      if (nullUserGraceTimeout) { clearTimeout(nullUserGraceTimeout); nullUserGraceTimeout = null; }
       if (!user) {
+        // Check if there's a cached session — iOS Safari auth can be slow to restore
+        const hasLocalSession = typeof window !== 'undefined' && localStorage.getItem('isLoggedIn') === 'true' && localStorage.getItem('userRole') === 'super_admin';
+        if (hasLocalSession) {
+          // Wait for auth to settle before kicking user out
+          nullUserGraceTimeout = setTimeout(() => {
+            if (!auth.currentUser) {
+              setIsSuperAdmin(false);
+              setIsVerifying(false);
+              localStorage.removeItem('isLoggedIn');
+              localStorage.removeItem('userRole');
+              localStorage.removeItem('userUid');
+              router.replace('/login');
+            }
+          }, 5000);
+          return;
+        }
         setIsSuperAdmin(false);
         setIsVerifying(false);
         localStorage.removeItem('isLoggedIn');
@@ -88,7 +109,10 @@ export default function SuperAdminLayout({
       }
     });
 
-    return unsub;
+    return () => {
+      unsub();
+      if (nullUserGraceTimeout) clearTimeout(nullUserGraceTimeout);
+    };
   }, []);
 
   if (isVerifying && isSuperAdmin === null) {

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Building, Bell, X, ShieldAlert, CreditCard } from 'lucide-react';
+import { Building, Bell, X, ShieldAlert, CreditCard, Loader2 } from 'lucide-react';
 import { getTenantDashboardData } from '@/app/actions/tenant';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import TenantHeaderTitle from './TenantHeaderTitle';
@@ -13,7 +13,6 @@ import styles from './tenant.module.css';
 import AccessDeniedCard from '@/components/AccessDeniedCard';
 import { routePrefetcher } from '@/lib/routePrefetcher';
 import { useHostel } from '@/context/HostelContext';
-import { SplashScreen } from '@/components/SplashScreen';
 
 export default function TenantLayout({
   children,
@@ -27,36 +26,64 @@ export default function TenantLayout({
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const [isMounted, setIsMounted] = useState<boolean>(false);
-  const { isLoadingAuth, authStatus, currentUser } = useHostel();
+  const { isLoadingAuth, authStatus, currentUser, userProfile } = useHostel();
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  if (isLoadingAuth) {
-    return <SplashScreen />;
-  }
-
-  // Prevent flashing portal UI if unauthenticated before redirect takes over
-  if (authStatus === 'UNAUTHENTICATED' || (authStatus === 'READY' && !currentUser)) {
-    return <SplashScreen />;
-  }
-
   useEffect(() => {
-    routePrefetcher.prefetchIdle(router, [
-      '/tenant?tab=Dashboard',
-      '/tenant?tab=Payments',
-      '/tenant?tab=Notices',
-      '/tenant?tab=Complaints',
-      '/tenant?tab=Profile',
-      '/tenant/notifications',
-      '/tenant/profile'
-    ]);
-  }, [router]);
+    if (isMounted) {
+      const cachedRole = localStorage.getItem('userRole');
+      const effectiveRole = userProfile?.role || cachedRole;
+      if (effectiveRole === 'pg_owner' || effectiveRole === 'owner' || effectiveRole === 'team_member') {
+        router.replace('/pgowner/dashboard');
+      } else if (effectiveRole === 'super_admin') {
+        router.replace('/superadmin/owners');
+      }
+    }
+  }, [isMounted, userProfile, router]);
 
   const cachedRole = isMounted ? localStorage.getItem('userRole') : null;
-  if (isMounted && (cachedRole === 'pg_owner' || cachedRole === 'owner' || cachedRole === 'team_member')) {
-    return <AccessDeniedCard reason="unauthorized_role" currentRole="pg_owner" requiredRole="tenant" title="403 - Access Denied" subtitle="You are currently signed in as a PG Owner/Staff. This portal is reserved for Tenants." />;
+  const effectiveRole = userProfile?.role || cachedRole;
+  if (isMounted && (effectiveRole === 'pg_owner' || effectiveRole === 'owner' || effectiveRole === 'team_member')) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        width: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#FAFAFC',
+        color: '#0F172A'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Loader2 size={24} className="animate-spin" color="#4F46E5" />
+          <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#475569' }}>Redirecting to PG Owner Dashboard...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoadingAuth) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        width: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#FAFAFC',
+        color: '#0F172A'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Loader2 size={24} className="animate-spin" color="#4F46E5" />
+          <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#475569' }}>Verifying Tenant Portal Access...</span>
+        </div>
+      </div>
+    );
   }
 
   return (

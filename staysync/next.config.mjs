@@ -14,10 +14,6 @@ const nextConfig = {
   output: 'standalone',
   serverExternalPackages: ['firebase-admin'],
   experimental: {
-    staleTimes: {
-      dynamic: 300,
-      static: 1800,
-    },
     serverActions: {
       bodySizeLimit: '10mb',
       allowedOrigins: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID

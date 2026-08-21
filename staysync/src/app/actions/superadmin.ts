@@ -3,6 +3,7 @@
 import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import { revalidatePath, revalidateTag, unstable_cache } from 'next/cache';
 import { isHostelActive, isTenantActiveForBusiness } from '@/lib/repository';
+import { sendPGOwnerDeletionConfirmationEmail } from '@/lib/email';
 
 export async function getUserRole(userId: string) {
   try {
@@ -294,17 +295,18 @@ export async function registerNewPGOwner(data: {
 }) {
   try {
     const formattedPhone = `+91${data.mobile.replace(/\D/g, '').slice(0, 10)}`;
+    const cleanEmail = (data.email || '').trim().toLowerCase();
     let userId;
 
     try {
       const userRecord = await adminAuth.createUser({
-        email: data.email,
+        email: cleanEmail,
         displayName: data.name,
       });
       userId = userRecord.uid;
     } catch (authError: any) {
       if (authError.code === 'auth/email-already-exists') {
-        const userRecord = await adminAuth.getUserByEmail(data.email);
+        const userRecord = await adminAuth.getUserByEmail(cleanEmail);
         userId = userRecord.uid;
       } else {
         throw authError;
@@ -313,12 +315,15 @@ export async function registerNewPGOwner(data: {
 
     if (!userId) throw new Error("Failed to generate Auth User ID for PG Owner");
 
+    // Give PG Owner immediate full access with active status
     await adminDb.collection('user_profiles').doc(userId).set({
       full_name: data.name,
-      email: data.email,
+      email: cleanEmail,
       phone: data.mobile,
       role: 'pg_owner',
-      accountInitialized: false,
+      status: 'active',
+      is_active: true,
+      accountInitialized: true,
       created_at: new Date().toISOString()
     }, { merge: true });
 
@@ -327,6 +332,142 @@ export async function registerNewPGOwner(data: {
   } catch (error: any) {
     console.error("Error registering PG Owner:", error);
     return { success: false, error: error.message };
+  }
+}
+
+export async function requestPGOwnerDeletion(ownerId: string, adminEmail?: string) {
+  try {
+    const ownerDoc = await adminDb.collection('user_profiles').doc(ownerId).get();
+    if (!ownerDoc.exists) return { success: false, error: "PG Owner profile not found." };
+    const ownerData = ownerDoc.data() as any;
+
+    const propsSnap = await adminDb.collection('properties').where('owner_id', '==', ownerId).get();
+    const propIds = propsSnap.docs.map(d => d.id);
+
+    let totalTenants = 0;
+    for (const pId of propIds) {
+      const tSnap = await adminDb.collection('tenants').where('pg_id', '==', pId).get();
+      totalTenants += tSnap.docs.length;
+    }
+
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes expiration
+
+    await adminDb.collection('deletion_requests').doc(token).set({
+      type: 'pg_owner',
+      ownerId,
+      ownerEmail: ownerData.email || '',
+      ownerName: ownerData.full_name || 'PG Owner',
+      adminEmail: adminEmail || 'admin@raliving.com',
+      expiresAt,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    });
+
+    const targetAdminEmail = adminEmail || '25r21a05e2@mlrit.ac.in';
+    const emailSent = await sendPGOwnerDeletionConfirmationEmail(
+      targetAdminEmail,
+      ownerData.full_name || 'PG Owner',
+      ownerData.email || '',
+      token,
+      propIds.length,
+      totalTenants
+    );
+
+    return { 
+      success: true, 
+      message: 'Confirmation email sent. Please check your inbox and click the link to confirm permanent deletion.' 
+    };
+  } catch (err: any) {
+    console.error("Error requesting PG Owner deletion:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deletePGOwnerPermanently(ownerId: string) {
+  try {
+    if (!ownerId) return { success: false, error: "ownerId is required" };
+
+    // 1. Find all properties belonging to this PG Owner
+    const propsSnap = await adminDb.collection('properties')
+      .where('owner_id', '==', ownerId)
+      .get();
+    const propIds = propsSnap.docs.map(d => d.id);
+
+    // 2. Cascade delete every property and all related sub-data
+    for (const propId of propIds) {
+      // Delete rooms
+      const roomsSnap = await adminDb.collection('rooms').where('pg_id', '==', propId).get();
+      for (const rDoc of roomsSnap.docs) {
+        await rDoc.ref.delete();
+      }
+
+      // Delete tenants and their auth accounts / user_profiles
+      const tenantsSnap = await adminDb.collection('tenants').where('pg_id', '==', propId).get();
+      for (const tDoc of tenantsSnap.docs) {
+        const tData = tDoc.data();
+        if (tData.email) {
+          const authUser = await adminAuth.getUserByEmail(tData.email).catch(() => null);
+          if (authUser) await adminAuth.deleteUser(authUser.uid).catch(() => {});
+          const profSnap = await adminDb.collection('user_profiles').where('email', '==', tData.email).get();
+          for (const p of profSnap.docs) await p.ref.delete();
+        }
+        await tDoc.ref.delete();
+      }
+
+      // Delete payments & dues
+      const paymentsSnap = await adminDb.collection('payments').where('pg_id', '==', propId).get();
+      for (const pDoc of paymentsSnap.docs) await pDoc.ref.delete();
+
+      const duesSnap = await adminDb.collection('dues').where('pg_id', '==', propId).get();
+      for (const dDoc of duesSnap.docs) await dDoc.ref.delete();
+
+      // Delete notices
+      const noticesSnap = await adminDb.collection('notices').where('pg_id', '==', propId).get();
+      for (const nDoc of noticesSnap.docs) await nDoc.ref.delete();
+
+      // Delete complaints
+      const complaintsSnap = await adminDb.collection('complaints').where('pg_id', '==', propId).get();
+      for (const cDoc of complaintsSnap.docs) await cDoc.ref.delete();
+
+      // Delete expenses
+      const expensesSnap = await adminDb.collection('expenses').where('pg_id', '==', propId).get();
+      for (const eDoc of expensesSnap.docs) await eDoc.ref.delete();
+
+      // Delete food_menu
+      const foodSnap = await adminDb.collection('food_menu').where('pg_id', '==', propId).get();
+      for (const fDoc of foodSnap.docs) await fDoc.ref.delete();
+
+      // Delete property document
+      await adminDb.collection('properties').doc(propId).delete();
+    }
+
+    // 3. Delete all team members belonging to this owner
+    const teamSnap = await adminDb.collection('team_members').where('owner_id', '==', ownerId).get();
+    for (const tm of teamSnap.docs) {
+      const tmData = tm.data();
+      if (tmData.email) {
+        const authUser = await adminAuth.getUserByEmail(tmData.email).catch(() => null);
+        if (authUser) await adminAuth.deleteUser(authUser.uid).catch(() => {});
+        const pSnap = await adminDb.collection('user_profiles').where('email', '==', tmData.email).get();
+        for (const p of pSnap.docs) await p.ref.delete();
+      }
+      await tm.ref.delete();
+    }
+
+    // 4. Delete the PG Owner Auth user
+    await adminAuth.deleteUser(ownerId).catch((err) => {
+      console.warn("Could not delete Auth user for ownerId:", ownerId, err.message);
+    });
+
+    // 5. Delete PG Owner user_profiles document
+    await adminDb.collection('user_profiles').doc(ownerId).delete();
+
+    revalidatePath('/superadmin/owners');
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error in deletePGOwnerPermanently:", err);
+    return { success: false, error: err.message };
   }
 }
 

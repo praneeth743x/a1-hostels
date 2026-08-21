@@ -32,6 +32,12 @@ import { useHostel } from '@/context/HostelContext';
 import { getTenantPaymentStatus } from '@/lib/paymentStatus';
 import { useHostelData, notifyHostelDataChanged } from '@/hooks/useHostelData';
 import { getAppState } from '@/lib/appStateStore';
+import { 
+  parseMoneyToPaise, 
+  formatPaiseToINR, 
+  paiseToRupees, 
+  calculateTenantFinancialState 
+} from '@/lib/financialEngine';
 
 import { Suspense } from 'react';
 function HistoryPageContent() {
@@ -103,7 +109,7 @@ function HistoryPageContent() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const docs = snapshot.docs
           .map(d => ({ payment_id: d.id, ...d.data() }))
-          .filter((p: any) => p.status === 'paid');
+          .filter((p: any) => p.status === 'paid' || p.status === 'reversed');
         
         setRealtimePayments(docs);
         notifyHostelDataChanged(selectedPgId);
@@ -134,11 +140,23 @@ function HistoryPageContent() {
   const payments = useMemo<any[]>(() => {
     if (!rawPayments || rawPayments.length === 0) return [];
 
-    const parseAmount = (val: any) => {
-      if (!val) return 0;
-      if (typeof val === 'number') return val;
-      return Number(val.toString().replace(/,/g, '')) || 0;
-    };
+    // 1. Identify all chargeIds that were settled/paid by a payment receipt
+    const allocatedChargeIds = new Set<string>();
+    rawPayments.forEach((p: any) => {
+      if (Array.isArray(p.allocated_charges)) {
+        p.allocated_charges.forEach((alloc: any) => {
+          if (alloc.chargeId) allocatedChargeIds.add(alloc.chargeId);
+        });
+      }
+    });
+
+    // 2. Filter raw payments to genuine payment receipts
+    const genuinePayments = rawPayments.filter((p: any) => {
+      const id = p.payment_id || p.id;
+      if (p.status === 'settled' || p.status === 'pending' || p.status === 'overdue') return false;
+      if (id && allocatedChargeIds.has(id)) return false;
+      return true;
+    });
 
     const tenantsMap: Record<string, any> = {};
     (storeTenants || []).forEach((t: any) => {
@@ -152,48 +170,46 @@ function HistoryPageContent() {
       if (rid) roomsMap[rid] = r;
     });
 
-    // Build duesMap: for each tenant, compute total outstanding balance
+    // Build duesMap: for each tenant, compute total outstanding balance using canonical engine
     const duesMap: Record<string, number> = {};
     const storeDues = effectiveHostelData?.dues || [];
-    const allStorePayments = effectiveHostelData?.payments || [];
+    const allStorePayments = genuinePayments;
 
-    // Method 1: Use getTenantPaymentStatus for tenants we know about
     (storeTenants || []).forEach((t: any) => {
-      const statusInfo = getTenantPaymentStatus(t, storeDues, allStorePayments, new Date());
-      let totalDue = parseAmount(statusInfo.pendingAmount);
-      if (statusInfo.isVirtual && ['OVERDUE', 'CRITICAL', 'DUE_TODAY'].includes(statusInfo.status)) {
-        totalDue += parseAmount(statusInfo.virtualRentRemaining !== undefined ? statusInfo.virtualRentRemaining : t.rent_amount);
-      }
-      
+      const state = calculateTenantFinancialState(t, storeDues, allStorePayments);
       const tid = t.tenant_id || t.id;
-      if (tid) duesMap[tid] = totalDue;
+      if (tid) duesMap[tid] = paiseToRupees(state.outstandingPaise);
     });
 
-    // Method 2: For any tenant_id found in payments but NOT in storeTenants,
-    // compute their pending directly from storeDues
-    const allPaymentTenantIds = new Set(rawPayments.map((p: any) => p.tenant_id || p.tenantId).filter(Boolean));
+    const allPaymentTenantIds = new Set(genuinePayments.map((p: any) => p.tenant_id || p.tenantId).filter(Boolean));
     allPaymentTenantIds.forEach(tid => {
-      if (duesMap[tid] !== undefined) return; // already computed above
-      const explicitDues = storeDues.filter((d: any) => d.tenant_id === tid && (d.status === 'pending' || d.status === 'overdue'))
-                                    .reduce((sum: number, d: any) => {
-                                      const rem = d.pending_balance !== undefined ? parseAmount(d.pending_balance) : Math.max(0, parseAmount(d.amount) - parseAmount(d.amount_paid));
-                                      return sum + rem;
-                                    }, 0);
-      duesMap[tid] = explicitDues;
+      if (duesMap[tid] !== undefined) return;
+      const dummyTenant = { id: tid, tenant_id: tid };
+      const state = calculateTenantFinancialState(dummyTenant, storeDues, allStorePayments);
+      duesMap[tid] = paiseToRupees(state.outstandingPaise);
     });
 
-    const enriched = rawPayments.map((p: any) => {
+    const enriched = genuinePayments.map((p: any) => {
       const tenantId = p.tenant_id || p.tenantId;
       const tenant = tenantsMap[tenantId] || {};
       const room = roomsMap[p.room_id] || roomsMap[tenant.room_id] || (typeof tenant.rooms === 'object' ? tenant.rooms : {}) || {};
 
-      // Prioritize payment's own recorded pending_balance on the transaction receipt
-      const pendingTotal = p.pending_balance !== undefined 
-        ? parseAmount(p.pending_balance) 
-        : (duesMap[tenantId] !== undefined ? duesMap[tenantId] : 0);
+      const amtPaise = parseMoneyToPaise(p.amount_paid !== undefined ? p.amount_paid : p.amount);
+      const origPaise = parseMoneyToPaise(p.original_amount !== undefined ? p.original_amount : p.amount);
+      const isReversed = p.status === 'reversed' || p.is_reversed === true;
+
+      // Pending total for this tenant strictly computed from canonical engine
+      const pendingTotal = duesMap[tenantId] !== undefined ? duesMap[tenantId] : 0;
 
       return {
         ...p,
+        amount: paiseToRupees(amtPaise),
+        amount_paid: paiseToRupees(amtPaise),
+        amount_paise: amtPaise,
+        original_amount: paiseToRupees(origPaise),
+        original_amount_paise: origPaise,
+        is_reversed: isReversed,
+        status: isReversed ? 'reversed' : (p.status || 'paid'),
         tenant_name: p.tenant_name || tenant.full_name || tenant.name || 'Tenant',
         room_number: p.room_number || room.room_number || tenant.room_number || tenant.room || 'N/A',
         payment_date: p.payment_date || p.created_at || p.date || new Date().toISOString(),
@@ -321,7 +337,9 @@ function HistoryPageContent() {
       return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) + ', ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     };
 
-    const pendingFee = payment.current_pending_total !== undefined ? payment.current_pending_total : (payment.pending_balance ? Number(payment.pending_balance) : 0);
+    const pendingFee = (payment.pending_balance !== undefined && payment.pending_balance !== null)
+      ? Number(payment.pending_balance)
+      : (payment.pending_balance_paise !== undefined ? payment.pending_balance_paise / 100 : 0);
     const amountPaid = Number(payment.amount_paid || payment.amount);
     
     // Generate QR code data
@@ -912,7 +930,11 @@ function HistoryPageContent() {
           </div>
         ) : filteredPayments.length > 0 ? (
           filteredPayments.map((payment: any) => {
-            const pendingBal = payment.current_pending_total !== undefined ? payment.current_pending_total : Number(payment.pending_balance || 0);
+            const pendingBal = (payment.pending_balance !== undefined && payment.pending_balance !== null)
+              ? Number(payment.pending_balance)
+              : (payment.pending_balance_paise !== undefined 
+                  ? payment.pending_balance_paise / 100 
+                  : (payment.current_pending_total !== undefined ? payment.current_pending_total : 0));
             const isClear = pendingBal <= 0;
             const isExpanded = expandedCardId === payment.payment_id;
 
@@ -996,10 +1018,22 @@ function HistoryPageContent() {
                     paddingTop: isExpanded ? '10px' : '0px'
                   }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', fontSize: '0.82rem', border: '1px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: '#047857', fontWeight: 600 }}>🟢 Fee Paid:</span>
-                        <span style={{ color: '#065f46', fontWeight: 700 }}>{payment.paid_fee_summary || payment.description || 'Rent'}</span>
-                      </div>
+                      {Array.isArray(payment.allocated_charges) && payment.allocated_charges.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ color: '#047857', fontWeight: 600, marginBottom: '2px' }}>🟢 Fee Allocation:</span>
+                          {payment.allocated_charges.map((alloc: any, idx: number) => (
+                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingLeft: '8px' }}>
+                              <span style={{ color: '#334155' }}>- {alloc.description || alloc.type}</span>
+                              <span style={{ color: '#065f46', fontWeight: 700 }}>₹{Math.floor(alloc.amountPaise / 100).toLocaleString('en-IN')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: '#047857', fontWeight: 600 }}>🟢 Fee Paid:</span>
+                          <span style={{ color: '#065f46', fontWeight: 700 }}>{payment.paid_fee_summary || payment.description || 'Rent'}</span>
+                        </div>
+                      )}
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ color: isClear ? '#475569' : '#dc2626', fontWeight: 600 }}>

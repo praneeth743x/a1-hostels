@@ -61,9 +61,24 @@ export async function getTenantDashboardData(email: string) {
       tenantData.room = { id: roomSnap.id, ...roomSnap.data() };
     }
 
-    const allPayments = duesQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+    const allPayments = duesQuery.docs.map(doc => ({ id: doc.id, payment_id: doc.id, ...doc.data() } as any));
     allPayments.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    const pendingDues = allPayments.filter(p => p.status === 'pending');
+    const pendingDues = allPayments.filter(p => p.status === 'pending' || p.status === 'overdue');
+
+    const allocatedChargeIds = new Set<string>();
+    allPayments.forEach((p: any) => {
+      if (Array.isArray(p.allocated_charges)) {
+        p.allocated_charges.forEach((alloc: any) => {
+          if (alloc.chargeId) allocatedChargeIds.add(alloc.chargeId);
+        });
+      }
+    });
+
+    const tenantPaidHistory = allPayments.filter((p: any) => {
+      if (p.status === 'settled' || p.status === 'pending' || p.status === 'overdue') return false;
+      if (allocatedChargeIds.has(p.id) || allocatedChargeIds.has(p.payment_id)) return false;
+      return p.status === 'paid' || p.status === 'completed' || p.status === 'success';
+    });
 
     const notices = noticesQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
     notices.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -82,7 +97,7 @@ export async function getTenantDashboardData(email: string) {
         roommates,
         availableBeds,
         pendingDues,
-        payments: allPayments,
+        payments: tenantPaidHistory,
         notices: notices.slice(0, 3), // Top 3 recent
         tenantPaymentsEnabled,
         activityLogs
