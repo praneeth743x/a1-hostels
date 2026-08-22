@@ -526,8 +526,8 @@ export function calculateTenantFinancialState(
   let hasCompleteCharges = true;
   const passedChargeIds = new Set(computedCharges.map(c => c.chargeId));
   for (const p of normalizedPayments) {
-    if (Array.isArray(p.allocated_charges)) {
-      for (const alloc of p.allocated_charges) {
+    if (Array.isArray(p.allocatedCharges)) {
+      for (const alloc of p.allocatedCharges) {
         if (alloc.chargeId && !passedChargeIds.has(alloc.chargeId)) {
           hasCompleteCharges = false;
           break;
