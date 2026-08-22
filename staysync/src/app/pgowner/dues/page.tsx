@@ -531,8 +531,26 @@ function DuesPageContent() {
       return;
     }
 
-    const finalCollectedRupees = paiseToRupees(amountPaise);
     const pgId = tenants.find(t => t.tenant_id === due.tenant_id)?.pg_id || localStorage.getItem('activePgId') || '';
+    const selectedIndices = getSelectedChargeIndices(due);
+
+    if (selectedIndices.length === 0) {
+      alert("Please select at least one charge item to record payment.");
+      setIsCollecting(false);
+      return;
+    }
+
+    const selectedChargesSum = selectedIndices.reduce((sum, idx) => sum + Number(due.charges[idx]?.amount || 0), 0);
+    const selectedChargesSumPaise = parseMoneyToPaise(selectedChargesSum);
+    const isAllSelectedByLength = selectedIndices.length === due.charges.length;
+
+    if (!isAllSelectedByLength && amountPaise > selectedChargesSumPaise) {
+      alert(`Specific fee overpayment is not allowed. The maximum amount you can collect for the selected fees is ₹${selectedChargesSum.toLocaleString('en-IN')}. Please select all charges or reduce the amount.`);
+      setIsCollecting(false);
+      return;
+    }
+
+    const finalCollectedRupees = paiseToRupees(amountPaise);
 
     try {
       const collectorUid = auth.currentUser?.uid || '';
@@ -593,6 +611,21 @@ function DuesPageContent() {
 
     if (!confirmingAction || confirmingAction.id !== due.payment_id || confirmingAction.type !== 'partial') {
       setConfirmingAction({ id: due.payment_id, type: 'partial' });
+      return;
+    }
+
+    const selectedIndices = getSelectedChargeIndices(due);
+    if (selectedIndices.length === 0) {
+      alert("Please select at least one charge item to record payment.");
+      return;
+    }
+
+    const selectedChargesSum = selectedIndices.reduce((sum, idx) => sum + Number(due.charges[idx]?.amount || 0), 0);
+    const selectedChargesSumPaise = parseMoneyToPaise(selectedChargesSum);
+    const isAllSelectedByLength = selectedIndices.length === due.charges.length;
+
+    if (!isAllSelectedByLength && amountPaise > selectedChargesSumPaise) {
+      alert(`Specific fee overpayment is not allowed. The maximum amount you can collect for the selected fees is ₹${selectedChargesSum.toLocaleString('en-IN')}. Please select all charges or reduce the amount.`);
       return;
     }
 

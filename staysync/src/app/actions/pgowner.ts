@@ -13,7 +13,8 @@ import {
   calculateTenantFinancialState, 
   allocatePaymentFIFO, 
   verifyFinancialInvariants,
-  FinancialCharge
+  FinancialCharge,
+  allocatePayment
 } from '@/lib/financialEngine';
 
 export async function resolveEffectiveOwnerId(userId: string) {
@@ -1653,86 +1654,72 @@ export async function collectFIFOPayment(
       // Compute the TRUE global outstanding balance before this payment
       const beforeState = calculateTenantFinancialState(tenantData, allCharges, rawPaid);
 
-      // Filter charges to be allocated (only pending/overdue, further filtered by selectedPaymentIds if specified)
-      let rawChargesToAllocate = allCharges.filter(c => c.status === 'pending' || c.status === 'overdue');
-      if (Array.isArray(selectedPaymentIds) && selectedPaymentIds.length > 0) {
-        const filtered = rawChargesToAllocate.filter(c => selectedPaymentIds.includes(c.id) || selectedPaymentIds.includes(c.payment_id));
-        if (filtered.length > 0) {
-          rawChargesToAllocate = filtered;
-        }
+      // Filter charges to be allocated (only pending/overdue)
+      const eligibleCharges = allCharges.filter(c => c.status === 'pending' || c.status === 'overdue');
+
+      // 3. Allocate payment strictly in integer paise
+      const allocationResult = allocatePayment({
+        tenantId,
+        paymentAmountPaise: amountPaise,
+        pendingCharges: eligibleCharges,
+        selectedChargeIds: selectedPaymentIds
+      });
+
+      // Strict Validation: If specific charges are selected, overpayment is not allowed
+      const hasSpecificSelection = Array.isArray(selectedPaymentIds) && selectedPaymentIds.length > 0;
+      if (hasSpecificSelection && allocationResult.unallocatedAmountPaise > 0) {
+        throw new Error('Payment amount exceeds the outstanding balance of the selected charges.');
       }
 
-      // 3. Allocate payment FIFO strictly in integer paise
-      const financialCharges: FinancialCharge[] = rawChargesToAllocate.map(c => ({
-        chargeId: c.id,
-        tenantId,
-        pgId: effectivePgId,
-        type: (c.type || 'monthly_rent'),
-        description: c.description || 'Rent',
-        amountPaise: parseMoneyToPaise(c.original_amount !== undefined ? c.original_amount : c.amount),
-        paidPaise: parseMoneyToPaise(c.amount_paid || 0),
-        dueDate: c.due_date || new Date().toISOString(),
-        status: (c.status || 'pending'),
-        createdAt: c.created_at || new Date().toISOString()
-      }));
-
-      const allocationResult = allocatePaymentFIFO(amountPaise, financialCharges);
-
-      // 4. Update each charge in transaction
-      for (const alloc of allocationResult.allocated) {
-        const chargeDoc = rawChargesToAllocate.find(c => c.id === alloc.chargeId);
+      // 4. Update each charge and write payment allocations in transaction
+      for (const alloc of allocationResult.allocations) {
+        const chargeDoc = eligibleCharges.find(c => c.id === alloc.chargeId);
         if (!chargeDoc) continue;
 
         const originalPaise = parseMoneyToPaise(chargeDoc.original_amount !== undefined ? chargeDoc.original_amount : chargeDoc.amount);
-        const newPaidPaise = parseMoneyToPaise(chargeDoc.amount_paid || 0) + alloc.amountPaise;
+        const currentPaidPaise = parseMoneyToPaise(chargeDoc.amount_paid_paise !== undefined ? chargeDoc.amount_paid_paise : (chargeDoc.amount_paid || 0));
+        const newPaidPaise = currentPaidPaise + alloc.allocatedAmountPaise;
         const newRemainingPaise = alloc.remainingPaise;
 
-        if (alloc.isFullyPaid) {
-          t.update(chargeDoc.ref, {
-            status: 'settled',
-            is_settled: true,
-            amount: paiseToRupees(originalPaise),
-            amount_paid: paiseToRupees(originalPaise),
-            amount_paise: originalPaise,
-            amount_paid_paise: originalPaise,
-            pending_balance: 0,
-            pending_balance_paise: 0,
-            payment_method: method || 'UPI',
-            payment_date: new Date().toISOString(),
-            last_payment_date: new Date().toISOString(),
-            settled_at: new Date().toISOString(),
-            last_payment_id: newPaymentDocRef.id,
-            collected_by: collectorName,
-            collected_by_name: collectorName,
-            collected_by_role: collectorRole,
-            collected_by_uid: collectorUid || ''
-          });
-        } else {
-          t.update(chargeDoc.ref, {
-            status: 'pending',
-            is_settled: false,
-            amount: paiseToRupees(newRemainingPaise),
-            amount_paid: paiseToRupees(newPaidPaise),
-            amount_paise: newRemainingPaise,
-            amount_paid_paise: newPaidPaise,
-            original_amount: paiseToRupees(originalPaise),
-            original_amount_paise: originalPaise,
-            pending_balance: paiseToRupees(newRemainingPaise),
-            pending_balance_paise: newRemainingPaise,
-            last_payment_date: new Date().toISOString(),
-            last_payment_id: newPaymentDocRef.id,
-            collected_by: collectorName,
-            collected_by_name: collectorName,
-            collected_by_role: collectorRole,
-            collected_by_uid: collectorUid || ''
-          });
-        }
+        const isFullyPaid = newRemainingPaise === 0;
+
+        // Update charge doc
+        t.update(chargeDoc.ref, {
+          status: isFullyPaid ? 'settled' : 'pending',
+          is_settled: isFullyPaid,
+          amount: paiseToRupees(newRemainingPaise),
+          amount_paid: paiseToRupees(newPaidPaise),
+          amount_paise: newRemainingPaise,
+          amount_paid_paise: newPaidPaise,
+          original_amount: paiseToRupees(originalPaise),
+          original_amount_paise: originalPaise,
+          pending_balance: paiseToRupees(newRemainingPaise),
+          pending_balance_paise: newRemainingPaise,
+          last_payment_date: new Date().toISOString(),
+          last_payment_id: newPaymentDocRef.id,
+          collected_by: collectorName,
+          collected_by_name: collectorName,
+          collected_by_role: collectorRole,
+          collected_by_uid: collectorUid || ''
+        });
+
+        // Write to payment_allocations collection
+        const newAllocRef = adminDb.collection('payment_allocations').doc();
+        t.set(newAllocRef, {
+          allocation_id: newAllocRef.id,
+          payment_id: newPaymentDocRef.id,
+          charge_id: alloc.chargeId,
+          tenant_id: tenantId,
+          pg_id: effectivePgId,
+          amount_paise: alloc.allocatedAmountPaise,
+          created_at: new Date().toISOString()
+        });
       }
 
       // 5. Create immutable Payment Receipt Document
       const paymentDate = new Date().toISOString();
       const amountRupees = paiseToRupees(amountPaise);
-      const afterOutstandingPaise = Math.max(0, beforeState.outstandingPaise - amountPaise);
+      const afterOutstandingPaise = allocationResult.remainingTenantDuePaise;
 
       t.set(newPaymentDocRef, {
         payment_id: newPaymentDocRef.id,
@@ -1752,8 +1739,16 @@ export async function collectFIFOPayment(
         month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
         description: `Payment of ${formatPaiseToINR(amountPaise)} (${method || 'UPI'})`,
         type: 'monthly_rent',
-        allocated_charges: allocationResult.allocated,
-        advance_paise: allocationResult.advancePaise,
+        allocated_charges: allocationResult.allocations.map(a => {
+          const ch = eligibleCharges.find(c => c.id === a.chargeId);
+          return {
+            chargeId: a.chargeId,
+            amountPaise: a.allocatedAmountPaise,
+            description: ch?.description || 'Rent',
+            type: ch?.type || 'monthly_rent'
+          };
+        }),
+        advance_paise: allocationResult.unallocatedAmountPaise,
         collected_by: collectorName,
         collected_by_name: collectorName,
         collected_by_role: collectorRole,

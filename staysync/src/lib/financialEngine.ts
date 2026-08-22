@@ -252,6 +252,11 @@ export function sortChargesByPriorityCompare(a: any, b: any): number {
  * Consumes raw charges and raw payments, reconciles them deterministically,
  * and returns the exact ledger state with mathematical invariants guaranteed.
  */
+/**
+ * Authoritative financial state calculator for a tenant.
+ * Consumes raw charges and raw payments, reconciles them deterministically,
+ * and returns the exact ledger state with mathematical invariants guaranteed.
+ */
 export function calculateTenantFinancialState(
   tenant: any,
   rawChargesOrDues: any[],
@@ -266,7 +271,6 @@ export function calculateTenantFinancialState(
   today.setHours(0, 0, 0, 0);
 
   // 1. Normalize Charges
-  const chargesMap = new Map<string, FinancialCharge>();
   const normalizedCharges: FinancialCharge[] = [];
 
   (rawChargesOrDues || []).forEach((c: any) => {
@@ -291,6 +295,12 @@ export function calculateTenantFinancialState(
       dueDate = d.toISOString();
     }
 
+    const storedPaidPaise = parseMoneyToPaise(
+      c.amount_paid_paise !== undefined 
+        ? c.amount_paid_paise 
+        : (c.amount_paid !== undefined ? c.amount_paid : 0)
+    );
+
     const charge: FinancialCharge = {
       chargeId,
       tenantId,
@@ -299,14 +309,13 @@ export function calculateTenantFinancialState(
       billingPeriod: c.billing_period || c.month,
       description: c.description || c.type || 'Rent Charge',
       amountPaise,
-      paidPaise: 0, // Will be computed deterministically from payments
+      paidPaise: storedPaidPaise, // Will be merged with allocations
       dueDate,
-      status: 'pending',
+      status: (c.status || 'pending') as ChargeStatus,
       createdAt: c.created_at || c.createdAt || new Date().toISOString(),
       isVirtual: c.is_virtual || c.isVirtual || false
     };
 
-    chargesMap.set(chargeId, charge);
     normalizedCharges.push(charge);
   });
 
@@ -329,7 +338,8 @@ export function calculateTenantFinancialState(
     if (pTenantId && pTenantId !== tenantId) return;
 
     const status = (p.status || 'paid').toLowerCase();
-    if (status === 'pending' || status === 'overdue' || status === 'settled' || status === 'failed') return; // Invoices/charges are in charges, not payments
+    // Exclude invoices/charges that are in payments collection but aren't receipts
+    if (status === 'pending' || status === 'overdue' || status === 'settled' || status === 'failed') return;
 
     const pId = p.payment_id || p.id;
     if (pId && allocatedChargeIds.has(pId)) return; // Exclude charge document that was allocated/paid by a receipt
@@ -341,7 +351,7 @@ export function calculateTenantFinancialState(
     if (amountPaise <= 0) return;
 
     const payment: FinancialPayment = {
-      paymentId: p.payment_id || p.id || `payment_${normalizedPayments.length + 1}`,
+      paymentId: pId || `payment_${normalizedPayments.length + 1}`,
       idempotencyKey: p.idempotency_key || p.idempotencyKey,
       tenantId,
       pgId: p.pg_id || tenant?.pg_id,
@@ -354,7 +364,7 @@ export function calculateTenantFinancialState(
       month: p.month,
       type: p.type as ChargeType,
       allocatedCharges: p.allocated_charges || [],
-      advancePaise: 0,
+      advancePaise: parseMoneyToPaise(p.advance_paise || 0),
       collectedBy: p.collected_by ? {
         uid: p.collected_by_uid || '',
         name: p.collected_by_name || p.collected_by || 'Staff',
@@ -375,25 +385,83 @@ export function calculateTenantFinancialState(
     }
   });
 
-  // 3. Sort Charges by Priority (Security Deposit -> Monthly Rent -> Others), then chronologically
-  normalizedCharges.sort((a, b) => sortChargesByPriorityCompare(a, b));
+  // Sort payments chronologically to process allocations in order
+  normalizedPayments.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-  // 4. Deterministic FIFO Payment Allocation across charges
-  let availablePaymentPoolPaise = Math.max(0, totalPaidPaise - totalRefundsPaise);
+  // 3. Process allocations chronologically
+  const chargeAllocationsSumMap = new Map<string, number>();
+  let runningAdvanceCreditPaise = 0;
+
+  normalizedPayments.forEach((p) => {
+    if (p.status !== 'paid') return; // Exclude reversed/refunded payments from allocation sum
+
+    if (Array.isArray(p.allocatedCharges) && p.allocatedCharges.length > 0) {
+      // Explicit allocations
+      p.allocatedCharges.forEach((alloc) => {
+        const cId = alloc.chargeId;
+        const amt = parseMoneyToPaise(alloc.amountPaise);
+        if (cId && amt > 0) {
+          chargeAllocationsSumMap.set(cId, (chargeAllocationsSumMap.get(cId) || 0) + amt);
+        }
+      });
+      if (p.advancePaise) {
+        runningAdvanceCreditPaise += p.advancePaise;
+      }
+    } else {
+      // Legacy payment with no explicit allocations - allocate dynamically via FIFO waterfall
+      let remainingToAllocate = p.amountPaise;
+
+      // Find all charges that still have outstanding balance at this point in the chronological simulation
+      const eligibleCharges = normalizedCharges.filter(c => {
+        const allocatedSum = chargeAllocationsSumMap.get(c.chargeId) || 0;
+        const currentPaid = Math.max(allocatedSum, c.paidPaise || 0); // Include stored fallback
+        return c.amountPaise - currentPaid > 0;
+      });
+
+      // Sort them using the deterministic waterfall priority
+      eligibleCharges.sort((a, b) => sortChargesForWaterfallCompare(a, b));
+
+      const mockAllocations: ChargeAllocation[] = [];
+      for (const charge of eligibleCharges) {
+        if (remainingToAllocate <= 0) break;
+
+        const allocatedSum = chargeAllocationsSumMap.get(charge.chargeId) || 0;
+        const currentPaid = Math.max(allocatedSum, charge.paidPaise || 0);
+        const outstanding = charge.amountPaise - currentPaid;
+
+        const pay = Math.min(remainingToAllocate, outstanding);
+        chargeAllocationsSumMap.set(charge.chargeId, allocatedSum + pay);
+        remainingToAllocate -= pay;
+
+        mockAllocations.push({
+          chargeId: charge.chargeId,
+          amountPaise: pay
+        });
+      }
+      p.allocatedCharges = mockAllocations;
+      p.advancePaise = remainingToAllocate;
+      runningAdvanceCreditPaise += remainingToAllocate;
+    }
+  });
+
+  // 4. Update Charge States
   let totalBilledPaise = 0;
   const computedCharges: ComputedCharge[] = [];
 
   for (const charge of normalizedCharges) {
     totalBilledPaise += charge.amountPaise;
 
-    const allocatedToThisCharge = Math.min(availablePaymentPoolPaise, charge.amountPaise);
-    charge.paidPaise = allocatedToThisCharge;
-    availablePaymentPoolPaise -= allocatedToThisCharge;
+    const allocatedSum = chargeAllocationsSumMap.get(charge.chargeId) || 0;
+    // Charge paid amount is the maximum of explicit allocations or stored paid amount (backwards compatibility)
+    let paidPaise = Math.max(allocatedSum, charge.paidPaise || 0);
+    paidPaise = Math.min(paidPaise, charge.amountPaise); // safety cap
 
-    const remainingPaise = Math.max(0, charge.amountPaise - allocatedToThisCharge);
+    charge.paidPaise = paidPaise;
+    const remainingPaise = charge.amountPaise - paidPaise;
+
     if (remainingPaise === 0) {
       charge.status = 'paid';
-    } else if (allocatedToThisCharge > 0) {
+    } else if (paidPaise > 0) {
       charge.status = 'partially_paid';
     } else {
       charge.status = 'pending';
@@ -413,12 +481,19 @@ export function calculateTenantFinancialState(
     });
   }
 
-  // Any leftover payment in the pool is Advance Credit
-  const advanceCreditPaise = availablePaymentPoolPaise;
+  // Authoritative outstanding balance is sum of remaining charges
   const outstandingPaise = computedCharges.reduce((sum, c) => sum + c.remainingPaise, 0);
+  
+  // Total allocated to all charges
+  const totalAllocatedToAllCharges = computedCharges.reduce((sum, c) => sum + c.paidPaise, 0);
+  // Derived advance credit is the remaining unallocated portion of all valid payments
+  const advanceCreditPaise = Math.max(0, (totalPaidPaise - totalRefundsPaise) - totalAllocatedToAllCharges);
 
   // 5. Determine Overall Tenant Payment Status & Overdue Days
   const activeUnpaidCharges = computedCharges.filter(c => c.remainingPaise > 0);
+  // Sort active unpaid charges by due date to get the oldest overdue days
+  activeUnpaidCharges.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
   let daysOverdue = 0;
   let nextDueDate: Date | null = null;
   let status: TenantFinancialState['status'] = 'UPCOMING';
@@ -430,7 +505,6 @@ export function calculateTenantFinancialState(
   } else if (outstandingPaise === 0) {
     status = 'PAID';
   } else {
-    // Find oldest unpaid charge
     if (activeUnpaidCharges.length > 0) {
       const oldestUnpaid = activeUnpaidCharges[0];
       daysOverdue = oldestUnpaid.dueDays;
@@ -477,14 +551,114 @@ export function calculateTenantFinancialState(
   return resultState;
 }
 
-// -----------------------------------------------------------------------------
-// FIFO ALLOCATOR FOR SINGLE PAYMENT TRANSACTION
-// -----------------------------------------------------------------------------
+export function sortChargesForWaterfallCompare(a: any, b: any): number {
+  // 1. Compare due dates (oldest first)
+  const dueA = new Date(a.dueDate || a.due_date || 0).getTime();
+  const dueB = new Date(b.dueDate || b.due_date || 0).getTime();
+  if (dueA !== dueB) return dueA - dueB;
 
-/**
- * Calculates exactly how a newly submitted payment amount will be distributed
- * across existing pending charges in FIFO order without floating-point errors.
- */
+  // 2. Type priority: security deposit -> monthly_rent -> opening-fee -> others
+  const typePriority = (type: string) => {
+    const t = String(type || '').toLowerCase();
+    if (t === 'security_deposit' || t === 'security-deposit' || t === 'deposit') return 1;
+    if (t === 'monthly_rent' || t === 'monthly-rent' || t === 'rent') return 2;
+    if (t === 'opening-fee' || t === 'opening_balance' || t === 'opening-balance') return 3;
+    return 4;
+  };
+  const prioA = typePriority(a.type);
+  const prioB = typePriority(b.type);
+  if (prioA !== prioB) return prioA - prioB;
+
+  // 3. Fallback: creation date
+  const createA = new Date(a.createdAt || a.created_at || 0).getTime();
+  const createB = new Date(b.createdAt || b.created_at || 0).getTime();
+  if (createA !== createB) return createA - createB;
+
+  // 4. Final fallback: charge ID
+  return String(a.chargeId || a.id).localeCompare(String(b.chargeId || b.id));
+}
+
+export interface AllocationInput {
+  tenantId: string;
+  paymentAmountPaise: number;
+  pendingCharges: any[];
+  selectedChargeIds?: string[];
+}
+
+export interface AllocationResult {
+  paymentAmountPaise: number;
+  allocations: Array<{
+    chargeId: string;
+    allocatedAmountPaise: number;
+    remainingPaise: number;
+    isFullyPaid: boolean;
+  }>;
+  unallocatedAmountPaise: number;
+  remainingTenantDuePaise: number;
+}
+
+export function allocatePayment(input: AllocationInput): AllocationResult {
+  const { paymentAmountPaise, pendingCharges, selectedChargeIds } = input;
+  let remainingPaymentPaise = paymentAmountPaise;
+  const allocations: AllocationResult['allocations'] = [];
+
+  // Filter to charges with positive remaining balance
+  const eligibleCharges = pendingCharges.map(c => {
+    const amountPaise = c.amountPaise !== undefined ? c.amountPaise : parseMoneyToPaise(c.original_amount !== undefined ? c.original_amount : c.amount);
+    const paidPaise = c.paidPaise !== undefined ? c.paidPaise : parseMoneyToPaise(c.amount_paid_paise !== undefined ? c.amount_paid_paise : (c.amount_paid !== undefined ? c.amount_paid : 0));
+    return {
+      ...c,
+      chargeId: c.chargeId || c.payment_id || c.id,
+      amountPaise,
+      paidPaise,
+      outstandingPaise: Math.max(0, amountPaise - paidPaise)
+    };
+  }).filter(c => c.outstandingPaise > 0);
+
+  // If specific charges selected, restrict targets to those
+  let targetCharges = eligibleCharges;
+  const hasSpecificSelection = Array.isArray(selectedChargeIds) && selectedChargeIds.length > 0;
+  if (hasSpecificSelection) {
+    targetCharges = eligibleCharges.filter(c => selectedChargeIds.includes(c.chargeId));
+  }
+
+  // Sort targets using deterministic waterfall comparison
+  targetCharges.sort((a, b) => sortChargesForWaterfallCompare(a, b));
+
+  // Perform allocation
+  for (const charge of targetCharges) {
+    if (remainingPaymentPaise <= 0) break;
+
+    const outstanding = charge.outstandingPaise;
+    if (outstanding <= 0) continue;
+
+    const pay = Math.min(remainingPaymentPaise, outstanding);
+    const remaining = outstanding - pay;
+
+    allocations.push({
+      chargeId: charge.chargeId,
+      allocatedAmountPaise: pay,
+      remainingPaise: remaining,
+      isFullyPaid: remaining === 0
+    });
+
+    remainingPaymentPaise -= pay;
+  }
+
+  // Compute remaining tenant total due
+  const remainingTenantDuePaise = eligibleCharges.reduce((sum, c) => {
+    const allocated = allocations.find(a => a.chargeId === c.chargeId)?.allocatedAmountPaise || 0;
+    return sum + (c.outstandingPaise - allocated);
+  }, 0);
+
+  return {
+    paymentAmountPaise,
+    allocations,
+    unallocatedAmountPaise: Math.max(0, remainingPaymentPaise),
+    remainingTenantDuePaise
+  };
+}
+
 export function allocatePaymentFIFO(
   amountPaise: number,
   pendingCharges: FinancialCharge[]
@@ -492,33 +666,20 @@ export function allocatePaymentFIFO(
   allocated: Array<{ chargeId: string; amountPaise: number; remainingPaise: number; isFullyPaid: boolean }>;
   advancePaise: number;
 } {
-  let remainingPaymentPaise = amountPaise;
-  const allocated: Array<{ chargeId: string; amountPaise: number; remainingPaise: number; isFullyPaid: boolean }> = [];
-
-  const sortedCharges = [...pendingCharges].sort((a, b) => sortChargesByPriorityCompare(a, b));
-
-  for (const charge of sortedCharges) {
-    if (remainingPaymentPaise <= 0) break;
-
-    const chargeDuePaise = Math.max(0, charge.amountPaise - (charge.paidPaise || 0));
-    if (chargeDuePaise <= 0) continue;
-
-    const payTowardsThis = Math.min(remainingPaymentPaise, chargeDuePaise);
-    const newRemaining = chargeDuePaise - payTowardsThis;
-    
-    allocated.push({
-      chargeId: charge.chargeId,
-      amountPaise: payTowardsThis,
-      remainingPaise: newRemaining,
-      isFullyPaid: newRemaining === 0
-    });
-
-    remainingPaymentPaise -= payTowardsThis;
-  }
+  const res = allocatePayment({
+    tenantId: '',
+    paymentAmountPaise: amountPaise,
+    pendingCharges: pendingCharges
+  });
 
   return {
-    allocated,
-    advancePaise: Math.max(0, remainingPaymentPaise)
+    allocated: res.allocations.map(a => ({
+      chargeId: a.chargeId,
+      amountPaise: a.allocatedAmountPaise,
+      remainingPaise: a.remainingPaise,
+      isFullyPaid: a.isFullyPaid
+    })),
+    advancePaise: res.unallocatedAmountPaise
   };
 }
 
@@ -561,5 +722,55 @@ export function reconcileTenantLedger(
     differencePaise,
     status: Math.abs(differencePaise) > 0 ? 'MISMATCH' : 'MATCH',
     details: `Stored Outstanding (${formatPaiseToINR(storedOutstandingPaise)}) != Calculated Outstanding (${formatPaiseToINR(calculatedOutstandingPaise)})`
+  };
+}
+
+export interface IntegrityReport {
+  tenantId: string;
+  propertyId: string;
+  calculatedOutstandingPaise: number;
+  storedOutstandingPaise: number;
+  hasMismatch: boolean;
+  timestamp: string;
+}
+
+export function checkTenantFinancialIntegrity(
+  tenant: any,
+  rawCharges: any[],
+  rawPayments: any[]
+): IntegrityReport | null {
+  const tenantId = tenant?.tenant_id || tenant?.id || '';
+  const propertyId = tenant?.pg_id || '';
+  
+  const calculatedState = calculateTenantFinancialState(tenant, rawCharges, rawPayments);
+  const calculatedOutstandingPaise = calculatedState.outstandingPaise;
+  
+  const storedOutstandingPaise = parseMoneyToPaise(
+    tenant.outstanding_balance_paise !== undefined 
+      ? tenant.outstanding_balance_paise 
+      : (tenant.outstanding_balance !== undefined 
+          ? tenant.outstanding_balance 
+          : (tenant.pending_fee !== undefined ? tenant.pending_fee : null))
+  );
+
+  if (tenant.outstanding_balance_paise === undefined && 
+      tenant.outstanding_balance === undefined && 
+      tenant.pending_fee === undefined) {
+    return null;
+  }
+
+  const hasMismatch = calculatedOutstandingPaise !== storedOutstandingPaise;
+  
+  if (hasMismatch) {
+    console.error(`[CRITICAL FINANCIAL INCONSISTENCY] Mismatch detected for tenant ${tenantId}. Property: ${propertyId}. Calculated: ${calculatedOutstandingPaise}p, Stored: ${storedOutstandingPaise}p.`);
+  }
+
+  return {
+    tenantId,
+    propertyId,
+    calculatedOutstandingPaise,
+    storedOutstandingPaise,
+    hasMismatch,
+    timestamp: new Date().toISOString()
   };
 }

@@ -130,6 +130,15 @@ export default function TenantDetailsPage({ params }: { params: Promise<{ id: st
       toast.error("Please enter a valid payment amount.");
       return;
     }
+
+    if (selectedDueId && financialState) {
+      const selectedCharge = financialState.charges.find(c => c.chargeId === selectedDueId);
+      if (selectedCharge && amountPaise > selectedCharge.remainingPaise) {
+        toast.error(`Specific fee overpayment is not allowed. The maximum amount you can collect for this charge is ₹${paiseToRupees(selectedCharge.remainingPaise).toLocaleString('en-IN')}.`);
+        return;
+      }
+    }
+
     setIsSubmittingPayment(true);
     const collectorUid = currentUser?.uid || '';
     const amountRupees = paiseToRupees(amountPaise);
