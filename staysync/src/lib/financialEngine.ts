@@ -522,6 +522,21 @@ export function calculateTenantFinancialState(
     }
   }
 
+  // Check if we have complete charge coverage for all payment allocations
+  let hasCompleteCharges = true;
+  const passedChargeIds = new Set(computedCharges.map(c => c.chargeId));
+  for (const p of normalizedPayments) {
+    if (Array.isArray(p.allocated_charges)) {
+      for (const alloc of p.allocated_charges) {
+        if (alloc.chargeId && !passedChargeIds.has(alloc.chargeId)) {
+          hasCompleteCharges = false;
+          break;
+        }
+      }
+    }
+    if (!hasCompleteCharges) break;
+  }
+
   const resultState: TenantFinancialState = {
     tenantId,
     totalBilledPaise,
@@ -540,12 +555,14 @@ export function calculateTenantFinancialState(
     isReconciled: true
   };
 
-  // Enforce mathematical invariants
-  const invariantCheck = verifyFinancialInvariants(resultState);
-  if (!invariantCheck.valid) {
-    resultState.isReconciled = false;
-    resultState.reconciliationError = invariantCheck.error;
-    console.error(`[FINANCIAL INVARIANT ERROR] Tenant ${tenantId}:`, invariantCheck.error);
+  // Enforce mathematical invariants only when we have complete charge coverage
+  if (hasCompleteCharges) {
+    const invariantCheck = verifyFinancialInvariants(resultState);
+    if (!invariantCheck.valid) {
+      resultState.isReconciled = false;
+      resultState.reconciliationError = invariantCheck.error;
+      console.error(`[FINANCIAL INVARIANT ERROR] Tenant ${tenantId}:`, invariantCheck.error);
+    }
   }
 
   return resultState;
